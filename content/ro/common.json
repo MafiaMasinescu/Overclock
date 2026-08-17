@@ -1,0 +1,161 @@
+{
+  "common": {
+    "era": {
+      "vacuum-tube": "Era tuburilor electronice"
+    },
+    "benchmark": {
+      "peak-throughput": "Peak Throughput",
+      "sustained-stability": "Sustained Stability"
+    }
+  },
+  "modules": {
+    "module-power-distribution": {
+      "name": "Panou de distribuție electrică",
+      "description": "Distribuie puterea contractată către module. Capacitatea traseelor și headroom-ul limitează sarcina sigură."
+    },
+    "module-vacuum-tube-logic": {
+      "name": "Modul logic cu tuburi",
+      "description": "Execută operații de bază. Produce multă căldură și beneficiază direct de frecvență și cooling."
+    },
+    "module-arithmetic-unit": {
+      "name": "Unitate aritmetică",
+      "description": "Concentrează operațiile numerice. Oferă compute mare, dar cere power, control și rute rapide."
+    },
+    "module-control-unit": {
+      "name": "Unitate de control",
+      "description": "Coordonează ordinea operațiilor și reduce penalizările task-urilor seriale și sensibile la latență."
+    },
+    "module-accumulator-register": {
+      "name": "Registru acumulator",
+      "description": "Păstrează rezultate intermediare aproape de compute. Oferă latență mică, dar capacitate redusă."
+    },
+    "module-delay-line-memory": {
+      "name": "Memorie delay-line",
+      "description": "Oferă mai multă capacitate prin impulsuri recirculate. Crește posibilitățile de lucru, dar cere timing stabil."
+    },
+    "module-punch-card-reader": {
+      "name": "Cititor de cartele perforate",
+      "description": "Încarcă date prin cartele. Este robust, dar limitează task-urile cu cerere mare de bandwidth."
+    },
+    "module-paper-tape-reader": {
+      "name": "Cititor de bandă perforată",
+      "description": "Oferă input mai rapid și buffering simplu pentru fluxuri susținute."
+    },
+    "module-line-printer": {
+      "name": "Imprimantă de linie",
+      "description": "Livrează volume mari de rezultate. Consumă spațiu și power, dar reduce blocajele de output."
+    },
+    "module-data-relay": {
+      "name": "Releu de date",
+      "description": "Extinde și organizează traseele. Reduce congestionarea și penalizarea conexiunilor lungi."
+    },
+    "module-air-mover": {
+      "name": "Ventilator industrial",
+      "description": "Direcționează airflow-ul peste modulele apropiate și reduce hotspot-urile locale."
+    },
+    "module-room-cooling": {
+      "name": "Unitate de răcire a camerei",
+      "description": "Extrage căldură din facility. Consumă multă putere, dar susține sarcini lungi și overclock."
+    }
+  },
+  "tasks": {
+    "task-ballistic-table-verification": {
+      "name": "Verificarea tabelelor balistice",
+      "description": "Verifică un set de traiectorii și livrează rezultate înaintea termenului contractual.",
+      "phase-input-check": "Verificarea datelor de intrare",
+      "phase-trajectory-run": "Calculul traiectoriilor"
+    },
+    "task-census-tabulation-service": {
+      "name": "Serviciu de tabulare statistică",
+      "description": "Procesează continuu loturi de înregistrări. Plata depinde de throughput-ul susținut.",
+      "phase-tabulation": "Tabulare continuă"
+    },
+    "task-wiring-layout-study": {
+      "name": "Studiu pentru layout-ul cablajului",
+      "description": "Compară trasee și latențe pentru o organizare modulară a sistemului.",
+      "phase-route-sampling": "Măsurarea traseelor"
+    },
+    "task-reactor-diffusion-study": {
+      "name": "Studiu numeric de difuzie",
+      "description": "Rezolvă iterativ un model cu cerințe ridicate de memorie, precizie și stabilitate.",
+      "phase-parameter-load": "Încărcarea parametrilor",
+      "phase-iterative-solve": "Rezolvarea iterativă"
+    },
+    "task-aerodynamic-load-matrix": {
+      "name": "Matrice de sarcini aerodinamice",
+      "description": "Calculează multe cazuri independente într-o fereastră scurtă. Paralelismul și Boost pot ajuta.",
+      "phase-load-cases": "Calculul cazurilor de sarcină"
+    },
+    "task-prime-number-survey": {
+      "name": "Studiu de numere prime",
+      "description": "Rulează o căutare serială lungă care recompensează frecvența stabilă și latența mică.",
+      "phase-prime-search": "Căutarea numerelor prime"
+    },
+    "task-semiconductor-effect-analysis": {
+      "name": "Analiza efectului semiconductor",
+      "description": "Curăță măsurători experimentale și ajustează un model pentru un dispozitiv solid-state.",
+      "phase-signal-cleaning": "Curățarea semnalului",
+      "phase-model-fitting": "Ajustarea modelului"
+    },
+    "task-stored-program-demonstration": {
+      "name": "Demonstrație stored-program",
+      "description": "Încarcă instrucțiuni în memorie și execută un program complex fără recablarea completă a mașinii.",
+      "phase-program-load": "Încărcarea programului",
+      "phase-program-run": "Execuția programului"
+    }
+  },
+  "research": {
+    "research-stable-power-distribution": {
+      "name": "Distribuție electrică stabilă",
+      "description": "Îmbunătățește măsurarea headroom-ului și permite unități aritmetice cu sarcină mai mare."
+    },
+    "research-vacuum-tube-reliability": {
+      "name": "Fiabilitatea tuburilor electronice",
+      "description": "Folosește failure logs pentru a reduce retry-urile și a susține răcirea centralizată."
+    },
+    "research-forced-airflow": {
+      "name": "Airflow forțat",
+      "description": "Deblochează ventilatoare industriale și heatmap-ul necesar localizării hotspot-urilor."
+    },
+    "research-accumulator-design": {
+      "name": "Proiectarea acumulatoarelor",
+      "description": "Îmbunătățește timing-ul registrelor și pregătește memoria delay-line."
+    },
+    "research-delay-line-memory": {
+      "name": "Memorie delay-line",
+      "description": "Deblochează o memorie cu capacitate mai mare pentru proiecte multi-stage."
+    },
+    "research-buffered-io": {
+      "name": "Input și output cu buffering",
+      "description": "Reduce timpul pierdut la încărcarea și livrarea loturilor mari de date."
+    },
+    "research-modular-wiring": {
+      "name": "Cablaj modular",
+      "description": "Deblochează relee de date și auto-route pentru trasee mai clare."
+    },
+    "research-blueprint-documentation": {
+      "name": "Documentație de blueprint",
+      "description": "Standardizează subansamblurile și permite salvarea și replicarea lor."
+    },
+    "research-high-frequency-clock": {
+      "name": "Clock de frecvență ridicată",
+      "description": "Deblochează controlul Manual și benchmark-ul de vârf. Cere power și cooling stabile."
+    },
+    "research-transistor-theory": {
+      "name": "Teoria tranzistorului",
+      "description": "Corelează datele solid-state cu rezultatele sistemului și încheie vertical slice-ul."
+    }
+  },
+  "ui": {
+    "build": "Build",
+    "operations": "Operations",
+    "research": "Research",
+    "museum": "Museum",
+    "settings": "Setări",
+    "cash": "Cash",
+    "useful-compute": "Useful Compute",
+    "power": "Power",
+    "temperature": "Temperature"
+  }
+}
+

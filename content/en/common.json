@@ -1,0 +1,160 @@
+{
+  "common": {
+    "era": {
+      "vacuum-tube": "Vacuum Tube Era"
+    },
+    "benchmark": {
+      "peak-throughput": "Peak Throughput",
+      "sustained-stability": "Sustained Stability"
+    }
+  },
+  "modules": {
+    "module-power-distribution": {
+      "name": "Power Distribution Panel",
+      "description": "Distributes contracted power to modules. Route capacity and headroom limit safe load."
+    },
+    "module-vacuum-tube-logic": {
+      "name": "Vacuum Tube Logic Module",
+      "description": "Performs basic operations. It produces substantial heat and benefits directly from clock speed and cooling."
+    },
+    "module-arithmetic-unit": {
+      "name": "Arithmetic Unit",
+      "description": "Concentrates numerical operations. It provides high compute but needs power, control and fast routes."
+    },
+    "module-control-unit": {
+      "name": "Control Unit",
+      "description": "Coordinates operation order and reduces penalties for serial and latency-sensitive tasks."
+    },
+    "module-accumulator-register": {
+      "name": "Accumulator Register",
+      "description": "Stores intermediate results near compute. It offers low latency with limited capacity."
+    },
+    "module-delay-line-memory": {
+      "name": "Delay-Line Memory",
+      "description": "Provides more capacity through recirculating pulses. It enables larger workloads but requires stable timing."
+    },
+    "module-punch-card-reader": {
+      "name": "Punch Card Reader",
+      "description": "Loads data from cards. It is robust but limits bandwidth-heavy tasks."
+    },
+    "module-paper-tape-reader": {
+      "name": "Paper Tape Reader",
+      "description": "Provides faster input and simple buffering for sustained streams."
+    },
+    "module-line-printer": {
+      "name": "Line Printer",
+      "description": "Delivers large result batches. It uses space and power but reduces output bottlenecks."
+    },
+    "module-data-relay": {
+      "name": "Data Relay",
+      "description": "Extends and organizes routes. It reduces congestion and long-connection penalties."
+    },
+    "module-air-mover": {
+      "name": "Industrial Air Mover",
+      "description": "Directs airflow across nearby modules and reduces local hotspots."
+    },
+    "module-room-cooling": {
+      "name": "Room Cooling Unit",
+      "description": "Extracts heat from the facility. It consumes significant power but supports sustained loads and overclocking."
+    }
+  },
+  "tasks": {
+    "task-ballistic-table-verification": {
+      "name": "Ballistic Table Verification",
+      "description": "Verify a trajectory set and deliver the results before the contract deadline.",
+      "phase-input-check": "Input data check",
+      "phase-trajectory-run": "Trajectory calculation"
+    },
+    "task-census-tabulation-service": {
+      "name": "Statistical Tabulation Service",
+      "description": "Continuously process record batches. Payment depends on sustained throughput.",
+      "phase-tabulation": "Continuous tabulation"
+    },
+    "task-wiring-layout-study": {
+      "name": "Wiring Layout Study",
+      "description": "Compare routes and latency for a modular system layout.",
+      "phase-route-sampling": "Route sampling"
+    },
+    "task-reactor-diffusion-study": {
+      "name": "Numerical Diffusion Study",
+      "description": "Iteratively solve a model with high memory, precision and stability requirements.",
+      "phase-parameter-load": "Parameter loading",
+      "phase-iterative-solve": "Iterative solve"
+    },
+    "task-aerodynamic-load-matrix": {
+      "name": "Aerodynamic Load Matrix",
+      "description": "Calculate many independent cases inside a short window. Parallelism and Boost can help.",
+      "phase-load-cases": "Load case calculation"
+    },
+    "task-prime-number-survey": {
+      "name": "Prime Number Survey",
+      "description": "Run a long serial search that rewards stable clock speed and low latency.",
+      "phase-prime-search": "Prime search"
+    },
+    "task-semiconductor-effect-analysis": {
+      "name": "Semiconductor Effect Analysis",
+      "description": "Clean experimental measurements and fit a model for a solid-state device.",
+      "phase-signal-cleaning": "Signal cleaning",
+      "phase-model-fitting": "Model fitting"
+    },
+    "task-stored-program-demonstration": {
+      "name": "Stored-Program Demonstration",
+      "description": "Load instructions into memory and execute a complex program without fully rewiring the machine.",
+      "phase-program-load": "Program loading",
+      "phase-program-run": "Program execution"
+    }
+  },
+  "research": {
+    "research-stable-power-distribution": {
+      "name": "Stable Power Distribution",
+      "description": "Improves headroom measurement and enables higher-load arithmetic units."
+    },
+    "research-vacuum-tube-reliability": {
+      "name": "Vacuum Tube Reliability",
+      "description": "Uses failure logs to reduce retries and support centralized room cooling."
+    },
+    "research-forced-airflow": {
+      "name": "Forced Airflow",
+      "description": "Unlocks industrial air movers and the heatmap needed to locate hotspots."
+    },
+    "research-accumulator-design": {
+      "name": "Accumulator Design",
+      "description": "Improves register timing and prepares delay-line memory."
+    },
+    "research-delay-line-memory": {
+      "name": "Delay-Line Memory",
+      "description": "Unlocks higher-capacity memory for multi-stage projects."
+    },
+    "research-buffered-io": {
+      "name": "Buffered Input and Output",
+      "description": "Reduces time lost while loading and delivering large data batches."
+    },
+    "research-modular-wiring": {
+      "name": "Modular Wiring",
+      "description": "Unlocks data relays and auto-routing for cleaner paths."
+    },
+    "research-blueprint-documentation": {
+      "name": "Blueprint Documentation",
+      "description": "Standardizes subassemblies and enables saving and replication."
+    },
+    "research-high-frequency-clock": {
+      "name": "High-Frequency Clock",
+      "description": "Unlocks Manual control and the peak benchmark. It requires stable power and cooling."
+    },
+    "research-transistor-theory": {
+      "name": "Transistor Theory",
+      "description": "Connects solid-state data with system results and completes the vertical slice."
+    }
+  },
+  "ui": {
+    "build": "Build",
+    "operations": "Operations",
+    "research": "Research",
+    "museum": "Museum",
+    "settings": "Settings",
+    "cash": "Cash",
+    "useful-compute": "Useful Compute",
+    "power": "Power",
+    "temperature": "Temperature"
+  }
+}

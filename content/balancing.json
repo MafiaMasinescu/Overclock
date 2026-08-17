@@ -1,0 +1,29 @@
+{
+  "contentVersion": "0.1.0",
+  "tickMilliseconds": 100,
+  "thermal": {
+    "heatToTemperatureCoefficient": 0.000025,
+    "diffusionCoefficient": 0.075,
+    "ambientRecoveryCoefficient": 0.018,
+    "globalHeatCoefficient": 0.000004,
+    "minimumTemperatureC": 12,
+    "maximumTemperatureC": 250,
+    "dirtyEpsilonC": 0.05
+  },
+  "overclock": {
+    "eco": { "frequencyRatio": 0.8, "voltageRatio": 0.9 },
+    "balanced": { "frequencyRatio": 1, "voltageRatio": 1 },
+    "boost": { "frequencyRatio": 1.25, "voltageRatio": 1.1 },
+    "manual": {
+      "frequencyRatioMin": 0.65,
+      "frequencyRatioMax": 1.4,
+      "voltageRatioMin": 0.85,
+      "voltageRatioMax": 1.2
+    }
+  },
+  "economy": {
+    "laborCostPerMovedModuleUsd": 85,
+    "defaultEnergyPriceUsdPerKwh": 0.042,
+    "autosaveIntervalRealSeconds": 60
+  }
+}

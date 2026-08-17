@@ -1,0 +1,47 @@
+{
+  "contentVersion": "0.1.0",
+  "era": {
+    "id": "era-1946-vacuum-tube",
+    "nameKey": "common.era.vacuum-tube",
+    "startYear": 1946,
+    "endYear": 1948,
+    "facilityGrid": { "width": 24, "height": 16 },
+    "ambientTemperatureC": 22,
+    "startingCashUsd": 32000,
+    "startingResearchData": 10,
+    "startingPowerCapacityWatts": 24000,
+    "activeTaskSlots": 2,
+    "startingInventory": [
+      { "definitionId": "module-power-distribution", "quantity": 1 },
+      { "definitionId": "module-vacuum-tube-logic", "quantity": 2 },
+      { "definitionId": "module-control-unit", "quantity": 1 },
+      { "definitionId": "module-accumulator-register", "quantity": 2 },
+      { "definitionId": "module-punch-card-reader", "quantity": 1 }
+    ],
+    "benchmarkDefinitions": [
+      {
+        "id": "benchmark-peak-throughput",
+        "nameKey": "common.benchmark.peak-throughput",
+        "type": "peak",
+        "durationSeconds": 15,
+        "targetAverageUsefulComputeFlops": 12500,
+        "minimumValidSampleRate": 0.9,
+        "maximumRetryRate": 0.1,
+        "maximumTemperatureC": 86,
+        "allowShutdowns": false
+      },
+      {
+        "id": "benchmark-sustained-stability",
+        "nameKey": "common.benchmark.sustained-stability",
+        "type": "sustained",
+        "durationSeconds": 120,
+        "targetAverageUsefulComputeFlops": 9000,
+        "minimumValidSampleRate": 0.98,
+        "maximumRetryRate": 0.03,
+        "maximumTemperatureC": 74,
+        "allowShutdowns": false
+      }
+    ]
+  }
+}
+

@@ -1,0 +1,297 @@
+{
+  "contentVersion": "0.1.0",
+  "tasks": [
+    {
+      "id": "task-ballistic-table-verification",
+      "nameKey": "tasks.task-ballistic-table-verification.name",
+      "descriptionKey": "tasks.task-ballistic-table-verification.description",
+      "type": "project",
+      "sortOrder": 10,
+      "offerYear": 1946,
+      "tags": ["serial", "cpu", "time-sensitive", "historical"],
+      "phases": [
+        {
+          "id": "phase-input-check",
+          "nameKey": "tasks.task-ballistic-table-verification.phase-input-check",
+          "operations": 120000,
+          "tags": ["serial", "high-precision"],
+          "memoryCapacityMinBytes": 128,
+          "memoryCapacityRecommendedBytes": 256,
+          "memoryBandwidthRequiredBytesPerSecond": 4000,
+          "latencyToleranceMicroseconds": 900,
+          "stabilityMinimum": 0.9
+        },
+        {
+          "id": "phase-trajectory-run",
+          "nameKey": "tasks.task-ballistic-table-verification.phase-trajectory-run",
+          "operations": 430000,
+          "tags": ["serial", "cpu", "time-sensitive"],
+          "memoryCapacityMinBytes": 256,
+          "memoryCapacityRecommendedBytes": 512,
+          "memoryBandwidthRequiredBytesPerSecond": 6000,
+          "latencyToleranceMicroseconds": 700,
+          "stabilityMinimum": 0.88
+        }
+      ],
+      "deadlineSeconds": 210,
+      "payoutUsd": 6200,
+      "periodicPayoutUsd": 0,
+      "periodicPayoutSeconds": null,
+      "abandonPenaltyUsd": 900,
+      "reputationReward": 8,
+      "researchDataReward": 20,
+      "evidenceTagRewards": ["evidence-tube-failure-log"],
+      "prerequisiteResearchIds": []
+    },
+    {
+      "id": "task-census-tabulation-service",
+      "nameKey": "tasks.task-census-tabulation-service.name",
+      "descriptionKey": "tasks.task-census-tabulation-service.description",
+      "type": "service",
+      "sortOrder": 20,
+      "offerYear": 1946,
+      "tags": ["bandwidth", "memory-heavy", "sustained", "historical"],
+      "phases": [
+        {
+          "id": "phase-tabulation",
+          "nameKey": "tasks.task-census-tabulation-service.phase-tabulation",
+          "operations": 999999999,
+          "tags": ["bandwidth", "memory-heavy", "sustained"],
+          "memoryCapacityMinBytes": 512,
+          "memoryCapacityRecommendedBytes": 2048,
+          "memoryBandwidthRequiredBytesPerSecond": 10000,
+          "latencyToleranceMicroseconds": 1600,
+          "stabilityMinimum": 0.82
+        }
+      ],
+      "deadlineSeconds": null,
+      "payoutUsd": 0,
+      "periodicPayoutUsd": 520,
+      "periodicPayoutSeconds": 60,
+      "abandonPenaltyUsd": 300,
+      "reputationReward": 3,
+      "researchDataReward": 0,
+      "evidenceTagRewards": [],
+      "prerequisiteResearchIds": []
+    },
+    {
+      "id": "task-wiring-layout-study",
+      "nameKey": "tasks.task-wiring-layout-study.name",
+      "descriptionKey": "tasks.task-wiring-layout-study.description",
+      "type": "research-experiment",
+      "sortOrder": 30,
+      "offerYear": 1946,
+      "tags": ["latency", "experimental", "research-unlock"],
+      "phases": [
+        {
+          "id": "phase-route-sampling",
+          "nameKey": "tasks.task-wiring-layout-study.phase-route-sampling",
+          "operations": 780000,
+          "tags": ["latency", "experimental"],
+          "memoryCapacityMinBytes": 256,
+          "memoryCapacityRecommendedBytes": 512,
+          "memoryBandwidthRequiredBytesPerSecond": 12000,
+          "latencyToleranceMicroseconds": 550,
+          "stabilityMinimum": 0.86
+        }
+      ],
+      "deadlineSeconds": 480,
+      "payoutUsd": 2600,
+      "periodicPayoutUsd": 0,
+      "periodicPayoutSeconds": null,
+      "abandonPenaltyUsd": 250,
+      "reputationReward": 5,
+      "researchDataReward": 34,
+      "evidenceTagRewards": ["evidence-layout-study"],
+      "prerequisiteResearchIds": ["research-stable-power-distribution"]
+    },
+    {
+      "id": "task-reactor-diffusion-study",
+      "nameKey": "tasks.task-reactor-diffusion-study.name",
+      "descriptionKey": "tasks.task-reactor-diffusion-study.description",
+      "type": "project",
+      "sortOrder": 40,
+      "offerYear": 1947,
+      "tags": ["multi-phase", "memory-heavy", "high-precision", "thermal"],
+      "phases": [
+        {
+          "id": "phase-parameter-load",
+          "nameKey": "tasks.task-reactor-diffusion-study.phase-parameter-load",
+          "operations": 420000,
+          "tags": ["memory-heavy", "bandwidth"],
+          "memoryCapacityMinBytes": 512,
+          "memoryCapacityRecommendedBytes": 2048,
+          "memoryBandwidthRequiredBytesPerSecond": 15000,
+          "latencyToleranceMicroseconds": 1300,
+          "stabilityMinimum": 0.9
+        },
+        {
+          "id": "phase-iterative-solve",
+          "nameKey": "tasks.task-reactor-diffusion-study.phase-iterative-solve",
+          "operations": 2100000,
+          "tags": ["parallel", "cpu", "thermal", "high-precision"],
+          "memoryCapacityMinBytes": 1024,
+          "memoryCapacityRecommendedBytes": 4096,
+          "memoryBandwidthRequiredBytesPerSecond": 18000,
+          "latencyToleranceMicroseconds": 1000,
+          "stabilityMinimum": 0.93
+        }
+      ],
+      "deadlineSeconds": 720,
+      "payoutUsd": 11800,
+      "periodicPayoutUsd": 0,
+      "periodicPayoutSeconds": null,
+      "abandonPenaltyUsd": 1800,
+      "reputationReward": 14,
+      "researchDataReward": 44,
+      "evidenceTagRewards": ["evidence-memory-timing"],
+      "prerequisiteResearchIds": ["research-forced-airflow"]
+    },
+    {
+      "id": "task-aerodynamic-load-matrix",
+      "nameKey": "tasks.task-aerodynamic-load-matrix.name",
+      "descriptionKey": "tasks.task-aerodynamic-load-matrix.description",
+      "type": "project",
+      "sortOrder": 50,
+      "offerYear": 1947,
+      "tags": ["parallel", "burst", "time-sensitive", "thermal"],
+      "phases": [
+        {
+          "id": "phase-load-cases",
+          "nameKey": "tasks.task-aerodynamic-load-matrix.phase-load-cases",
+          "operations": 2400000,
+          "tags": ["parallel", "burst", "time-sensitive", "thermal"],
+          "memoryCapacityMinBytes": 1024,
+          "memoryCapacityRecommendedBytes": 4096,
+          "memoryBandwidthRequiredBytesPerSecond": 22000,
+          "latencyToleranceMicroseconds": 850,
+          "stabilityMinimum": 0.88
+        }
+      ],
+      "deadlineSeconds": 420,
+      "payoutUsd": 13200,
+      "periodicPayoutUsd": 0,
+      "periodicPayoutSeconds": null,
+      "abandonPenaltyUsd": 2200,
+      "reputationReward": 16,
+      "researchDataReward": 38,
+      "evidenceTagRewards": ["evidence-clock-stability"],
+      "prerequisiteResearchIds": ["research-vacuum-tube-reliability"]
+    },
+    {
+      "id": "task-prime-number-survey",
+      "nameKey": "tasks.task-prime-number-survey.name",
+      "descriptionKey": "tasks.task-prime-number-survey.description",
+      "type": "project",
+      "sortOrder": 60,
+      "offerYear": 1947,
+      "tags": ["serial", "sustained", "cpu"],
+      "phases": [
+        {
+          "id": "phase-prime-search",
+          "nameKey": "tasks.task-prime-number-survey.phase-prime-search",
+          "operations": 3200000,
+          "tags": ["serial", "sustained", "cpu"],
+          "memoryCapacityMinBytes": 512,
+          "memoryCapacityRecommendedBytes": 2048,
+          "memoryBandwidthRequiredBytesPerSecond": 9000,
+          "latencyToleranceMicroseconds": 600,
+          "stabilityMinimum": 0.9
+        }
+      ],
+      "deadlineSeconds": 900,
+      "payoutUsd": 9600,
+      "periodicPayoutUsd": 0,
+      "periodicPayoutSeconds": null,
+      "abandonPenaltyUsd": 750,
+      "reputationReward": 11,
+      "researchDataReward": 46,
+      "evidenceTagRewards": [],
+      "prerequisiteResearchIds": ["research-vacuum-tube-reliability"]
+    },
+    {
+      "id": "task-semiconductor-effect-analysis",
+      "nameKey": "tasks.task-semiconductor-effect-analysis.name",
+      "descriptionKey": "tasks.task-semiconductor-effect-analysis.description",
+      "type": "research-experiment",
+      "sortOrder": 70,
+      "offerYear": 1948,
+      "tags": ["experimental", "high-precision", "research-unlock", "historical"],
+      "phases": [
+        {
+          "id": "phase-signal-cleaning",
+          "nameKey": "tasks.task-semiconductor-effect-analysis.phase-signal-cleaning",
+          "operations": 950000,
+          "tags": ["bandwidth", "high-precision"],
+          "memoryCapacityMinBytes": 1024,
+          "memoryCapacityRecommendedBytes": 4096,
+          "memoryBandwidthRequiredBytesPerSecond": 24000,
+          "latencyToleranceMicroseconds": 800,
+          "stabilityMinimum": 0.94
+        },
+        {
+          "id": "phase-model-fitting",
+          "nameKey": "tasks.task-semiconductor-effect-analysis.phase-model-fitting",
+          "operations": 2850000,
+          "tags": ["serial", "experimental", "high-precision"],
+          "memoryCapacityMinBytes": 2048,
+          "memoryCapacityRecommendedBytes": 4096,
+          "memoryBandwidthRequiredBytesPerSecond": 16000,
+          "latencyToleranceMicroseconds": 650,
+          "stabilityMinimum": 0.96
+        }
+      ],
+      "deadlineSeconds": 960,
+      "payoutUsd": 8800,
+      "periodicPayoutUsd": 0,
+      "periodicPayoutSeconds": null,
+      "abandonPenaltyUsd": 1200,
+      "reputationReward": 18,
+      "researchDataReward": 70,
+      "evidenceTagRewards": ["evidence-semiconductor-effect"],
+      "prerequisiteResearchIds": ["research-delay-line-memory"]
+    },
+    {
+      "id": "task-stored-program-demonstration",
+      "nameKey": "tasks.task-stored-program-demonstration.name",
+      "descriptionKey": "tasks.task-stored-program-demonstration.description",
+      "type": "project",
+      "sortOrder": 80,
+      "offerYear": 1948,
+      "tags": ["multi-phase", "memory-heavy", "high-precision", "historical"],
+      "phases": [
+        {
+          "id": "phase-program-load",
+          "nameKey": "tasks.task-stored-program-demonstration.phase-program-load",
+          "operations": 1100000,
+          "tags": ["memory-heavy", "bandwidth"],
+          "memoryCapacityMinBytes": 2048,
+          "memoryCapacityRecommendedBytes": 4096,
+          "memoryBandwidthRequiredBytesPerSecond": 26000,
+          "latencyToleranceMicroseconds": 900,
+          "stabilityMinimum": 0.93
+        },
+        {
+          "id": "phase-program-run",
+          "nameKey": "tasks.task-stored-program-demonstration.phase-program-run",
+          "operations": 4200000,
+          "tags": ["serial", "parallel", "sustained", "high-precision"],
+          "memoryCapacityMinBytes": 4096,
+          "memoryCapacityRecommendedBytes": 8192,
+          "memoryBandwidthRequiredBytesPerSecond": 30000,
+          "latencyToleranceMicroseconds": 700,
+          "stabilityMinimum": 0.95
+        }
+      ],
+      "deadlineSeconds": 1200,
+      "payoutUsd": 18500,
+      "periodicPayoutUsd": 0,
+      "periodicPayoutSeconds": null,
+      "abandonPenaltyUsd": 3000,
+      "reputationReward": 24,
+      "researchDataReward": 82,
+      "evidenceTagRewards": [],
+      "prerequisiteResearchIds": ["research-blueprint-documentation", "research-high-frequency-clock"]
+    }
+  ]
+}
