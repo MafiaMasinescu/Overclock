@@ -5,6 +5,7 @@ import { parseSimCommand } from "../commands/commandSchema.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "../commands/contracts.ts";
 import { canonicalSerialize } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
+import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import { AuthoritativeState } from "./authoritativeState.ts";
 import {
   TICK_SYSTEM_STAGE_ORDER,
@@ -239,6 +240,7 @@ export class SimCore {
         candidate.rngState = candidateRng.getState();
         this.assertSystemControlledFields(candidate, current);
         assertValidRngState(candidate.rngState);
+        assertValidInventoryEconomyState(candidate);
         canonicalSerialize(candidate);
       } catch (cause: unknown) {
         throw new TickSystemInvariantError(current.tick, stage, cause);

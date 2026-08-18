@@ -10,6 +10,10 @@
   },
   "errors": {
     "command-not-available": "Comanda nu este disponibilă încă.",
+    "insufficient-cash": "Fonduri insuficiente.",
+    "insufficient-inventory": "Inventar insuficient.",
+    "invalid-payload": "Comanda conține date invalide.",
+    "research-required": "Cercetarea necesară nu este finalizată.",
     "stale-tick": "Comanda a fost creată pentru un alt tick al simulării."
   },
   "modules": {

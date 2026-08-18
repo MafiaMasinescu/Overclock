@@ -289,12 +289,12 @@ Fișierele din `contracts/src/` ale acestui pachet sunt contracte de pornire. Î
 | Memory capacity | bytes |
 | Bandwidth | bytes per second |
 | Latency | microseconds |
-| Cash | USD, number cu rotunjire la 2 zecimale la tranzacții |
+| Cash | USD, `number` autoritativ cuantizat la 6 zecimale prin microdolari |
 | Grid position | coordonate integer `x`, `y` |
 | Rotation | 0, 90, 180 sau 270 |
 | Ratio/factor | număr finit, documentat și limitat |
 
-Simulatorul păstrează calculele interne cu `number`. Aplică rotunjire numai la granițele definite. Cash se normalizează după tranzacție. Valorile de UI se formatează separat și nu reintră în simulator.
+Simulatorul păstrează câmpurile monetare publice ca `number`, dar execută mutațiile monetare autoritative prin aritmetică internă în microdolari, unde 1 USD = 1.000.000 microdolari. La granițele monetare, valorile se cuantizează la 6 zecimale USD cu rotunjire la jumătate în sensul îndepărtării de zero (`round-half-away-from-zero`). UI-ul afișează de regulă Cash cu 2 zecimale, iar statisticile extinse pot expune valori sub-cent. Formatarea UI rămâne separată și nu reintră niciodată în simulator. Precizia autoritativă sub-cent este necesară pentru costurile deterministe de energie; de exemplu, 24.000 W timp de 0,1 secunde la 0,042 USD/kWh costă 0,000028 USD.
 
 ## 10. State-ul autoritativ
 

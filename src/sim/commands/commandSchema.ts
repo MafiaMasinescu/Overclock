@@ -5,6 +5,7 @@ import type { SimCommand } from "./contracts.ts";
 
 const finiteNumberSchema = z.number();
 const integerSchema = finiteNumberSchema.int();
+const positiveSafeIntegerSchema = integerSchema.positive().max(Number.MAX_SAFE_INTEGER);
 const expectedTickSchema = integerSchema.nonnegative().max(Number.MAX_SAFE_INTEGER);
 const identifierSchema = z.string();
 const identifierArraySchema = z.array(identifierSchema);
@@ -38,13 +39,13 @@ const buyModuleSchema = z.strictObject({
   ...commandMetaShape,
   kind: z.literal("BUY_MODULE"),
   definitionId: identifierSchema,
-  quantity: integerSchema,
+  quantity: positiveSafeIntegerSchema,
 });
 const sellInventoryItemSchema = z.strictObject({
   ...commandMetaShape,
   kind: z.literal("SELL_INVENTORY_ITEM"),
   definitionId: identifierSchema,
-  quantity: integerSchema,
+  quantity: positiveSafeIntegerSchema,
 });
 const placeModuleSchema = z.strictObject({
   ...commandMetaShape,

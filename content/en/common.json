@@ -10,6 +10,10 @@
   },
   "errors": {
     "command-not-available": "This command is not available yet.",
+    "insufficient-cash": "Insufficient cash.",
+    "insufficient-inventory": "Insufficient inventory.",
+    "invalid-payload": "The command payload is invalid.",
+    "research-required": "The required research is not completed.",
     "stale-tick": "The command was created for a different simulation tick."
   },
   "modules": {

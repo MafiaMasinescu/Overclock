@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
+import { validateContent } from "../../src/content/loader/contentLoader.ts";
+import { createRawContentPack } from "../../src/content/loader/rawContentPack.ts";
 import type {
   ContentBundle,
   LocalizationDictionary,
@@ -157,6 +159,35 @@ describe("initial GameState", () => {
     expect(createInitialGameState({ content: reorderedContent, seed: "ordered-content" })).toEqual(
       createInitialGameState({ content, seed: "ordered-content" }),
     );
+  });
+
+  test("quantizes initial cash and acquisition costs and omits zero-quantity stacks", () => {
+    const raw = createRawContentPack();
+    raw.era.era.startingCashUsd = 32_000.0000005;
+    const firstStartingStack = raw.era.era.startingInventory[0];
+    const secondStartingStack = raw.era.era.startingInventory[1];
+    if (firstStartingStack === undefined || secondStartingStack === undefined) {
+      throw new Error("Expected two starting inventory fixtures.");
+    }
+    firstStartingStack.quantity = 0;
+    const secondDefinition = raw.modules.modules.find(
+      ({ id }) => id === secondStartingStack.definitionId,
+    );
+    if (secondDefinition === undefined) {
+      throw new Error("Expected the second starting module definition.");
+    }
+    secondDefinition.priceUsd = 1.0000005;
+
+    const state = createInitialGameState({
+      content: validateContent(raw),
+      seed: "quantized-initial-money",
+    });
+
+    expect(state.economy.cashUsd).toBe(32_000.000001);
+    expect(state.inventory.stacks[firstStartingStack.definitionId]).toBeUndefined();
+    expect(
+      state.inventory.stacks[secondStartingStack.definitionId]?.averageAcquisitionCostUsd,
+    ).toBe(1.000001);
   });
 
   test("creates the same canonical state and hash in at least 100 runs", () => {

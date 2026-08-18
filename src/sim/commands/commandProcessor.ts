@@ -1,9 +1,14 @@
 import type { GameState } from "../core/types.ts";
 import { AuthoritativeState } from "../core/authoritativeState.ts";
+import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import { canonicalSerialize } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "./contracts.ts";
-import { dispatchRegisteredCommand, type CommandHandlerRegistry } from "./commandHandlers.ts";
+import {
+  dispatchRegisteredCommand,
+  type CommandHandlerRegistry,
+  type CommandHandlerRejection,
+} from "./commandHandlers.ts";
 import { CommandQueue } from "./commandQueue.ts";
 
 export const SIMULATOR_INVARIANT_VIOLATION = "SIMULATOR_INVARIANT_VIOLATION" as const;
@@ -40,19 +45,31 @@ function validateCandidateState(candidate: GameState, expectedTick: number): voi
   if (candidate.tick !== expectedTick) {
     throw new Error("Command handlers must not advance or replace the current simulation tick.");
   }
+  assertValidInventoryEconomyState(candidate);
 }
 
 function createRejectedResult(
   command: SimCommand,
   tick: number,
-  reason: "STALE_TICK" | "COMMAND_NOT_AVAILABLE",
+  rejection: "STALE_TICK" | "COMMAND_NOT_AVAILABLE" | CommandHandlerRejection,
 ): CommandResult {
+  if (typeof rejection !== "string") {
+    return {
+      commandId: command.commandId,
+      accepted: false,
+      rejectedAtTick: tick,
+      code: rejection.code,
+      messageKey: rejection.messageKey,
+      ...(rejection.parameters === undefined ? {} : { parameters: { ...rejection.parameters } }),
+    };
+  }
+
   return {
     commandId: command.commandId,
     accepted: false,
     rejectedAtTick: tick,
-    code: reason,
-    messageKey: reason === "STALE_TICK" ? "errors.stale-tick" : "errors.command-not-available",
+    code: rejection,
+    messageKey: rejection === "STALE_TICK" ? "errors.stale-tick" : "errors.command-not-available",
   };
 }
 
@@ -65,6 +82,7 @@ export class CommandProcessor {
     { initialState, handlers = {} }: CommandProcessorOptions,
     dependencies: CommandProcessorDependencies = {},
   ) {
+    assertValidInventoryEconomyState(initialState);
     this.state = dependencies.state ?? new AuthoritativeState(initialState);
     this.queue = dependencies.queue ?? new CommandQueue();
     this.handlers = handlers;
@@ -104,14 +122,17 @@ export class CommandProcessor {
     try {
       const candidate = cloneState(authoritativeState);
       const candidateRng = createSeededRngFromState(candidate.rngState);
-      const handled = dispatchRegisteredCommand(
+      const outcome = dispatchRegisteredCommand(
         this.handlers,
         { state: candidate, rng: candidateRng },
         command,
       );
 
-      if (!handled) {
+      if (outcome === false) {
         return createRejectedResult(command, currentTick, "COMMAND_NOT_AVAILABLE");
+      }
+      if (outcome !== true) {
+        return createRejectedResult(command, currentTick, outcome);
       }
 
       candidate.rngState = candidateRng.getState();

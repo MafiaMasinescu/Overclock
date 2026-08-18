@@ -34,11 +34,20 @@ describe("application localization", () => {
       "Comanda a fost creată pentru un alt tick al simulării.",
     );
 
+    expect(i18n.t("errors.invalid-payload")).toBe("Comanda conține date invalide.");
+    expect(i18n.t("errors.insufficient-cash")).toBe("Fonduri insuficiente.");
+    expect(i18n.t("errors.insufficient-inventory")).toBe("Inventar insuficient.");
+    expect(i18n.t("errors.research-required")).toBe("Cercetarea necesară nu este finalizată.");
+
     await i18n.changeLanguage("en");
 
     expect(i18n.t("errors.command-not-available")).toBe("This command is not available yet.");
     expect(i18n.t("errors.stale-tick")).toBe(
       "The command was created for a different simulation tick.",
     );
+    expect(i18n.t("errors.invalid-payload")).toBe("The command payload is invalid.");
+    expect(i18n.t("errors.insufficient-cash")).toBe("Insufficient cash.");
+    expect(i18n.t("errors.insufficient-inventory")).toBe("Insufficient inventory.");
+    expect(i18n.t("errors.research-required")).toBe("The required research is not completed.");
   });
 });

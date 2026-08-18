@@ -1,4 +1,5 @@
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
+import { quantizeUsd } from "../economy/money.ts";
 import { seedToUint32 } from "../rng/seededRng.ts";
 import type { GameState, ResearchStatus, ThermalTileState } from "./types.ts";
 
@@ -40,6 +41,9 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
   for (const stack of content.era.startingInventory.toSorted((left, right) =>
     compareStableIds(left.definitionId, right.definitionId),
   )) {
+    if (stack.quantity === 0) {
+      continue;
+    }
     const definition = content.modules[stack.definitionId];
     if (definition === undefined) {
       throw new Error(`Starting inventory references unknown module: ${stack.definitionId}`);
@@ -47,7 +51,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
     inventoryStacks[stack.definitionId] = {
       definitionId: stack.definitionId,
       quantity: stack.quantity,
-      averageAcquisitionCostUsd: definition.priceUsd,
+      averageAcquisitionCostUsd: quantizeUsd(definition.priceUsd),
     };
   }
 
@@ -87,7 +91,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
       verticalSliceCompleted: false,
     },
     economy: {
-      cashUsd: content.era.startingCashUsd,
+      cashUsd: quantizeUsd(content.era.startingCashUsd),
       creditLimitUsd: 0,
       energyPriceUsdPerKwh: content.balancing.economy.defaultEnergyPriceUsdPerKwh,
       lastTickIncomeUsd: 0,

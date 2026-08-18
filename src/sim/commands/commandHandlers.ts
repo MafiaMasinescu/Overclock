@@ -1,6 +1,6 @@
 import type { GameState } from "../core/types.ts";
 import type { SeededRng } from "../rng/seededRng.ts";
-import type { SimCommand } from "./contracts.ts";
+import type { CommandRejectionCode, SimCommand } from "./contracts.ts";
 
 type CommandKind = SimCommand["kind"];
 type CommandOfKind<Kind extends CommandKind> = Extract<SimCommand, { kind: Kind }>;
@@ -17,10 +17,24 @@ export interface CommandHandlerContext {
   rng: SeededRng;
 }
 
-export type CommandHandler<Kind extends CommandKind> = (
+export interface CommandHandlerRejection {
+  readonly code: CommandRejectionCode;
+  readonly messageKey: string;
+  readonly parameters?: Readonly<Record<string, string | number | boolean>>;
+}
+
+type AcceptingCommandHandler<Kind extends CommandKind> = (
   context: CommandHandlerContext,
   command: DeepReadonly<CommandOfKind<Kind>>,
 ) => void;
+
+type RejectingCommandHandler<Kind extends CommandKind> = (
+  context: CommandHandlerContext,
+  command: DeepReadonly<CommandOfKind<Kind>>,
+) => CommandHandlerRejection;
+
+export type CommandHandler<Kind extends CommandKind> =
+  AcceptingCommandHandler<Kind> | RejectingCommandHandler<Kind>;
 
 export type CommandHandlerRegistry = {
   [Kind in CommandKind]?: CommandHandler<Kind>;
@@ -30,13 +44,14 @@ function invokeHandler<Kind extends CommandKind>(
   handler: CommandHandler<Kind> | undefined,
   context: CommandHandlerContext,
   command: DeepReadonly<CommandOfKind<Kind>>,
-): boolean {
+): CommandDispatchOutcome {
   if (handler === undefined) {
     return false;
   }
-  handler(context, command);
-  return true;
+  return handler(context, command) ?? true;
 }
+
+export type CommandDispatchOutcome = boolean | CommandHandlerRejection;
 
 function assertNever(command: never): never {
   throw new Error(`Unhandled command kind: ${JSON.stringify(command)}`);
@@ -46,7 +61,7 @@ export function dispatchRegisteredCommand(
   handlers: CommandHandlerRegistry,
   context: CommandHandlerContext,
   command: SimCommand,
-): boolean {
+): CommandDispatchOutcome {
   switch (command.kind) {
     case "SET_PAUSED":
       return invokeHandler(handlers.SET_PAUSED, context, command);

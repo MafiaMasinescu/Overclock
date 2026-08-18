@@ -62,6 +62,29 @@ Task 3 registers no production gameplay system. Host scheduling, timers, catch-u
 save/load, snapshots, events, and the later Phase 1 gameplay domains remain deferred. Compatibility
 details are fixed by `docs/decisions/ADR-0003_DETERMINISTIC_TICK_PIPELINE.md`.
 
+## Task 4: Inventory transactions and basic economy
+
+Status: implemented, pending final review and approval.
+
+Task 4 includes only:
+
+- content-injected production handlers for `BUY_MODULE` and `SELL_INVENTORY_ITEM` through the
+  existing command processor and `SimCore` registry;
+- recoverable typed handler outcomes that preserve ADR-0002 fatal exception behavior;
+- deterministic integer-microdollar arithmetic behind the existing public USD `number` fields;
+- atomic purchases with research gating, exact credit-boundary support, stack creation/merge, and
+  weighted acquisition cost;
+- inventory-only sales using current price and salvage ratio, unit-value quantization, partial-stack
+  cost preservation, and full-stack removal;
+- lifetime income and expense updates while per-tick flow fields remain unchanged;
+- a pure quantized energy-cost helper without a production energy-charge tick system;
+- narrow inventory/economy state validation, localization, determinism, overflow, and performance
+  coverage.
+
+Task 4 does not place or sell installed modules, charge energy, progress research, add financing or
+financial game-over behavior, or implement any other gameplay command. Compatibility details are
+fixed by `docs/decisions/ADR-0004_DETERMINISTIC_INVENTORY_AND_BASIC_ECONOMY.md`.
+
 ## Nu implementa
 
 - React panels;

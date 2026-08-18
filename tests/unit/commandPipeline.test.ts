@@ -134,6 +134,34 @@ describe("deterministic command queue and processing", () => {
     expect(processor.getState().rngState).toBe(initialState.rngState);
   });
 
+  test("returns a recoverable handler rejection without committing candidate state or RNG", () => {
+    const initialState = createState();
+    const handlers: CommandHandlerRegistry = {
+      SET_GUIDANCE_MODE({ state, rng }) {
+        state.economy.cashUsd -= 1;
+        rng.nextUint32();
+        return {
+          code: "INVALID_PAYLOAD",
+          messageKey: "errors.invalid-payload",
+        };
+      },
+    };
+    const processor = new CommandProcessor({ initialState, handlers });
+    processor.enqueue(setGuidanceCommand(IDS.first));
+
+    expect(processor.processQueuedCommands()).toEqual([
+      {
+        commandId: IDS.first,
+        accepted: false,
+        rejectedAtTick: 0,
+        code: "INVALID_PAYLOAD",
+        messageKey: "errors.invalid-payload",
+      },
+    ]);
+    expect(hashCanonicalState(processor.getState())).toBe(hashCanonicalState(initialState));
+    expect(processor.getState().rngState).toBe(initialState.rngState);
+  });
+
   test("accepts exact expectedTick and commits a test handler exactly once without advancing tick", () => {
     const appliedIds: string[] = [];
     const initialState = createState();

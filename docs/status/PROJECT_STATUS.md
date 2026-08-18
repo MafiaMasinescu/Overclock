@@ -5,10 +5,12 @@ Updated: 2026-08-18
 ## Current phase
 
 - Phase 1: Headless Simulator.
-- Completed checkpoint: Task 2, typed command pipeline foundation, committed at `52081df`.
-- Current task: Task 3, deterministic fixed-step 100 ms tick pipeline, implemented and pending
-  final review and approval.
-- No production gameplay command handler or gameplay tick system has started.
+- Completed checkpoint: Task 3, deterministic fixed-step 100 ms tick pipeline, committed at
+  `f025302`.
+- Current task: Task 4, deterministic inventory transactions and basic economy, implemented and
+  pending final review and approval.
+- Production gameplay commands are limited to `BUY_MODULE` and `SELL_INVENTORY_ITEM`. No production
+  gameplay tick system has started.
 
 ## Implemented deterministic foundation
 
@@ -19,7 +21,7 @@ Updated: 2026-08-18
 - Stable FNV-1a 64-bit canonical state hashing.
 - Content-derived initial `GameState` factory with deterministic collection ordering.
 - Recursive JSON-only type contract for design-draft payloads.
-- Romanian and English localization coverage for initial state and Task 2 command rejections.
+- Romanian and English localization coverage for initial state and Task 2/Task 4 command rejections.
 - Determinism coverage includes 100 repeated runs plus fixed ASCII and Unicode vectors.
 
 ## Phase 1 Task 2 implementation
@@ -34,8 +36,9 @@ Updated: 2026-08-18
 - `CommandHandlerRegistry` is partial and preserves kind-specific command payload typing through
   `Extract<SimCommand, { kind: K }>`.
 - Exhaustive dispatch makes a new `SimCommand` kind a compile-time error until dispatch is updated.
-- No production command handlers are registered. Structurally valid commands therefore reject with
-  `COMMAND_NOT_AVAILABLE` unless tests inject a private handler.
+- Task 2 registered no production handlers. Task 4 adds an explicit content-injected factory for
+  the two inventory commands; all other queued gameplay commands remain unavailable unless tests
+  inject a private handler.
 
 ## Phase 1 Task 3 implementation
 
@@ -65,6 +68,38 @@ Updated: 2026-08-18
   canonical-serialize, or hash the complete state.
 - `getStateForSave()` returns a detached, canonically serializable plain-data snapshot.
 
+## Phase 1 Task 4 implementation
+
+- `CommandHandler` remains source-compatible with existing `void` handlers and may now return a
+  typed recoverable rejection. Returned rejections discard the candidate state and RNG; actual
+  throws retain ADR-0002 fatal behavior.
+- `createInventoryEconomyCommandHandlers(content)` injects the validated immutable `ContentBundle`
+  and registers only `BUY_MODULE` and `SELL_INVENTORY_ITEM` through the existing registry.
+- Public economy and inventory money remains USD `number`. Internal helpers use safe integer
+  microdollars, where 1 USD is 1,000,000 microdollars, and round half away from zero at monetary
+  boundaries.
+- Ordinary UI cash presentation uses two decimal places, while expanded statistics may expose
+  sub-cent values. UI formatting is presentation-only and never re-enters the simulator.
+- Purchases use the current quantized content price, require every module unlock research status to
+  be `completed`, precompute the complete transaction, allow equality at zero cash and the negative
+  credit limit, and reject atomically below it.
+- New stacks record current unit cost. Existing stacks use a safe integer weighted acquisition-cost
+  calculation rounded to the nearest microdollar.
+- Sales use `quantize(current price * salvage ratio)` as unit proceeds before quantity
+  multiplication. They ignore research state and acquisition cost, preserve acquisition cost on a
+  partial sale, remove zero-remainder stacks, and never inspect or mutate installed facility
+  modules.
+- Purchases increase lifetime `totalExpenseUsd`; sales increase lifetime `totalIncomeUsd`.
+  `lastTickExpenseUsd` and `lastTickIncomeUsd` remain unchanged because discrete commands are not
+  periodic tick flows.
+- The pure energy helper computes `powerWatts * simulatedSeconds / 3,600,000 * priceUsdPerKwh`,
+  validates finite nonnegative inputs and overflow, and quantizes the final cost. No energy-charge
+  system or authoritative deduction is registered.
+- Initial cash and acquisition costs are microdollar-normalized, zero starting stacks are omitted,
+  and command/system candidates enforce the focused inventory/economy invariants.
+- Transactions consume no RNG and preserve FIFO order, processing-time expected-tick checks,
+  candidate isolation, atomic commit/rejection, and JSON serialization.
+
 ## Public types and APIs
 
 - Existing public contracts preserved in `src/sim/commands/contracts.ts`:
@@ -81,6 +116,8 @@ Updated: 2026-08-18
   - `CommandQueue.pendingCount`
 - `src/sim/commands/commandHandlers.ts`:
   - `CommandHandlerContext`
+  - `CommandHandlerRejection`
+  - `CommandDispatchOutcome`
   - `CommandHandler<K>`
   - `CommandHandlerRegistry`
   - `dispatchRegisteredCommand(...)`
@@ -110,6 +147,21 @@ Updated: 2026-08-18
   - `TickSystemStage`
   - `TickSystemContext`
   - `TickSystemRegistry`
+- `src/sim/economy/money.ts`:
+  - `MICRODOLLARS_PER_USD`
+  - `usdToMicrodollars(valueUsd): number`
+  - `microdollarsToUsd(valueMicrodollars): number`
+  - `quantizeUsd(valueUsd): number`
+  - `isMicrodollarAlignedUsd(valueUsd): boolean`
+  - `addMicrodollars(left, right): number`
+  - `multiplyMicrodollars(value, multiplier): number`
+  - `divideMicrodollarsHalfAwayFromZero(numerator, denominator): number`
+  - `calculateEnergyCostUsd(powerWatts, simulatedSeconds, energyPriceUsdPerKwh): number`
+- `src/sim/economy/inventoryEconomyState.ts`:
+  - `assertValidInventoryEconomyState(state): void`
+- `src/sim/economy/inventoryTransactions.ts`:
+  - `InventoryEconomyCommandHandlers`
+  - `createInventoryEconomyCommandHandlers(content): InventoryEconomyCommandHandlers`
 
 ## Queue, result, and atomicity semantics
 
@@ -120,6 +172,9 @@ Updated: 2026-08-18
 - `expectedTick`, when present, must equal the current processing tick. Past and future values reject
   with `STALE_TICK` and processing continues.
 - Recoverable rejection preserves the authoritative canonical hash and RNG state.
+- A registered handler may return `CommandHandlerRejection`; the processor emits it as a normal
+  rejection without committing candidate state or RNG. Handler throws remain fatal invariant
+  failures.
 - Each registered handler receives an isolated candidate state and candidate RNG. A completed
   candidate is validated and committed exactly once.
 - Handler exceptions and post-handler invariant failures throw `SimulatorInvariantError`, roll back
@@ -153,6 +208,9 @@ Updated: 2026-08-18
   public `CommandRejectionCode`.
 - Command compatibility details are recorded in
   `docs/decisions/ADR-0002_COMMAND_PIPELINE_FOUNDATION.md`.
+- Authoritative money uses 1,000,000 microdollars per USD and round-half-away-from-zero at monetary
+  boundaries. Purchase and sale formula ordering is frozen by
+  `docs/decisions/ADR-0004_DETERMINISTIC_INVENTORY_AND_BASIC_ECONOMY.md`.
 
 ## Temporary assumptions
 
@@ -170,16 +228,25 @@ Updated: 2026-08-18
   measuring the complete fixture.
 - Canonical candidate validation runs after each injected system stage. Production Task 3 registers
   no systems, so the empty hot path avoids full-state serialization.
+- The temporary initial credit limit remains `0`; tests may supply another finite nonnegative value.
+- Content prices and salvage ratios remain current-version inputs. Task 4 adds no market history,
+  scarcity, inflation, or price snapshot to inventory stacks.
 
 ## Verification
 
-- Focused tick and clock tests: PASS, 1 file and 43 tests.
-- Focused Task 2 and Task 3 regression tests: PASS, 3 files and 71 tests.
-- Complete unit suite: PASS, 10 files and 113 tests.
-- Determinism fixture: PASS, identical receipts, results, and final hash across 100 runs.
+- Focused Task 4 tests: PASS, 6 files and 82 tests.
+- Focused Task 2 and Task 3 regression tests: PASS, 4 files and 73 tests.
+- Complete unit suite: PASS, 13 files and 177 tests.
+- Determinism suite: PASS, including identical Task 4 receipts, command results, final state hash,
+  and RNG state across exactly 100 runs.
+- Published compatibility vectors: PASS;
+  `seedToUint32("phase-one") === 2799575867` and
+  `hashCanonicalState({ a: 1 }) === "9c3e82dd6fcae8b1"`.
 - Performance diagnostic: PASS as a report-only command. Empty pipeline median `0.0004 ms`, p95
-  `0.0027 ms`, max `0.7443 ms`; controlled private fixture median `5.8395 ms`, p95 `9.6400 ms`,
-  max `13.2946 ms`. These development-machine results are not a final target-hardware claim.
+  `0.0017 ms`, max `0.6836 ms`; controlled private fixture median `6.3554 ms`, p95 `8.2085 ms`,
+  max `165.1710 ms`. The Task 3 empty baseline was median `0.0004 ms`, p95 `0.0027 ms`, max
+  `0.7443 ms`, so Task 4 introduces no material empty-tick regression. The controlled maximum is a
+  development-machine outlier, not a final target-hardware claim.
 - Formatting check: PASS.
 - ESLint: PASS.
 - Strict TypeScript checking: PASS.
@@ -188,10 +255,11 @@ Updated: 2026-08-18
 - `corepack pnpm validate`: PASS.
 - `git diff --check`: PASS.
 - Simulator forbidden import/API scan: PASS; no random, wall-clock, scheduling, React, PixiJS, DOM,
-  browser storage, or worker matches.
-- Read-only implementation review: PASS after fixing clock-handler injection, exact invalid-stage
-  attribution, retained system-candidate mutation, and a strict typing failure; targeted re-review
-  found no remaining Critical or Important issue.
+  browser storage, or worker matches in `src/sim`.
+- GDD and gameplay balance-content drift checks: PASS; those files are unchanged. The Markdown TDD
+  monetary-precision text is aligned with ADR-0004's approved six-decimal microdollar rule.
+- Read-only implementation review: PASS with no Critical or Important issue found. The review was
+  local because this task's collaboration policy did not authorize a reviewer subagent.
 
 ## Known risks
 
@@ -199,8 +267,8 @@ Updated: 2026-08-18
   risk.
 - Canonically equivalent Unicode strings in different normalization forms produce different seeds,
   hashes, and command IDs if the client supplies different text.
-- Full gameplay-specific candidate invariant validation remains intentionally deferred until concrete
-  handlers exist.
+- Full gameplay-wide candidate invariant validation remains intentionally deferred; Task 4 adds only
+  inventory/economy invariants.
 - Queue capacity, duplicate-command policy, worker transport errors, and delivery of results emitted
   before a later fatal failure require future host/replay decisions.
 - Save checksum and migration behavior are not implemented; the TDD reserves SHA-256 for save
@@ -211,17 +279,27 @@ Updated: 2026-08-18
 - `SimulatorInvariantError.commandId` uses an internal diagnostic identifier for tick-system errors
   so the Task 2 command-error field remains backward compatible; tick-system consumers should use
   the added `tick` and `stage` diagnostics.
+- Six-decimal public USD values remain IEEE-754 numbers. Canonical conversion is deterministic for
+  the checked safe microdollar range, but future monetary systems must continue using the helpers
+  instead of ad hoc floating-point arithmetic.
+- The transaction registry is intentionally explicit: callers must inject the validated immutable
+  content bundle and pass the returned handlers to the existing processor or `SimCore` registry.
+- The final i7-2600 under-4-ms performance gate remains open until the complete controlled vertical
+  slice fixture exists.
 
 ## Exact next task
 
-Await review and approval of Phase 1 Task 3. Do not start Task 4 or any later gameplay system without
-separate approval.
+Phase 1 Task 5: grid occupancy, rotation, footprints, and ports. Do not start it without separate
+approval.
 
 ## Explicitly deferred
 
 - Real-time tick scheduling, timers, catch-up, pause/speed host scheduling, and worker integration.
-- Every production gameplay command handler.
-- Economy, inventory transactions, tasks, and research progression.
-- Grid placement, routing, power delivery, thermal simulation, and overclock behavior.
+- Every production gameplay command handler except `BUY_MODULE` and `SELL_INVENTORY_ITEM`.
+- Automatic energy deductions, power capacity purchases, labor and relocation costs, task rewards,
+  research costs/progression, maintenance, inflation, market events, scarcity, financing, interest,
+  insolvency, bailout, bankruptcy, and financial game over.
+- Grid placement, installed-module sales, routing, power delivery, thermal simulation, and overclock
+  behavior.
 - Useful Compute, benchmarks, blueprints, replay execution, and balancing bot.
 - React/Pixi integration, IndexedDB, save/load, migrations, export, and import.
