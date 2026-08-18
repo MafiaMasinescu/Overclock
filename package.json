@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:determinism": "vitest run tests/determinism",
+    "performance:grid": "node tests/performance/gridGeometry.performance.ts",
     "performance:tick": "node tests/performance/tickPipeline.performance.ts",
     "test:e2e": "playwright test",
     "validate": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm content:validate && corepack pnpm test:unit && corepack pnpm build"

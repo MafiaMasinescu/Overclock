@@ -28,7 +28,7 @@ export const moduleDefinitionSchema = z.object({
   tags: z.array(idSchema),
   footprint: z.object({
     width: z.number().int().min(1).max(3),
-    height: z.number().int().min(1).max(3),
+    height: z.number().int().min(1).max(2),
   }),
   ports: z.array(modulePortSchema),
   priceUsd: finiteNonNegativeSchema,
@@ -208,6 +208,7 @@ export const balancingFileSchema = z.object({
 });
 
 export type ModuleDefinition = z.infer<typeof moduleDefinitionSchema>;
+export type ModulePortDefinition = z.infer<typeof modulePortSchema>;
 export type TaskDefinition = z.infer<typeof taskDefinitionSchema>;
 export type ResearchNodeDefinition = z.infer<typeof researchNodeSchema>;
 export type EraDefinition = z.infer<typeof eraFileSchema>["era"];

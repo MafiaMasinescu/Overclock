@@ -5,10 +5,11 @@ Updated: 2026-08-18
 ## Current phase
 
 - Phase 1: Headless Simulator.
-- Completed checkpoint: Task 3, deterministic fixed-step 100 ms tick pipeline, committed at
-  `f025302`.
-- Current task: Task 4, deterministic inventory transactions and basic economy, implemented and
-  pending final review and approval.
+- Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
+  `8e80b00` and explicitly approved on 18 August 2026.
+- Completed checkpoint: Task 5.1, deterministic grid geometry, occupancy, footprint rotation, port
+  geometry, compatibility, and derived adjacent-port graph, explicitly approved on 18 August 2026.
+- Phase 1 Task 5.2 has not started.
 - Production gameplay commands are limited to `BUY_MODULE` and `SELL_INVENTORY_ITEM`. No production
   gameplay tick system has started.
 
@@ -100,6 +101,30 @@ Updated: 2026-08-18
 - Transactions consume no RNG and preserve FIFO order, processing-time expected-tick checks,
   candidate isolation, atomic commit/rejection, and JSON serialization.
 
+## Phase 1 Task 5.1 implementation
+
+- Coordinates use a zero-based top-left origin, positive `x` right, positive `y` down, and module
+  positions as the top-left tile of the rotated footprint.
+- Pure footprint APIs resolve all four clockwise rotations, transform local coordinates, enumerate
+  complete rectangular occupancy in row-major order, and validate exact facility boundaries.
+- The derived occupancy index is rebuilt from supplied instance records and immutable content. It
+  retains stable occupant IDs per tile and reports unknown definitions, record-key/instance-ID
+  disagreement, malformed geometry, and duplicate occupation without entering `GameState`.
+- Placement validation is complete and non-mutating. It reports every outside or occupied tile,
+  identifies collision occupants, and may exclude one moved instance.
+- Port offsets are validated against their unrotated side dimension. Rotation transforms the edge
+  tile and facing together; resolved geometry includes its external adjacent tile even when that
+  tile is outside the facility.
+- Power pairs normalize output-to-input. Directional data pairs retain their direction;
+  bidirectional pairs normalize by stable port-reference order. Airflow resolves geometry but never
+  becomes a route or graph edge.
+- The derived graph contains unique, explicitly sorted power/data port nodes and deduplicated
+  physical compatible-adjacency edges. It creates no `RouteState` and does no routing.
+- `validateGridState` and `assertValidGridState` cover focused facility/module/port invariants on
+  demand and are not registered in the empty production tick path.
+- Content validation enforces unique per-module port IDs, side-relative offsets, and the maximum
+  unrotated `3 x 2` footprint while preserving all 12 supplied module definitions unchanged.
+
 ## Public types and APIs
 
 - Existing public contracts preserved in `src/sim/commands/contracts.ts`:
@@ -162,6 +187,25 @@ Updated: 2026-08-18
 - `src/sim/economy/inventoryTransactions.ts`:
   - `InventoryEconomyCommandHandlers`
   - `createInventoryEconomyCommandHandlers(content): InventoryEconomyCommandHandlers`
+- `src/grid/domain/footprintGeometry.ts`:
+  - `resolveRotatedFootprintSize(size, rotation): Size2D`
+  - `transformLocalFootprintPoint(point, unrotatedSize, rotation): GridPoint`
+  - `enumerateOccupiedTiles(position, unrotatedSize, rotation): GridPoint[]`
+  - `isGridPointInBounds(point, facilitySize): boolean`
+- `src/grid/domain/occupancy.ts`:
+  - `buildOccupancyIndex(options): OccupancyIndex`
+  - `findOccupyingModuleInstanceIds(occupancy, tile): readonly ModuleInstanceId[]`
+  - `validateModulePlacement(options): PlacementValidationResult`
+- `src/grid/domain/portGeometry.ts`:
+  - `resolveModulePortGeometry(module, definition): ResolvedModulePortGeometry`
+  - `arePortsPhysicallyAdjacent(left, right): boolean`
+  - `resolveCompatiblePortPair(left, right): CompatiblePortPair | null`
+- `src/grid/domain/adjacentPortGraph.ts`:
+  - `buildAdjacentPortGraph(options): AdjacentPortGraph`
+- `src/grid/validation/gridState.ts`:
+  - `validateGridState(facility, content): readonly GridValidationIssue[]`
+  - `assertValidGridState(facility, content): void`
+  - `GridStateInvariantError`
 
 ## Queue, result, and atomicity semantics
 
@@ -211,6 +255,9 @@ Updated: 2026-08-18
 - Authoritative money uses 1,000,000 microdollars per USD and round-half-away-from-zero at monetary
   boundaries. Purchase and sale formula ordering is frozen by
   `docs/decisions/ADR-0004_DETERMINISTIC_INVENTORY_AND_BASIC_ECONOMY.md`.
+- Grid origin, clockwise rotation formulas, row-major occupancy, side-relative port offsets,
+  compatibility normalization, and derived graph ordering are frozen by
+  `docs/decisions/ADR-0005_DETERMINISTIC_GRID_AND_PORT_GEOMETRY.md`.
 
 ## Temporary assumptions
 
@@ -234,32 +281,33 @@ Updated: 2026-08-18
 
 ## Verification
 
-- Focused Task 4 tests: PASS, 6 files and 82 tests.
-- Focused Task 2 and Task 3 regression tests: PASS, 4 files and 73 tests.
-- Complete unit suite: PASS, 13 files and 177 tests.
-- Determinism suite: PASS, including identical Task 4 receipts, command results, final state hash,
-  and RNG state across exactly 100 runs.
-- Published compatibility vectors: PASS;
+- Focused Task 5.1 tests: PASS, 4 files and 89 tests.
+- Focused Task 2, Task 3, and Task 4 regression selection: PASS, 8 files and 142 tests.
+- Complete unit suite: PASS, 16 files and 261 tests.
+- Determinism suite: PASS. Task 5.1 unit coverage also repeats identical geometry, issue, occupancy,
+  and graph output across exactly 100 runs and confirms state/RNG purity.
+- Existing build-command scope: PASS; all 11 Design Mode/build commands return
+  `COMMAND_NOT_AVAILABLE` without changing authoritative state or RNG.
+- Published compatibility vectors: PASS, 2 files and 27 tests;
   `seedToUint32("phase-one") === 2799575867` and
   `hashCanonicalState({ a: 1 }) === "9c3e82dd6fcae8b1"`.
-- Performance diagnostic: PASS as a report-only command. Empty pipeline median `0.0004 ms`, p95
-  `0.0017 ms`, max `0.6836 ms`; controlled private fixture median `6.3554 ms`, p95 `8.2085 ms`,
-  max `165.1710 ms`. The Task 3 empty baseline was median `0.0004 ms`, p95 `0.0027 ms`, max
-  `0.7443 ms`, so Task 4 introduces no material empty-tick regression. The controlled maximum is a
-  development-machine outlier, not a final target-hardware claim.
-- Formatting check: PASS.
-- ESLint: PASS.
-- Strict TypeScript checking: PASS.
+- Task 4 money vectors and transaction regression: PASS, 3 files and 62 tests, including the
+  published `0.000028 USD` energy-cost vector.
+- Grid diagnostic on the development i7-2600: `24 x 16`, 384 one-tile modules, 1,152 power/data
+  nodes, and 368 edges. Occupancy median `0.4142 ms`, p95 `0.8804 ms`, max `1.5181 ms`; dense
+  six-tile placement median `0.4810 ms`, p95 `0.8115 ms`, max `1.2879 ms`; graph median
+  `10.5507 ms`, p95 `15.0561 ms`, max `21.6211 ms`. This report-only off-tick diagnostic includes
+  development-runtime and host-load effects and is not the final target-hardware tick gate.
+- Existing tick diagnostic: empty median `0.0004 ms`, p95 `0.0016 ms`, max `0.6458 ms`; controlled
+  private fixture median `6.3273 ms`, p95 `9.5356 ms`, max `18.0200 ms`.
+- Formatting check, ESLint, strict TypeScript checking, and `corepack pnpm validate`: PASS.
 - Content validation: PASS, 12 modules, 8 tasks, 10 research nodes, 2 benchmarks, and 2 locales.
 - Production build: PASS, 846 modules transformed.
-- `corepack pnpm validate`: PASS.
 - `git diff --check`: PASS.
-- Simulator forbidden import/API scan: PASS; no random, wall-clock, scheduling, React, PixiJS, DOM,
-  browser storage, or worker matches in `src/sim`.
-- GDD and gameplay balance-content drift checks: PASS; those files are unchanged. The Markdown TDD
-  monetary-precision text is aligned with ADR-0004's approved six-decimal microdollar rule.
-- Read-only implementation review: PASS with no Critical or Important issue found. The review was
-  local because this task's collaboration policy did not authorize a reviewer subagent.
+- Forbidden import/API scans: PASS; no random, wall-clock, scheduling, React, PixiJS, rendering, UI,
+  DOM, browser storage, or worker matches in `src/sim` or `src/grid`, and no `Map`, `Set`, or `Date`
+  in authoritative state contracts.
+- TDD, GDD, and gameplay balance-content drift checks: PASS; those files are unchanged.
 
 ## Known risks
 
@@ -286,11 +334,13 @@ Updated: 2026-08-18
   content bundle and pass the returned handlers to the existing processor or `SimCore` registry.
 - The final i7-2600 under-4-ms performance gate remains open until the complete controlled vertical
   slice fixture exists.
+- The dense adjacent-port graph diagnostic intentionally rebuilds derived data and currently uses a
+  pairwise node comparison. It is not on the tick path; Task 5.2 or connectivity work should profile
+  mutation-time rebuild frequency before deciding whether a spatial candidate index is warranted.
 
 ## Exact next task
 
-Phase 1 Task 5: grid occupancy, rotation, footprints, and ports. Do not start it without separate
-approval.
+Phase 1 Task 5.2: Design Mode lifecycle and PLACE, MOVE, ROTATE, REMOVE command handlers using the approved grid geometry.
 
 ## Explicitly deferred
 
@@ -299,7 +349,7 @@ approval.
 - Automatic energy deductions, power capacity purchases, labor and relocation costs, task rewards,
   research costs/progression, maintenance, inflation, market events, scarcity, financing, interest,
   insolvency, bailout, bankruptcy, and financial game over.
-- Grid placement, installed-module sales, routing, power delivery, thermal simulation, and overclock
-  behavior.
+- Design Mode lifecycle and grid mutation handlers, installed-module sales, routing, power delivery,
+  thermal simulation, and overclock behavior.
 - Useful Compute, benchmarks, blueprints, replay execution, and balancing bot.
 - React/Pixi integration, IndexedDB, save/load, migrations, export, and import.

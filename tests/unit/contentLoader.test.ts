@@ -92,4 +92,53 @@ describe("content loading", () => {
 
     expect(error.message).toContain("modules.modules[0].footprint.width");
   });
+
+  test("rejects duplicate port IDs inside one module definition", () => {
+    const pack = clonePack();
+    const module = firstItem(pack.modules.modules);
+    const firstPort = firstItem(module.ports);
+    const secondPort = module.ports[1];
+    if (secondPort === undefined) {
+      throw new Error("Expected a second port fixture.");
+    }
+    secondPort.id = firstPort.id;
+
+    const error = captureValidationError(pack);
+
+    expect(error.issues).toContainEqual({
+      path: "modules.modules[0].ports[1].id",
+      message: `duplicate port id ${firstPort.id}`,
+    });
+  });
+
+  test.each([
+    { side: "north" as const, dimension: "width" as const },
+    { side: "south" as const, dimension: "width" as const },
+    { side: "east" as const, dimension: "height" as const },
+    { side: "west" as const, dimension: "height" as const },
+  ])("rejects a $side port offset outside the unrotated $dimension", ({ side, dimension }) => {
+    const pack = clonePack();
+    const module = firstItem(pack.modules.modules);
+    const port = firstItem(module.ports);
+    port.side = side;
+    port.offset = module.footprint[dimension];
+
+    const error = captureValidationError(pack);
+
+    expect(error.issues).toContainEqual({
+      path: "modules.modules[0].ports[0].offset",
+      message: `${side} port offset must be smaller than footprint ${dimension}`,
+    });
+  });
+
+  test("enforces the vertical-slice maximum unrotated footprint of 3 x 2", () => {
+    const pack = clonePack();
+    firstItem(pack.modules.modules).footprint.height = 3;
+
+    const error = captureValidationError(pack);
+
+    expect(error.issues.some(({ path }) => path === "modules.modules[0].footprint.height")).toBe(
+      true,
+    );
+  });
 });

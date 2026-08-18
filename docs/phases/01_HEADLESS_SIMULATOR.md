@@ -64,7 +64,7 @@ details are fixed by `docs/decisions/ADR-0003_DETERMINISTIC_TICK_PIPELINE.md`.
 
 ## Task 4: Inventory transactions and basic economy
 
-Status: implemented, pending final review and approval.
+Status: approved checkpoint, committed at `8e80b00`.
 
 Task 4 includes only:
 
@@ -84,6 +84,31 @@ Task 4 includes only:
 Task 4 does not place or sell installed modules, charge energy, progress research, add financing or
 financial game-over behavior, or implement any other gameplay command. Compatibility details are
 fixed by `docs/decisions/ADR-0004_DETERMINISTIC_INVENTORY_AND_BASIC_ECONOMY.md`.
+
+## Task 5.1: Deterministic grid and port geometry
+
+Status: approved checkpoint.
+
+Task 5.1 includes only:
+
+- top-left-origin integer coordinates and clockwise rectangular footprint transforms;
+- deterministic row-major occupied-tile enumeration and bounds validation;
+- a derived plain-data occupancy index with key/ID, unknown-definition, and duplicate-tile checks;
+- pure atomic placement validation with collision occupant details and move-instance exclusion;
+- side-relative port-offset validation and rotated port tile, facing, and external-tile resolution;
+- normalized power/data compatibility and physical adjacency checks;
+- a deterministic derived adjacent power/data port graph without authoritative routes;
+- focused grid invariants invoked on demand rather than on empty ticks;
+- a standalone `24 x 16` grid geometry performance diagnostic.
+
+Task 5.1 does not implement Design Mode lifecycle, placement/move/rotation/removal handlers, route
+commands or pathfinding, inventory consumption, costs, downtime, power delivery, airflow or thermal
+simulation, snapshots, saves, workers, rendering, or UI. Compatibility details are fixed by
+`docs/decisions/ADR-0005_DETERMINISTIC_GRID_AND_PORT_GEOMETRY.md`.
+
+## Exact next task
+
+Phase 1 Task 5.2: Design Mode lifecycle and PLACE, MOVE, ROTATE, REMOVE command handlers using the approved grid geometry.
 
 ## Nu implementa
 

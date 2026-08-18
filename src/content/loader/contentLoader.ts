@@ -197,6 +197,14 @@ export function validateContent(raw: RawContentPack): ContentBundle {
         });
       }
       portIds.add(port.id);
+
+      const dimension = port.side === "north" || port.side === "south" ? "width" : "height";
+      if (port.offset >= module.footprint[dimension]) {
+        issues.push({
+          path: `modules.modules[${moduleIndex}].ports[${portIndex}].offset`,
+          message: `${port.side} port offset must be smaller than footprint ${dimension}`,
+        });
+      }
     });
     module.unlockResearchIds.forEach((researchId, researchIndex) => {
       if (!research.has(researchId)) {
