@@ -44,12 +44,23 @@ fixed by `docs/decisions/ADR-0002_COMMAND_PIPELINE_FOUNDATION.md`.
 
 ## Task 3: 100 ms tick pipeline
 
-Status: not started. Requires separate approval.
+Status: implemented, pending final review and approval.
 
-Task 3 will integrate command processing at the beginning of a fixed 100 ms simulation tick and
-define tick advancement plus ordered system orchestration. It must not be inferred from or started
-as part of Task 2. Host scheduling, pause/speed behavior, timers, catch-up, and worker integration
-also remain outside Task 2.
+Task 3 includes only:
+
+- a directly callable headless `SimCore` over the Task 2 queue and processor;
+- fixed 100 ms ticks with completed-tick numbering and time derived as `tick / 10`;
+- ordered command processing at the start of the first requested tick;
+- command-only processing without time advancement;
+- synchronous `SET_PAUSED` and `SET_SPEED` application outside the regular queue;
+- an explicit immutable TDD stage tuple and a narrow typed partial registry for private tests;
+- atomic tick-system candidates with deterministic RNG commit and rollback;
+- detached save-state snapshots;
+- focused tick, clock, determinism, and diagnostic performance coverage.
+
+Task 3 registers no production gameplay system. Host scheduling, timers, catch-up, workers, replay,
+save/load, snapshots, events, and the later Phase 1 gameplay domains remain deferred. Compatibility
+details are fixed by `docs/decisions/ADR-0003_DETERMINISTIC_TICK_PIPELINE.md`.
 
 ## Nu implementa
 

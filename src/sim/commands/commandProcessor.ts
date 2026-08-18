@@ -1,4 +1,5 @@
 import type { GameState } from "../core/types.ts";
+import { AuthoritativeState } from "../core/authoritativeState.ts";
 import { canonicalSerialize } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "./contracts.ts";
@@ -23,6 +24,11 @@ export class SimulatorInvariantError extends Error {
 export interface CommandProcessorOptions {
   initialState: GameState;
   handlers?: CommandHandlerRegistry;
+}
+
+interface CommandProcessorDependencies {
+  state?: AuthoritativeState;
+  queue?: CommandQueue;
 }
 
 function cloneState(state: GameState): GameState {
@@ -51,13 +57,16 @@ function createRejectedResult(
 }
 
 export class CommandProcessor {
-  private state: GameState;
+  private readonly state: AuthoritativeState;
   private readonly handlers: CommandHandlerRegistry;
-  private readonly queue = new CommandQueue();
+  private readonly queue: CommandQueue;
 
-  constructor({ initialState, handlers = {} }: CommandProcessorOptions) {
-    canonicalSerialize(initialState);
-    this.state = cloneState(initialState);
+  constructor(
+    { initialState, handlers = {} }: CommandProcessorOptions,
+    dependencies: CommandProcessorDependencies = {},
+  ) {
+    this.state = dependencies.state ?? new AuthoritativeState(initialState);
+    this.queue = dependencies.queue ?? new CommandQueue();
     this.handlers = handlers;
   }
 
@@ -70,7 +79,7 @@ export class CommandProcessor {
   }
 
   getState(): GameState {
-    return cloneState(this.state);
+    return this.state.snapshot();
   }
 
   processQueuedCommands(): CommandResult[] {
@@ -86,13 +95,14 @@ export class CommandProcessor {
   }
 
   private processCommand(command: SimCommand): CommandResult {
-    const currentTick = this.state.tick;
+    const authoritativeState = this.state.readInternal();
+    const currentTick = authoritativeState.tick;
     if (command.expectedTick !== undefined && command.expectedTick !== currentTick) {
       return createRejectedResult(command, currentTick, "STALE_TICK");
     }
 
     try {
-      const candidate = cloneState(this.state);
+      const candidate = cloneState(authoritativeState);
       const candidateRng = createSeededRngFromState(candidate.rngState);
       const handled = dispatchRegisteredCommand(
         this.handlers,
@@ -106,7 +116,7 @@ export class CommandProcessor {
 
       candidate.rngState = candidateRng.getState();
       validateCandidateState(candidate, currentTick);
-      this.state = candidate;
+      this.state.commitOwned(candidate);
 
       return {
         commandId: command.commandId,
