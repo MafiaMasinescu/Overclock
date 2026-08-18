@@ -48,6 +48,45 @@ Dacă două surse se contrazic, Codex trebuie să oprească implementarea și s�
 
 Rezoluția principală este 1920 × 1080. Testăm obligatoriu și 1600 × 900, 1366 × 768 și 1280 × 720. Ultima rămâne minimum funcțional, cu panouri compacte.
 
+## Pornirea aplicației local
+
+`index.html` este template-ul de intrare Vite. Nu îl deschide direct din File Explorer cu protocolul `file://`: browserul nu poate transforma modulele TypeScript/TSX și le va bloca prin politica CORS. Rulează aplicația prin serverul HTTP Vite.
+
+Din PowerShell, intră în folderul repository-ului:
+
+```powershell
+cd D:\miscellaneous\Overclock\vertical_slice_v1
+```
+
+La prima rulare sau după schimbarea lockfile-ului, instalează dependențele:
+
+```powershell
+corepack pnpm install
+```
+
+### Development
+
+Pornește serverul cu hot reload:
+
+```powershell
+corepack pnpm dev
+```
+
+Deschide adresa afișată în terminal, implicit `http://localhost:5173/`.
+
+### Production preview
+
+Construiește aplicația, apoi servește build-ul rezultat:
+
+```powershell
+corepack pnpm build
+corepack pnpm preview
+```
+
+Deschide adresa afișată în terminal, implicit `http://localhost:4173/`. Production preview este pentru verificare locală; distribuția finală folosește conținutul folderului `dist` servit prin HTTP.
+
+Oprește oricare dintre servere cu `Ctrl+C` în terminalul în care rulează.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

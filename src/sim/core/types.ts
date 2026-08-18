@@ -9,6 +9,11 @@ export type BenchmarkDefinitionId = string;
 export type BenchmarkRunId = string;
 export type EvidenceTagId = string;
 
+export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+export interface JsonObject {
+  [key: string]: JsonValue;
+}
+
 export type Rotation = 0 | 90 | 180 | 270;
 export type SimulationSpeed = 1 | 2 | 4;
 export type OverclockProfile = "eco" | "balanced" | "boost" | "manual";
@@ -98,7 +103,7 @@ export interface ThermalTileState {
 export interface DesignDraftOperation {
   operationId: string;
   kind: "place" | "move" | "rotate" | "remove" | "connect" | "disconnect";
-  payload: Record<string, unknown>;
+  payload: JsonObject;
 }
 
 export interface DesignDraftState {
