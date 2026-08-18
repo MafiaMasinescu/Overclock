@@ -5,8 +5,7 @@ Acest folder conține primul dataset de implementare. Valorile economice și ope
 Comanda de verificare a pachetului:
 
 ```text
-node tools/validate_pack.mjs
+pnpm content:validate
 ```
 
-După inițializarea repository-ului, validarea trebuie integrată în `pnpm validate` și în testele Vitest. Schemele Zod din `contracts/src/schemas.ts` devin sursa principală pentru forma fișierelor.
-
+Validarea este integrată în `pnpm validate` și în testele Vitest. Schemele Zod din `src/content/schemas/contentSchemas.ts` sunt sursa principală pentru forma fișierelor.
