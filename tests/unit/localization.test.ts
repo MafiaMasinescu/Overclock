@@ -24,4 +24,21 @@ describe("application localization", () => {
     expect(i18n.t("ui.settings")).toBe("Settings");
     expect(i18n.t("ui.shell-status")).toBe("Development console — simulation offline");
   });
+
+  test("localizes stable command rejection keys in both languages", async () => {
+    const i18n = await createAppI18n("ro");
+    instances.push(i18n);
+
+    expect(i18n.t("errors.command-not-available")).toBe("Comanda nu este disponibilă încă.");
+    expect(i18n.t("errors.stale-tick")).toBe(
+      "Comanda a fost creată pentru un alt tick al simulării.",
+    );
+
+    await i18n.changeLanguage("en");
+
+    expect(i18n.t("errors.command-not-available")).toBe("This command is not available yet.");
+    expect(i18n.t("errors.stale-tick")).toBe(
+      "The command was created for a different simulation tick.",
+    );
+  });
 });

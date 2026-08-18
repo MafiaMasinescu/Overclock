@@ -8,6 +8,10 @@
       "sustained-stability": "Sustained Stability"
     }
   },
+  "errors": {
+    "command-not-available": "This command is not available yet.",
+    "stale-tick": "The command was created for a different simulation tick."
+  },
   "modules": {
     "module-power-distribution": {
       "name": "Power Distribution Panel",

@@ -8,6 +8,10 @@
       "sustained-stability": "Sustained Stability"
     }
   },
+  "errors": {
+    "command-not-available": "Comanda nu este disponibilă încă.",
+    "stale-tick": "Comanda a fost creată pentru un alt tick al simulării."
+  },
   "modules": {
     "module-power-distribution": {
       "name": "Panou de distribuție electrică",

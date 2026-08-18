@@ -23,6 +23,34 @@ Construiește simulatorul determinist fără gameplay UI.
 15. Replay log și determinism tests.
 16. Bot simplu pentru milestone timings.
 
+## Task 2: Command pipeline foundation
+
+Status: implemented, pending final verification and approval.
+
+Task 2 includes only:
+
+- strict runtime parsing for the complete existing `SimCommand` union;
+- a deterministic, zero-based FIFO queue with immediate `CommandReceipt` values;
+- synchronous processed `CommandResult` values;
+- expected-tick equality validation at processing time;
+- a partial, kind-safe handler registry with exhaustive dispatch;
+- per-command candidate state and RNG transactions;
+- recoverable `STALE_TICK` and `COMMAND_NOT_AVAILABLE` rejection;
+- fatal `SIMULATOR_INVARIANT_VIOLATION` behavior for handler or invariant failures.
+
+Task 2 registers no production command handlers and implements no gameplay behavior. Its accepted
+and fatal paths are exercised only with private test-injected handlers. Compatibility details are
+fixed by `docs/decisions/ADR-0002_COMMAND_PIPELINE_FOUNDATION.md`.
+
+## Task 3: 100 ms tick pipeline
+
+Status: not started. Requires separate approval.
+
+Task 3 will integrate command processing at the beginning of a fixed 100 ms simulation tick and
+define tick advancement plus ordered system orchestration. It must not be inferred from or started
+as part of Task 2. Host scheduling, pause/speed behavior, timers, catch-up, and worker integration
+also remain outside Task 2.
+
 ## Nu implementa
 
 - React panels;
@@ -48,4 +76,3 @@ Construiește simulatorul determinist fără gameplay UI.
 ## Livrabil
 
 Un simulator care poate finaliza vertical slice-ul prin comenzi și teste, fără interfață.
-
