@@ -123,6 +123,7 @@ export interface FacilityState {
   contractedPowerWatts: number;
   modules: Record<ModuleInstanceId, ModuleInstanceState>;
   routes: Record<RouteId, RouteState>;
+  nextModuleInstanceSequence: number;
   thermalTiles: ThermalTileState[];
   liveLayoutRevision: number;
   thermalRevision: number;

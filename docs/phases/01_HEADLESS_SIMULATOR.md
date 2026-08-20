@@ -106,9 +106,37 @@ commands or pathfinding, inventory consumption, costs, downtime, power delivery,
 simulation, snapshots, saves, workers, rendering, or UI. Compatibility details are fixed by
 `docs/decisions/ADR-0005_DETERMINISTIC_GRID_AND_PORT_GEOMETRY.md`.
 
+## Task 5.2: Design Mode lifecycle and deterministic draft edits
+
+Status: implemented, pending review and approval.
+
+Task 5.2 includes only:
+
+- content-injected production handlers for `ENTER_DESIGN_MODE`, `PLACE_MODULE`, `MOVE_MODULE`,
+  `ROTATE_MODULE`, `REMOVE_MODULE`, and `CANCEL_DESIGN` through the existing command registry;
+- validated detached draft cloning, revision zero, empty history stacks, and complete cancel;
+- monotonic non-reusable module instance IDs from authoritative
+  `FacilityState.nextModuleInstanceSequence` without RNG;
+- derived inventory reservations based on draft count minus live count, without inventory or cash
+  mutation and without a placement-time research check;
+- exclusion-aware bounds and collision validation through Task 5.1 geometry APIs;
+- accepted move and rotation no-ops with no state, revision, history, sequence, hash, or RNG change;
+- one reversible canonical JSON operation per state-changing edit, revision overflow protection,
+  and redo clearing only after a real edit;
+- deterministic removal of sorted attached draft routes for move, rotate, and remove, without
+  rerouting or graph construction;
+- focused lifecycle, atomicity, serialization, FIFO, localization, exact 100-run determinism, and
+  dense-layout performance coverage.
+
+Task 5.2 does not implement connect/disconnect, path validation, auto-connect, pathfinding, undo or
+redo execution, apply, inventory consumption, salvage, labor, downtime, power, thermal behavior,
+silicon lottery, overclock behavior, snapshots, saves, workers, rendering, or UI. Compatibility
+details are fixed by
+`docs/decisions/ADR-0006_DESIGN_MODE_DRAFTS_AND_MODULE_INSTANCE_IDS.md`.
+
 ## Exact next task
 
-Phase 1 Task 5.2: Design Mode lifecycle and PLACE, MOVE, ROTATE, REMOVE command handlers using the approved grid geometry.
+Phase 1 Task 5.3: deterministic CONNECT_PORTS and DISCONNECT_ROUTE with manual orthogonal path validation.
 
 ## Nu implementa
 

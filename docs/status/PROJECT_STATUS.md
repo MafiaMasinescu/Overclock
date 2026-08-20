@@ -9,8 +9,10 @@ Updated: 2026-08-18
   `8e80b00` and explicitly approved on 18 August 2026.
 - Completed checkpoint: Task 5.1, deterministic grid geometry, occupancy, footprint rotation, port
   geometry, compatibility, and derived adjacent-port graph, explicitly approved on 18 August 2026.
-- Phase 1 Task 5.2 has not started.
-- Production gameplay commands are limited to `BUY_MODULE` and `SELL_INVENTORY_ITEM`. No production
+- Phase 1 Task 5.2, Design Mode lifecycle and deterministic place, move, rotate, and remove draft
+  commands, is implemented and pending review and approval.
+- Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
+  `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, and `CANCEL_DESIGN`. No production
   gameplay tick system has started.
 
 ## Implemented deterministic foundation
@@ -38,8 +40,8 @@ Updated: 2026-08-18
   `Extract<SimCommand, { kind: K }>`.
 - Exhaustive dispatch makes a new `SimCommand` kind a compile-time error until dispatch is updated.
 - Task 2 registered no production handlers. Task 4 adds an explicit content-injected factory for
-  the two inventory commands; all other queued gameplay commands remain unavailable unless tests
-  inject a private handler.
+  the two inventory commands, and Task 5.2 adds one for the six Design Mode commands. All other
+  queued gameplay commands remain unavailable unless tests inject a private handler.
 
 ## Phase 1 Task 3 implementation
 
@@ -125,6 +127,34 @@ Updated: 2026-08-18
 - Content validation enforces unique per-module port IDs, side-relative offsets, and the maximum
   unrotated `3 x 2` footprint while preserving all 12 supplied module definitions unchanged.
 
+## Phase 1 Task 5.2 implementation
+
+- `ENTER_DESIGN_MODE` validates the live grid and clones detached module and route records into a
+  revision-zero draft with empty operation stacks. `CANCEL_DESIGN` discards the complete draft.
+- Live modules, routes, layout revision, authoritative inventory, economy, clock, tasks, research,
+  and RNG remain unchanged through draft edits and cancel.
+- `FacilityState.nextModuleInstanceSequence` starts at `1`, is positive and safe, never decreases,
+  and allocates `module-instance-00000001` style IDs without RNG. Accepted placements consume one
+  sequence; rejection consumes none; removal and cancel do not restore consumed values.
+- Generated ID collision, module-sequence overflow, and state-changing draft-revision overflow reject
+  atomically with `INVALID_SYSTEM`.
+- Inventory reservation is derived in stable definition order as
+  `max(0, draftCount - liveCount)`. Placement spends no cash, mutates no inventory, and does not
+  repeat research validation. Removing live or new draft hardware makes the corresponding capacity
+  reusable in the same draft.
+- Placement initializes offline modules with Balanced `1/1` overclock ratios, temporary neutral bin
+  ratios, content startup ticks, and zero cooldown. Silicon lottery remains deferred.
+- Move and absolute clockwise rotation use Task 5.1 exclusion-aware placement validation and preserve
+  all unrelated module fields. Same-position moves and same-rotation commands are accepted exact
+  no-ops.
+- Every state-changing edit increments revision once, records one detached reversible canonical JSON
+  operation using revision plus command UUID, and clears redo. Rejections and no-ops preserve both
+  stacks and revision.
+- Move, rotate, and remove delete all attached draft routes in stable route-ID order, copy them into
+  the operation payload, and preserve unrelated routes. No rerouting or adjacent-graph build occurs.
+- `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, and `APPLY_DESIGN` remain
+  unregistered and return `COMMAND_NOT_AVAILABLE`.
+
 ## Public types and APIs
 
 - Existing public contracts preserved in `src/sim/commands/contracts.ts`:
@@ -172,6 +202,15 @@ Updated: 2026-08-18
   - `TickSystemStage`
   - `TickSystemContext`
   - `TickSystemRegistry`
+- `src/sim/core/types.ts`:
+  - `FacilityState.nextModuleInstanceSequence: number`
+- `src/sim/design/designModeState.ts`:
+  - `assertValidDesignModeState(state, minimumModuleInstanceSequence?): void`
+- `src/sim/design/designModeCommands.ts`:
+  - `DesignModeCommandHandlers`
+  - `DesignInventoryReservation`
+  - `calculateDesignInventoryReservations(facility, draft, inventory)`
+  - `createDesignModeCommandHandlers(content): DesignModeCommandHandlers`
 - `src/sim/economy/money.ts`:
   - `MICRODOLLARS_PER_USD`
   - `usdToMicrodollars(valueUsd): number`
@@ -258,6 +297,10 @@ Updated: 2026-08-18
 - Grid origin, clockwise rotation formulas, row-major occupancy, side-relative port offsets,
   compatibility normalization, and derived graph ordering are frozen by
   `docs/decisions/ADR-0005_DETERMINISTIC_GRID_AND_PORT_GEOMETRY.md`.
+- Design-draft isolation, revision and no-op semantics, derived inventory reservations, monotonic
+  module instance IDs, reversible operation payloads, attached-route cleanup, and temporary neutral
+  bin values are frozen by
+  `docs/decisions/ADR-0006_DESIGN_MODE_DRAFTS_AND_MODULE_INSTANCE_IDS.md`.
 
 ## Temporary assumptions
 
@@ -278,28 +321,38 @@ Updated: 2026-08-18
 - The temporary initial credit limit remains `0`; tests may supply another finite nonnegative value.
 - Content prices and salvage ratios remain current-version inputs. Task 4 adds no market history,
   scarcity, inflation, or price snapshot to inventory stacks.
+- Task 5.2 placements use neutral bin ratios of `1` until the dedicated silicon-binning task. The
+  future apply command must revalidate inventory before consumption because independent inventory
+  commands may run while a draft exists.
 
 ## Verification
 
-- Focused Task 5.1 tests: PASS, 4 files and 89 tests.
-- Focused Task 2, Task 3, and Task 4 regression selection: PASS, 8 files and 142 tests.
-- Complete unit suite: PASS, 16 files and 261 tests.
-- Determinism suite: PASS. Task 5.1 unit coverage also repeats identical geometry, issue, occupancy,
-  and graph output across exactly 100 runs and confirms state/RNG purity.
-- Existing build-command scope: PASS; all 11 Design Mode/build commands return
-  `COMMAND_NOT_AVAILABLE` without changing authoritative state or RNG.
-- Published compatibility vectors: PASS, 2 files and 27 tests;
+- Focused Task 5.2 selection: PASS, 5 files and 54 tests.
+- Focused Task 2 through Task 5.1 regression selection: PASS, 9 files and 222 tests.
+- Complete unit suite: PASS, 17 files and 305 tests.
+- Complete determinism suite: PASS, 2 files and 2 tests. Task 5.2 repeats receipts, results,
+  allocated IDs, operation history, final state hash, and RNG across exactly 100 runs.
+- Deferred build-command scope: PASS; `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`,
+  `REDO_DESIGN`, and `APPLY_DESIGN` return `COMMAND_NOT_AVAILABLE` without state or RNG changes.
+- Published RNG, canonical-hash, money, and geometry compatibility selection: PASS, 5 files and 125
+  tests;
   `seedToUint32("phase-one") === 2799575867` and
-  `hashCanonicalState({ a: 1 }) === "9c3e82dd6fcae8b1"`.
-- Task 4 money vectors and transaction regression: PASS, 3 files and 62 tests, including the
-  published `0.000028 USD` energy-cost vector.
-- Grid diagnostic on the development i7-2600: `24 x 16`, 384 one-tile modules, 1,152 power/data
-  nodes, and 368 edges. Occupancy median `0.4142 ms`, p95 `0.8804 ms`, max `1.5181 ms`; dense
-  six-tile placement median `0.4810 ms`, p95 `0.8115 ms`, max `1.2879 ms`; graph median
-  `10.5507 ms`, p95 `15.0561 ms`, max `21.6211 ms`. This report-only off-tick diagnostic includes
-  development-runtime and host-load effects and is not the final target-hardware tick gate.
-- Existing tick diagnostic: empty median `0.0004 ms`, p95 `0.0016 ms`, max `0.6458 ms`; controlled
-  private fixture median `6.3273 ms`, p95 `9.5356 ms`, max `18.0200 ms`.
+  `hashCanonicalState({ a: 1 }) === "9c3e82dd6fcae8b1"`; the published `0.000028 USD` energy-cost
+  vector and Task 5.1 coordinate, rotation, occupancy, and port compatibility vectors remain green.
+- Design Mode diagnostic on the development i7-2600: `24 x 16`, 280 modules, 285/384 occupied
+  tiles (`74.2%`), and 0 routes. Enter median `15.5744 ms`, p95 `24.0187 ms`, max `31.1903 ms`;
+  placement median `16.0647 ms`, p95 `23.6198 ms`, max `28.6333 ms`; move median `15.2221 ms`,
+  p95 `21.8037 ms`, max `27.7916 ms`; rotation median `15.4293 ms`, p95 `23.0928 ms`, max
+  `29.1716 ms`; removal median `15.7423 ms`, p95 `22.6861 ms`, max `27.3656 ms`, with 200 samples
+  each. Measurements include command-candidate cloning and focused validation; handlers build no
+  adjacent-port graph.
+- Grid diagnostic on the same host: `24 x 16`, 384 one-tile modules, 1,152 power/data nodes, and 368
+  edges. Occupancy median `0.4493 ms`, p95 `0.7732 ms`, max `1.6237 ms`; dense six-tile placement
+  median `0.5453 ms`, p95 `0.9314 ms`, max `2.3293 ms`; graph median `12.0547 ms`, p95
+  `17.1554 ms`, max `17.4967 ms`.
+- Tick diagnostic: empty median `0.0004 ms`, p95 `0.0012 ms`, max `0.1171 ms`; controlled private
+  fixture median `6.0216 ms`, p95 `9.6792 ms`, max `23.4986 ms`. The complete vertical-slice
+  i7-2600 under-4-ms gate remains open.
 - Formatting check, ESLint, strict TypeScript checking, and `corepack pnpm validate`: PASS.
 - Content validation: PASS, 12 modules, 8 tasks, 10 research nodes, 2 benchmarks, and 2 locales.
 - Production build: PASS, 846 modules transformed.
@@ -307,7 +360,9 @@ Updated: 2026-08-18
 - Forbidden import/API scans: PASS; no random, wall-clock, scheduling, React, PixiJS, rendering, UI,
   DOM, browser storage, or worker matches in `src/sim` or `src/grid`, and no `Map`, `Set`, or `Date`
   in authoritative state contracts.
-- TDD, GDD, and gameplay balance-content drift checks: PASS; those files are unchanged.
+- GDD, Word TDD, and gameplay balance-content drift checks: PASS; those files are unchanged. The
+  intentional Markdown TDD diff is limited to the approved additive facility sequence field and
+  its non-reuse/save/replay semantics.
 
 ## Known risks
 
@@ -337,19 +392,25 @@ Updated: 2026-08-18
 - The dense adjacent-port graph diagnostic intentionally rebuilds derived data and currently uses a
   pairwise node comparison. It is not on the tick path; Task 5.2 or connectivity work should profile
   mutation-time rebuild frequency before deciding whether a spatial candidate index is warranted.
+- Dense Task 5.2 command processing includes full command-candidate cloning, canonical candidate
+  validation, and focused grid validation, producing roughly 15 to 16 ms medians on the development
+  i7-2600 fixture. These edits are off tick and build no graph, but future UI scheduling and Task 5.3
+  routing should avoid repeated synchronous rebuilds during pointer movement.
 
 ## Exact next task
 
-Phase 1 Task 5.2: Design Mode lifecycle and PLACE, MOVE, ROTATE, REMOVE command handlers using the approved grid geometry.
+Phase 1 Task 5.3: deterministic CONNECT_PORTS and DISCONNECT_ROUTE with manual orthogonal path validation.
 
 ## Explicitly deferred
 
 - Real-time tick scheduling, timers, catch-up, pause/speed host scheduling, and worker integration.
-- Every production gameplay command handler except `BUY_MODULE` and `SELL_INVENTORY_ITEM`.
+- Every production gameplay command handler except `BUY_MODULE`, `SELL_INVENTORY_ITEM`,
+  `ENTER_DESIGN_MODE`, `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, and
+  `CANCEL_DESIGN`.
 - Automatic energy deductions, power capacity purchases, labor and relocation costs, task rewards,
   research costs/progression, maintenance, inflation, market events, scarcity, financing, interest,
   insolvency, bailout, bankruptcy, and financial game over.
-- Design Mode lifecycle and grid mutation handlers, installed-module sales, routing, power delivery,
-  thermal simulation, and overclock behavior.
+- Installed-module sales, route creation and disconnection, path validation, apply, undo/redo
+  execution, power delivery, thermal simulation, and overclock behavior.
 - Useful Compute, benchmarks, blueprints, replay execution, and balancing bot.
 - React/Pixi integration, IndexedDB, save/load, migrations, export, and import.

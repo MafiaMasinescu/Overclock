@@ -108,6 +108,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
       contractedPowerWatts: content.era.startingPowerCapacityWatts,
       modules: {},
       routes: {},
+      nextModuleInstanceSequence: 1,
       thermalTiles: createThermalTiles(
         content.era.facilityGrid.width,
         content.era.facilityGrid.height,

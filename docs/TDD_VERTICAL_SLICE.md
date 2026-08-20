@@ -324,6 +324,14 @@ export interface GameState {
 
 Setările grafice, volumele audio și limba se salvează separat de state-ul determinist. Ele pot apărea în `SavePayload.settings`, dar nu influențează hash-ul de replay.
 
+`FacilityState` include câmpul autoritativ aditiv:
+
+```ts
+nextModuleInstanceSequence: number;
+```
+
+Valoarea pornește de la `1`, rămâne un positive safe integer și nu scade. Fiecare placement acceptat alocă `module-instance-` urmat de secvența zecimală pe minimum opt poziții cu zero-uri la stânga, apoi incrementează secvența exact o dată. Un placement respins nu consumă secvența. Remove și Cancel nu restaurează valori consumate, astfel încât ID-urile instanțelor nu se refolosesc în același save. Alocarea nu consumă RNG. Coliziunea unui ID generat sau imposibilitatea incrementării în intervalul safe integer produce `INVALID_SYSTEM` fără mutație. Formatul și secvența fac parte din compatibilitatea save/replay.
+
 ### 10.1 Invariante globale
 
 - `tick` nu scade.
@@ -1419,4 +1427,3 @@ Următoarele nu blochează vertical slice-ul:
 Prima sesiune Codex execută numai `docs/phases/00_SETUP.md`, folosind promptul `docs/prompts/00_FIRST_CODEX_PROMPT.md`.
 
 Faza 0 nu implementează gameplay complet. Ea creează repository-ul, quality gates, contractele, content loader-ul minimal, shell-ul aplicației și un smoke test. După validarea ei, Faza 1 construiește simulatorul headless.
-

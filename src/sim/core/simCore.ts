@@ -6,6 +6,7 @@ import type { CommandReceipt, CommandResult, SimCommand } from "../commands/cont
 import { canonicalSerialize } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
+import { assertValidDesignModeState } from "../design/designModeState.ts";
 import { AuthoritativeState } from "./authoritativeState.ts";
 import {
   TICK_SYSTEM_STAGE_ORDER,
@@ -131,6 +132,7 @@ export class SimCore {
 
   constructor({ initialState, commandHandlers, tickSystems = {} }: SimCoreOptions) {
     assertValidClockAndTick(initialState);
+    assertValidDesignModeState(initialState);
     canonicalSerialize(initialState);
 
     this.authoritativeState = new AuthoritativeState(initialState);
@@ -241,6 +243,7 @@ export class SimCore {
         this.assertSystemControlledFields(candidate, current);
         assertValidRngState(candidate.rngState);
         assertValidInventoryEconomyState(candidate);
+        assertValidDesignModeState(candidate, current.facility.nextModuleInstanceSequence);
         canonicalSerialize(candidate);
       } catch (cause: unknown) {
         throw new TickSystemInvariantError(current.tick, stage, cause);

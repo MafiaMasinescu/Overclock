@@ -9,6 +9,11 @@
     }
   },
   "errors": {
+    "already-in-design-mode": "Design Mode is already active.",
+    "invalid-system": "The system state is invalid.",
+    "not-in-design-mode": "Design Mode is not active.",
+    "out-of-bounds": "The module footprint is outside the facility.",
+    "tile-occupied": "The module footprint overlaps an occupied tile.",
     "command-not-available": "This command is not available yet.",
     "insufficient-cash": "Insufficient cash.",
     "insufficient-inventory": "Insufficient inventory.",

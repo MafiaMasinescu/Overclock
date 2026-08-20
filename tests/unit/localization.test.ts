@@ -38,6 +38,15 @@ describe("application localization", () => {
     expect(i18n.t("errors.insufficient-cash")).toBe("Fonduri insuficiente.");
     expect(i18n.t("errors.insufficient-inventory")).toBe("Inventar insuficient.");
     expect(i18n.t("errors.research-required")).toBe("Cercetarea necesară nu este finalizată.");
+    for (const key of [
+      "errors.not-in-design-mode",
+      "errors.already-in-design-mode",
+      "errors.invalid-system",
+      "errors.out-of-bounds",
+      "errors.tile-occupied",
+    ]) {
+      expect(i18n.t(key)).not.toBe(key);
+    }
 
     await i18n.changeLanguage("en");
 
@@ -49,5 +58,10 @@ describe("application localization", () => {
     expect(i18n.t("errors.insufficient-cash")).toBe("Insufficient cash.");
     expect(i18n.t("errors.insufficient-inventory")).toBe("Insufficient inventory.");
     expect(i18n.t("errors.research-required")).toBe("The required research is not completed.");
+    expect(i18n.t("errors.not-in-design-mode")).toBe("Design Mode is not active.");
+    expect(i18n.t("errors.already-in-design-mode")).toBe("Design Mode is already active.");
+    expect(i18n.t("errors.invalid-system")).toBe("The system state is invalid.");
+    expect(i18n.t("errors.out-of-bounds")).toBe("The module footprint is outside the facility.");
+    expect(i18n.t("errors.tile-occupied")).toBe("The module footprint overlaps an occupied tile.");
   });
 });

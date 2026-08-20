@@ -9,6 +9,11 @@
     }
   },
   "errors": {
+    "already-in-design-mode": "Design Mode este deja activ.",
+    "invalid-system": "Starea sistemului este invalidă.",
+    "not-in-design-mode": "Design Mode nu este activ.",
+    "out-of-bounds": "Footprint-ul modulului este în afara facilității.",
+    "tile-occupied": "Footprint-ul modulului se suprapune peste un tile ocupat.",
     "command-not-available": "Comanda nu este disponibilă încă.",
     "insufficient-cash": "Fonduri insuficiente.",
     "insufficient-inventory": "Inventar insuficient.",

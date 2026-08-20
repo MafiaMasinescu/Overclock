@@ -76,6 +76,7 @@ describe("initial GameState", () => {
         contractedPowerWatts: 24_000,
         modules: {},
         routes: {},
+        nextModuleInstanceSequence: 1,
         liveLayoutRevision: 0,
         thermalRevision: 0,
         designDraft: null,

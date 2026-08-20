@@ -8,39 +8,6 @@ import { canonicalSerialize } from "../../src/sim/replay/canonicalState.ts";
 
 const commands: readonly SimCommand[] = [
   {
-    commandId: "51000000-0000-4000-8000-000000000001",
-    source: "player",
-    kind: "ENTER_DESIGN_MODE",
-  },
-  {
-    commandId: "51000000-0000-4000-8000-000000000002",
-    source: "player",
-    kind: "PLACE_MODULE",
-    definitionId: "module-data-relay",
-    position: { x: 0, y: 0 },
-    rotation: 0,
-  },
-  {
-    commandId: "51000000-0000-4000-8000-000000000003",
-    source: "player",
-    kind: "MOVE_MODULE",
-    moduleInstanceId: "module-instance",
-    position: { x: 1, y: 1 },
-  },
-  {
-    commandId: "51000000-0000-4000-8000-000000000004",
-    source: "player",
-    kind: "ROTATE_MODULE",
-    moduleInstanceId: "module-instance",
-    rotation: 90,
-  },
-  {
-    commandId: "51000000-0000-4000-8000-000000000005",
-    source: "player",
-    kind: "REMOVE_MODULE",
-    moduleInstanceId: "module-instance",
-  },
-  {
     commandId: "51000000-0000-4000-8000-000000000006",
     source: "player",
     kind: "CONNECT_PORTS",
@@ -64,13 +31,12 @@ const commands: readonly SimCommand[] = [
     acceptedCostUsd: 0,
     acceptedDowntimeTicks: 0,
   },
-  { commandId: "51000000-0000-4000-8000-000000000011", source: "player", kind: "CANCEL_DESIGN" },
 ];
 
-test("keeps every existing build command unavailable in Task 5.1", () => {
+test("keeps all five deferred build commands unavailable in Task 5.2", () => {
   const initialState = createInitialGameState({
     content: loadContentBundle(),
-    seed: "task-5-1-command-scope",
+    seed: "task-5-2-command-scope",
   });
   const core = new SimCore({ initialState });
   const before = canonicalSerialize(core.getStateForSave());
@@ -80,11 +46,15 @@ test("keeps every existing build command unavailable in Task 5.1", () => {
   }
   const results = core.processPendingCommands();
 
-  expect(results).toHaveLength(commands.length);
-  expect(results.map((result) => result.accepted)).toEqual(commands.map(() => false));
-  expect(results.map((result) => (result.accepted ? null : result.code))).toEqual(
-    commands.map(() => "COMMAND_NOT_AVAILABLE"),
-  );
+  expect(results).toHaveLength(5);
+  expect(results.map((result) => result.accepted)).toEqual([false, false, false, false, false]);
+  expect(results.map((result) => (result.accepted ? null : result.code))).toEqual([
+    "COMMAND_NOT_AVAILABLE",
+    "COMMAND_NOT_AVAILABLE",
+    "COMMAND_NOT_AVAILABLE",
+    "COMMAND_NOT_AVAILABLE",
+    "COMMAND_NOT_AVAILABLE",
+  ]);
   expect(canonicalSerialize(core.getStateForSave())).toBe(before);
   expect(core.getStateForSave().rngState).toBe(initialState.rngState);
 });

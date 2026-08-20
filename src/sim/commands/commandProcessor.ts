@@ -1,6 +1,7 @@
 import type { GameState } from "../core/types.ts";
 import { AuthoritativeState } from "../core/authoritativeState.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
+import { assertValidDesignModeState } from "../design/designModeState.ts";
 import { canonicalSerialize } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "./contracts.ts";
@@ -40,12 +41,17 @@ function cloneState(state: GameState): GameState {
   return structuredClone(state);
 }
 
-function validateCandidateState(candidate: GameState, expectedTick: number): void {
+function validateCandidateState(
+  candidate: GameState,
+  expectedTick: number,
+  minimumModuleInstanceSequence: number,
+): void {
   canonicalSerialize(candidate);
   if (candidate.tick !== expectedTick) {
     throw new Error("Command handlers must not advance or replace the current simulation tick.");
   }
   assertValidInventoryEconomyState(candidate);
+  assertValidDesignModeState(candidate, minimumModuleInstanceSequence);
 }
 
 function createRejectedResult(
@@ -83,6 +89,7 @@ export class CommandProcessor {
     dependencies: CommandProcessorDependencies = {},
   ) {
     assertValidInventoryEconomyState(initialState);
+    assertValidDesignModeState(initialState);
     this.state = dependencies.state ?? new AuthoritativeState(initialState);
     this.queue = dependencies.queue ?? new CommandQueue();
     this.handlers = handlers;
@@ -136,7 +143,11 @@ export class CommandProcessor {
       }
 
       candidate.rngState = candidateRng.getState();
-      validateCandidateState(candidate, currentTick);
+      validateCandidateState(
+        candidate,
+        currentTick,
+        authoritativeState.facility.nextModuleInstanceSequence,
+      );
       this.state.commitOwned(candidate);
 
       return {
