@@ -36,11 +36,19 @@ Folosește `docs/prompts/00_FIRST_CODEX_PROMPT.md` pentru prima sesiune de cod. 
 
 Ordinea de autoritate este:
 
-1. `AGENTS.md`, pentru reguli de lucru și limite tehnice.
-2. TDD-ul, pentru arhitectură și contracte.
-3. Fișierul fazei curente, pentru scope și acceptance criteria.
-4. GDD-ul, pentru viziune și gameplay.
-5. Codul și testele, doar după ce respectă documentele de mai sus.
+1. Cea mai recentă decizie aprobată explicit pentru task-ul curent.
+2. Evidența Git curentă.
+3. `docs/status/PROJECT_STATUS.md`.
+4. ADR-urile acceptate aplicabile.
+5. Fișierul fazei curente, pentru scope și acceptance criteria.
+6. TDD-ul Markdown, pentru arhitectură și contracte.
+7. `docs/GDD.md` v1.1, sursa GDD autoritativă.
+8. Materialele de handoff.
+9. Contextul chatului anterior.
+
+`docs/OVERCLOCK_Game_Design_Document_v1.0.docx` este numai o referință vizuală și arhivistică
+neautoritativă. Versiunea Markdown din `docs/TDD_VERTICAL_SLICE.md` rămâne sursa autoritativă
+pentru Codex și versionare Git; documentul Word TDD se păstrează ca referință.
 
 Dacă două surse se contrazic, Codex trebuie să oprească implementarea și să descrie conflictul. Nu inventează o decizie permanentă.
 

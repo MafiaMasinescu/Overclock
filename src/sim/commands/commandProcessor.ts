@@ -45,13 +45,14 @@ function validateCandidateState(
   candidate: GameState,
   expectedTick: number,
   minimumModuleInstanceSequence: number,
+  minimumRouteSequence: number,
 ): void {
   canonicalSerialize(candidate);
   if (candidate.tick !== expectedTick) {
     throw new Error("Command handlers must not advance or replace the current simulation tick.");
   }
   assertValidInventoryEconomyState(candidate);
-  assertValidDesignModeState(candidate, minimumModuleInstanceSequence);
+  assertValidDesignModeState(candidate, minimumModuleInstanceSequence, minimumRouteSequence);
 }
 
 function createRejectedResult(
@@ -147,6 +148,7 @@ export class CommandProcessor {
         candidate,
         currentTick,
         authoritativeState.facility.nextModuleInstanceSequence,
+        authoritativeState.facility.nextRouteSequence,
       );
       this.state.commitOwned(candidate);
 

@@ -243,7 +243,11 @@ export class SimCore {
         this.assertSystemControlledFields(candidate, current);
         assertValidRngState(candidate.rngState);
         assertValidInventoryEconomyState(candidate);
-        assertValidDesignModeState(candidate, current.facility.nextModuleInstanceSequence);
+        assertValidDesignModeState(
+          candidate,
+          current.facility.nextModuleInstanceSequence,
+          current.facility.nextRouteSequence,
+        );
         canonicalSerialize(candidate);
       } catch (cause: unknown) {
         throw new TickSystemInvariantError(current.tick, stage, cause);

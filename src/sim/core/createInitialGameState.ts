@@ -109,6 +109,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
       modules: {},
       routes: {},
       nextModuleInstanceSequence: 1,
+      nextRouteSequence: 1,
       thermalTiles: createThermalTiles(
         content.era.facilityGrid.width,
         content.era.facilityGrid.height,

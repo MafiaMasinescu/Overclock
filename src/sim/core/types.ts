@@ -124,6 +124,7 @@ export interface FacilityState {
   modules: Record<ModuleInstanceId, ModuleInstanceState>;
   routes: Record<RouteId, RouteState>;
   nextModuleInstanceSequence: number;
+  nextRouteSequence: number;
   thermalTiles: ThermalTileState[];
   liveLayoutRevision: number;
   thermalRevision: number;

@@ -77,6 +77,7 @@ describe("initial GameState", () => {
         modules: {},
         routes: {},
         nextModuleInstanceSequence: 1,
+        nextRouteSequence: 1,
         liveLayoutRevision: 0,
         thermalRevision: 0,
         designDraft: null,

@@ -2,6 +2,11 @@ import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
 import { validateModulePlacement } from "../../grid/domain/occupancy.ts";
 import { compareStableStrings } from "../../grid/domain/stableOrdering.ts";
 import { assertValidGridState } from "../../grid/validation/gridState.ts";
+import {
+  assertValidRouteState,
+  validateManualRouteConnection,
+  type ManualRouteFailure,
+} from "../routing/manualRouting.ts";
 import type {
   CommandHandlerRejection,
   CommandHandlerRegistry,
@@ -22,6 +27,8 @@ export type DesignModeCommandHandlers = Pick<
   | "MOVE_MODULE"
   | "ROTATE_MODULE"
   | "REMOVE_MODULE"
+  | "CONNECT_PORTS"
+  | "DISCONNECT_ROUTE"
   | "CANCEL_DESIGN"
 >;
 
@@ -164,6 +171,28 @@ function gridRejection(
   return REJECTIONS.invalidPayload;
 }
 
+function routeRejection(failure: ManualRouteFailure): CommandHandlerRejection {
+  const parameters = { reason: failure.reason };
+  switch (failure.code) {
+    case "INVALID_ROUTE":
+      return {
+        code: failure.code,
+        messageKey: `errors.invalid-route-${failure.reason.toLowerCase().replaceAll("_", "-")}`,
+        parameters,
+      };
+    case "OUT_OF_BOUNDS":
+      return { code: failure.code, messageKey: "errors.route-out-of-bounds", parameters };
+    case "TILE_OCCUPIED":
+      return { code: failure.code, messageKey: "errors.route-tile-occupied", parameters };
+    case "INVALID_PORT":
+      return { code: failure.code, messageKey: "errors.route-invalid-port", parameters };
+    case "INCOMPATIBLE_PORTS":
+      return { code: failure.code, messageKey: "errors.route-incompatible-ports", parameters };
+    default:
+      return { ...REJECTIONS.invalidSystem, parameters };
+  }
+}
+
 function assertValidDraftGrid(
   facility: FacilityState,
   draft: DesignDraftState,
@@ -175,6 +204,15 @@ function assertValidDraftGrid(
       modules: draft.modules,
       routes: draft.routes,
       designDraft: null,
+    },
+    content,
+  );
+  assertValidRouteState(
+    {
+      size: facility.size,
+      modules: draft.modules,
+      routes: draft.routes,
+      nextRouteSequence: facility.nextRouteSequence,
     },
     content,
   );
@@ -207,6 +245,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
         return REJECTIONS.alreadyInDesignMode;
       }
       assertValidGridState(state.facility, content);
+      assertValidRouteState(state.facility, content);
       state.facility.designDraft = {
         revision: 0,
         modules: structuredClone(state.facility.modules),
@@ -424,6 +463,95 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
         operationId: operationId(revision, command.commandId),
         kind: "remove",
         payload: toJsonObject({ module: removedModule, removedRoutes }),
+      });
+      draft.redoStack = [];
+      assertValidDraftGrid(state.facility, draft, content);
+    },
+
+    CONNECT_PORTS({ state }, command) {
+      const draft = state.facility.designDraft;
+      if (draft === null) {
+        return REJECTIONS.notInDesignMode;
+      }
+      const resolved = validateManualRouteConnection(
+        {
+          size: state.facility.size,
+          modules: draft.modules,
+          routes: draft.routes,
+        },
+        content,
+        command.from,
+        command.to,
+        command.path,
+      );
+      if ("code" in resolved) {
+        return routeRejection(resolved);
+      }
+      const revision = incrementRevision(draft);
+      if (revision === null) {
+        return REJECTIONS.invalidSystem;
+      }
+      const sequence = state.facility.nextRouteSequence;
+      if (sequence >= Number.MAX_SAFE_INTEGER) {
+        return REJECTIONS.invalidSystem;
+      }
+      const routeId = `route-${sequence.toString().padStart(8, "0")}`;
+      if (Object.hasOwn(state.facility.routes, routeId) || Object.hasOwn(draft.routes, routeId)) {
+        return REJECTIONS.invalidSystem;
+      }
+      const path = (resolved.reverseSubmittedPath ? command.path.toReversed() : command.path).map(
+        (point) => ({ ...point }),
+      );
+      const route: RouteState = {
+        id: routeId,
+        kind: resolved.kind,
+        from: {
+          moduleInstanceId: resolved.from.moduleInstanceId,
+          portId: resolved.from.portId,
+        },
+        to: {
+          moduleInstanceId: resolved.to.moduleInstanceId,
+          portId: resolved.to.portId,
+        },
+        path,
+        capacityPerSecond: Math.min(resolved.from.capacityPerSecond, resolved.to.capacityPerSecond),
+        congestionRatio: 0,
+      };
+      draft.routes[route.id] = route;
+      draft.revision = revision;
+      draft.undoStack.push({
+        operationId: operationId(revision, command.commandId),
+        kind: "connect",
+        payload: toJsonObject({ route }),
+      });
+      draft.redoStack = [];
+      state.facility.nextRouteSequence = sequence + 1;
+      assertValidDraftGrid(state.facility, draft, content);
+    },
+
+    DISCONNECT_ROUTE({ state }, command) {
+      const draft = state.facility.designDraft;
+      if (draft === null) {
+        return REJECTIONS.notInDesignMode;
+      }
+      if (!Object.hasOwn(draft.routes, command.routeId)) {
+        return routeRejection({ code: "INVALID_ROUTE", reason: "ROUTE_NOT_FOUND" });
+      }
+      const route = draft.routes[command.routeId];
+      if (route?.id !== command.routeId) {
+        return REJECTIONS.invalidSystem;
+      }
+      const revision = incrementRevision(draft);
+      if (revision === null) {
+        return REJECTIONS.invalidSystem;
+      }
+      const removedRoute = structuredClone(route);
+      Reflect.deleteProperty(draft.routes, command.routeId);
+      draft.revision = revision;
+      draft.undoStack.push({
+        operationId: operationId(revision, command.commandId),
+        kind: "disconnect",
+        payload: toJsonObject({ route: removedRoute }),
       });
       draft.redoStack = [];
       assertValidDraftGrid(state.facility, draft, content);

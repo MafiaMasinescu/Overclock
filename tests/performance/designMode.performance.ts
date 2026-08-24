@@ -219,7 +219,9 @@ const occupiedTiles = Object.values(denseModules).reduce(
   0,
 );
 const cpu = cpus()[0]?.model ?? "unknown CPU";
-console.log("Task 5.2 Design Mode diagnostic (development machine; no final i7-2600 gate claim)");
+console.log(
+  "Task 5.3 Design Mode regression diagnostic (development machine; no final i7-2600 gate claim)",
+);
 console.log(
   `fixture: ${GRID_WIDTH} x ${GRID_HEIGHT} tiles, ${Object.keys(denseModules).length} modules, ` +
     `${occupiedTiles}/${GRID_WIDTH * GRID_HEIGHT} occupied tiles (${(

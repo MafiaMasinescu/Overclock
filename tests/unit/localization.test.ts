@@ -44,6 +44,17 @@ describe("application localization", () => {
       "errors.invalid-system",
       "errors.out-of-bounds",
       "errors.tile-occupied",
+      "errors.route-out-of-bounds",
+      "errors.route-tile-occupied",
+      "errors.route-invalid-port",
+      "errors.route-incompatible-ports",
+      "errors.invalid-route-route-not-found",
+      "errors.invalid-route-duplicate-endpoint-pair",
+      "errors.invalid-route-path-too-short",
+      "errors.invalid-route-path-too-long",
+      "errors.invalid-route-path-endpoint-mismatch",
+      "errors.invalid-route-non-orthogonal-segment",
+      "errors.invalid-route-repeated-path-tile",
     ]) {
       expect(i18n.t(key)).not.toBe(key);
     }

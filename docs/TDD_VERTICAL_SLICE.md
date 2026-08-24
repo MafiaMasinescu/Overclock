@@ -328,9 +328,17 @@ Setările grafice, volumele audio și limba se salvează separat de state-ul det
 
 ```ts
 nextModuleInstanceSequence: number;
+nextRouteSequence: number;
 ```
 
 Valoarea pornește de la `1`, rămâne un positive safe integer și nu scade. Fiecare placement acceptat alocă `module-instance-` urmat de secvența zecimală pe minimum opt poziții cu zero-uri la stânga, apoi incrementează secvența exact o dată. Un placement respins nu consumă secvența. Remove și Cancel nu restaurează valori consumate, astfel încât ID-urile instanțelor nu se refolosesc în același save. Alocarea nu consumă RNG. Coliziunea unui ID generat sau imposibilitatea incrementării în intervalul safe integer produce `INVALID_SYSTEM` fără mutație. Formatul și secvența fac parte din compatibilitatea save/replay.
+
+`nextRouteSequence` are aceeași semnificație de compatibilitate save/replay pentru rute: pornește la
+`1`, rămâne positive safe integer și nu scade. Fiecare `CONNECT_PORTS` acceptat alocă
+`route-00000001` (minimum opt cifre zecimale cu zero-uri la stânga) și incrementează secvența exact
+o dată. Respingerea, Disconnect, Cancel și viitorul Undo nu restaurează secvența; golurile sunt
+intenționate. Coliziunea ID-ului generat sau overflow-ul produce `INVALID_SYSTEM` fără mutație și nu
+consumă RNG.
 
 ### 10.1 Invariante globale
 
@@ -344,6 +352,7 @@ Valoarea pornește de la `1`, rămâne un positive safe integer și nu scade. Fi
 - Temperatura fiecărui tile rămâne între limitele de siguranță numerică ale simulării.
 - Un command respins nu schimbă hash-ul state-ului.
 - ID-urile instanțelor nu se refolosesc în același save.
+- ID-urile rutelor nu se refolosesc în același save.
 
 ## 11. Comenzi
 
@@ -636,6 +645,28 @@ Validatorul întoarce o listă ordonată de `ValidationIssue`, cu severity, enti
 La intrarea în Design Mode, simulatorul creează `DesignDraft` din layout-ul live. Mutările se aplică numai draft-ului. Sistemul live continuă să ruleze până la Apply, cu excepția pause-ului ales de jucător.
 
 Draft-ul păstrează un command stack pentru undo și redo. Nu păstrează snapshot-uri complete după fiecare operație.
+
+`CONNECT_PORTS` și `DISCONNECT_ROUTE` modifică numai rutele draft-ului. Pentru un connect manual,
+endpointurile se rezolvă după regulile ADR-0005 și se stochează în direcție canonică; power este
+output-to-input, data direcțional își păstrează direcția, iar data bidirecțional se sortează stabil.
+Comanda poate trimite capetele în ordine inversă, caz în care path-ul stocat se inversează împreună
+cu endpointurile.
+
+`path: GridPoint[]` conține fiecare tile traversat, inclusiv tile-urile modulelor endpoint. În ordinea
+trimisă, primul punct este tile-ul modulului from, al doilea este tile-ul exterior portului from,
+penultimul este tile-ul exterior portului to, iar ultimul este tile-ul modulului to. Path-ul are între
+două și `facility.width * facility.height` puncte, rămâne în bounds, avansează ortogonal exact un
+tile, nu repetă tile-uri și nu poate traversa module: numai primul și ultimul punct pot ocupa modulele
+endpoint. Nu se comprimă segmente coliniare.
+
+Rutele power și data sunt straturi logice separate, dar Task 5.3 permite crossing, overlap, segmente,
+tile-uri și porturi partajate; numai perechea canonică de endpointuri duplicată este respinsă.
+Capacitatea unei rute acceptate este `min(from.capacityPerSecond, to.capacityPerSecond)` și
+`congestionRatio` începe la `0`. Nu există rezervare de bandwidth, capacity de muchie, penalizare de
+crossing sau congestion gameplay în acest task. `INVALID_ROUTE` transmite motiv stabil pentru route
+inexistentă, pereche duplicată, path prea scurt/lung, endpoint mismatch, segment neortogonal sau tile
+repetat. Connect și Disconnect sunt atomice, cresc revision o dată și salvează `{ route }` detașat în
+istoric; ele nu au no-op acceptat.
 
 `APPLY_DESIGN` calculează:
 

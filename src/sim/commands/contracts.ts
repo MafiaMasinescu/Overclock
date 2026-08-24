@@ -161,6 +161,7 @@ export type CommandRejectionCode =
   | "TILE_OCCUPIED"
   | "INVALID_PORT"
   | "INCOMPATIBLE_PORTS"
+  | "INVALID_ROUTE"
   | "NO_ROUTE_FOUND"
   | "INVALID_SYSTEM"
   | "TASK_SLOT_LIMIT"

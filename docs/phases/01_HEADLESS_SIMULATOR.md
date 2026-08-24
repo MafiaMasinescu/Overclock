@@ -108,7 +108,7 @@ simulation, snapshots, saves, workers, rendering, or UI. Compatibility details a
 
 ## Task 5.2: Design Mode lifecycle and deterministic draft edits
 
-Status: implemented, pending review and approval.
+Status: approved checkpoint, committed at `916476b6e5e8db6253606e7463781e7b594bf325`.
 
 Task 5.2 includes only:
 
@@ -134,9 +134,32 @@ silicon lottery, overclock behavior, snapshots, saves, workers, rendering, or UI
 details are fixed by
 `docs/decisions/ADR-0006_DESIGN_MODE_DRAFTS_AND_MODULE_INSTANCE_IDS.md`.
 
-## Exact next task
+## Task 5.3: Deterministic manual routing
 
-Phase 1 Task 5.3: deterministic CONNECT_PORTS and DISCONNECT_ROUTE with manual orthogonal path validation.
+Status: approved for checkpoint. The checkpoint hash is intentionally recorded by Git only after the
+commit exists.
+
+Task 5.3 includes only:
+
+- content-injected production handlers for `CONNECT_PORTS` and `DISCONNECT_ROUTE` through the
+  existing command registry, processor, and `SimCore` path;
+- validated draft endpoint resolution through ADR-0005 port compatibility and canonical direction,
+  including canonical path reversal when submitted endpoint order is reversed;
+- inclusive, uncompressed manual orthogonal paths with bounded length, bounds, unique tiles, and
+  module-blocking validation;
+- crossings, shared path tiles and segments, and multiple routes per port without capacity
+  reservation, while rejecting duplicate normalized endpoint pairs;
+- authoritative monotonic `FacilityState.nextRouteSequence` allocation without RNG and with
+  collision/overflow rollback;
+- detached connect/disconnect history records, route-state invariants, routing localizations, exact
+  100-run determinism coverage, and a dedicated routing performance diagnostic;
+- live-route validation before draft cloning and continued stable attached-route cleanup for move,
+  rotate, and remove.
+
+Task 5.3 does not implement auto-connect, auto-route, A-star, rerouting, preview validation,
+undo/redo/apply execution, inventory/cash/labor/downtime effects, capacity reservation, power,
+workload, latency, congestion gameplay, thermal behavior, UI, saves, workers, or a later task.
+Compatibility details are fixed by `docs/decisions/ADR-0007_DETERMINISTIC_MANUAL_ROUTING.md`.
 
 ## Nu implementa
 

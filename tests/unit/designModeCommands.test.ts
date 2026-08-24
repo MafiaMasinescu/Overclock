@@ -106,15 +106,43 @@ function moduleFixture(
   };
 }
 
-function routeFixture(id: string, from: string, to: string): RouteState {
+function routeFixture(
+  id: string,
+  first: ModuleInstanceState,
+  second: ModuleInstanceState,
+): RouteState {
+  const sortedModules = [first, second].toSorted((left, right) => left.id.localeCompare(right.id));
+  const fromModule = sortedModules[0];
+  const toModule = sortedModules[1];
+  if (fromModule === undefined || toModule === undefined) {
+    throw new Error("Expected exactly two route endpoint modules.");
+  }
+  const movesEast = fromModule.position.x < toModule.position.x;
+  const step = movesEast ? 1 : -1;
+  const path: { x: number; y: number }[] = [];
+
+  for (
+    let x = fromModule.position.x;
+    movesEast ? x <= toModule.position.x : x >= toModule.position.x;
+    x += step
+  ) {
+    path.push({ x, y: fromModule.position.y });
+  }
+
   return {
     id,
     kind: "data",
-    from: { moduleInstanceId: from, portId: "data" },
-    to: { moduleInstanceId: to, portId: "data" },
-    path: [{ x: 0, y: 0 }],
-    capacityPerSecond: 12,
-    congestionRatio: 0.25,
+    from: {
+      moduleInstanceId: fromModule.id,
+      portId: movesEast ? "data-east" : "data-west",
+    },
+    to: {
+      moduleInstanceId: toModule.id,
+      portId: movesEast ? "data-west" : "data-east",
+    },
+    path,
+    capacityPerSecond: 60_000,
+    congestionRatio: 0,
   };
 }
 
@@ -154,7 +182,7 @@ function populatedState(state: GameState): void {
   const left = moduleFixture("live-left", RELAY, { x: 0, y: 0 });
   const right = moduleFixture("live-right", RELAY, { x: 2, y: 0 });
   state.facility.modules = { [left.id]: left, [right.id]: right };
-  const route = routeFixture("route-live", left.id, right.id);
+  const route = routeFixture("route-live", left, right);
   state.facility.routes = { [route.id]: route };
   state.facility.liveLayoutRevision = 7;
 }
@@ -714,17 +742,19 @@ describe("REMOVE_MODULE and attached routes", () => {
   test.each(["move", "rotate", "remove"] as const)(
     "%s removes sorted attached routes, records them, and preserves unrelated routes",
     (kind) => {
-      const target = moduleFixture("route-target", RELAY, { x: 0, y: 0 });
+      const target = moduleFixture("route-target", RELAY, { x: 4, y: 0 });
       const neighbor = moduleFixture("route-neighbor", RELAY, { x: 2, y: 0 });
-      const unrelatedLeft = moduleFixture("unrelated-left", RELAY, { x: 4, y: 0 });
-      const unrelatedRight = moduleFixture("unrelated-right", RELAY, { x: 6, y: 0 });
-      const routeZ = routeFixture("route-z", target.id, neighbor.id);
-      const routeA = routeFixture("route-a", neighbor.id, target.id);
-      const unrelated = routeFixture("route-unrelated", unrelatedLeft.id, unrelatedRight.id);
+      const attachedOther = moduleFixture("route-other", RELAY, { x: 6, y: 0 });
+      const unrelatedLeft = moduleFixture("unrelated-left", RELAY, { x: 8, y: 0 });
+      const unrelatedRight = moduleFixture("unrelated-right", RELAY, { x: 10, y: 0 });
+      const routeZ = routeFixture("route-z", target, attachedOther);
+      const routeA = routeFixture("route-a", neighbor, target);
+      const unrelated = routeFixture("route-unrelated", unrelatedLeft, unrelatedRight);
       const { core, before } = coreWithSeededRedo((state) => {
         state.facility.modules = {
           [target.id]: target,
           [neighbor.id]: neighbor,
+          [attachedOther.id]: attachedOther,
           [unrelatedLeft.id]: unrelatedLeft,
           [unrelatedRight.id]: unrelatedRight,
         };

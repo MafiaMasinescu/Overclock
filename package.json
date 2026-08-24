@@ -20,6 +20,7 @@
     "test:unit": "vitest run tests/unit",
     "test:determinism": "vitest run tests/determinism",
     "performance:design": "node tests/performance/designMode.performance.ts",
+    "performance:routing": "node tests/performance/manualRouting.performance.ts",
     "performance:grid": "node tests/performance/gridGeometry.performance.ts",
     "performance:tick": "node tests/performance/tickPipeline.performance.ts",
     "test:e2e": "playwright test",

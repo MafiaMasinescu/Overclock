@@ -33,7 +33,7 @@ const commands: readonly SimCommand[] = [
   },
 ];
 
-test("keeps all five deferred build commands unavailable in Task 5.2", () => {
+test("keeps routing and deferred build commands unavailable without a production registry", () => {
   const initialState = createInitialGameState({
     content: loadContentBundle(),
     seed: "task-5-2-command-scope",
