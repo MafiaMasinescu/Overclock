@@ -283,25 +283,27 @@ describe("manual routing", () => {
     expect(core.getStateForSave().facility.nextRouteSequence).toBe(3);
   });
 
-  test("keeps UNDO_DESIGN, REDO_DESIGN and APPLY_DESIGN unavailable", () => {
+  test("keeps APPLY_DESIGN unavailable and gates undo and redo on Design Mode", () => {
     const core = createCore();
     for (const command of [
       { commandId: commandId(20), source: "player", kind: "UNDO_DESIGN" },
       { commandId: commandId(21), source: "player", kind: "REDO_DESIGN" },
-      {
+    ] as const satisfies readonly SimCommand[]) {
+      expect(process(core, command)).toMatchObject({
+        accepted: false,
+        code: "NOT_IN_DESIGN_MODE",
+      });
+    }
+    expect(
+      process(core, {
         commandId: commandId(22),
         source: "player",
         kind: "APPLY_DESIGN",
         expectedDraftRevision: 0,
         acceptedCostUsd: 0,
         acceptedDowntimeTicks: 0,
-      },
-    ] as const satisfies readonly SimCommand[]) {
-      expect(process(core, command)).toMatchObject({
-        accepted: false,
-        code: "COMMAND_NOT_AVAILABLE",
-      });
-    }
+      }),
+    ).toMatchObject({ accepted: false, code: "COMMAND_NOT_AVAILABLE" });
   });
 
   test("rejects both routing commands outside Design Mode", () => {

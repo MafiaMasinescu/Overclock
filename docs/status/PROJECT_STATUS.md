@@ -11,8 +11,10 @@ Updated: 2026-08-24
   geometry, compatibility, and derived adjacent-port graph, explicitly approved on 18 August 2026.
 - Phase 1 Task 5.2, Design Mode lifecycle and deterministic place, move, rotate, and remove draft
   commands, is validated and checkpointed at `916476b6e5e8db6253606e7463781e7b594bf325`.
-- Phase 1 Task 5.3, deterministic manual `CONNECT_PORTS` and `DISCONNECT_ROUTE`, is approved for
-  checkpoint. Git records the checkpoint hash after commit.
+- Phase 1 Task 5.3, deterministic manual `CONNECT_PORTS` and `DISCONNECT_ROUTE`, is checkpointed
+  at `4d83988792cd02cbe81b6749696cd470ee422c77`.
+- Phase 1 Task 5.4, deterministic `UNDO_DESIGN` and `REDO_DESIGN`, is implemented and pending
+  review and checkpoint.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
   `DISCONNECT_ROUTE`, and `CANCEL_DESIGN`. No production gameplay tick system has started.
@@ -155,8 +157,7 @@ Updated: 2026-08-24
   stacks and revision.
 - Move, rotate, and remove delete all attached draft routes in stable route-ID order, copy them into
   the operation payload, and preserve unrelated routes. No rerouting or adjacent-graph build occurs.
-- `UNDO_DESIGN`, `REDO_DESIGN`, and `APPLY_DESIGN` remain unregistered and return
-  `COMMAND_NOT_AVAILABLE`.
+- `APPLY_DESIGN` remains unregistered and returns `COMMAND_NOT_AVAILABLE`.
 
 ## Phase 1 Task 5.3 implementation
 
@@ -181,6 +182,22 @@ Updated: 2026-08-24
   canonical `{ route }` operation payload. They preserve live layout, inventory, economy, clock,
   tasks, research, RNG, and tick. The pure route validator checks records, canonical endpoints/path,
   capacity, congestion, duplicate pairs, and route sequence; enter validates live routes before clone.
+
+## Phase 1 Task 5.4 implementation
+
+- `UNDO_DESIGN` and `REDO_DESIGN` are registered through the existing immutable-content Design Mode
+  factory, command processor, and `SimCore` path. `APPLY_DESIGN` remains unavailable.
+- Empty relevant stacks are accepted exact no-ops, including at maximum revision. A nonempty stack
+  with revision overflow rejects atomically as `INVALID_SYSTEM`.
+- Real undo and redo move the same logical detached operation between LIFO stacks, preserve its
+  operation ID and complete payload, and increment revision exactly once. They create no operations.
+- All six operation kinds restore or remove exact stored modules and routes, including complete route
+  paths, capacity, and congestion. Module and route sequences do not change and IDs are never reused.
+- Undo and redo mutate only the draft; they leave live layout, inventory, economy, RNG, clock,
+  tasks, and research unchanged. They do not revalidate inventory or build an adjacent-port graph.
+- Malformed history, transition mismatches, collisions, and invalid restored grid or route records
+  are fatal ADR-0002 invariants. The handlers validate draft grid, routes, history, and sequences
+  before candidate commit. Compatibility is recorded by ADR-0008.
 
 ## Public types and APIs
 
@@ -361,36 +378,36 @@ Updated: 2026-08-24
 
 ## Verification
 
-- Focused Task 5.3 selection: PASS, 6 files and 87 tests. Dedicated routing determinism: PASS, one
-  file and one exact-100-run test comparing receipts, results, canonical route data, IDs, sequences,
-  history, hash, and RNG.
-- Task 2 through Task 5.1 regression selection: PASS, 9 files and 212 tests (the corrected baseline,
-  not the obsolete 222 count).
-- Complete unit suite: PASS, 18 files and 322 tests. Complete determinism suite: PASS, 3 files and
-  3 tests.
-- Routing scope: the commands are unavailable without an injected production registry, available
-  through the Design Mode factory, and `UNDO_DESIGN`, `REDO_DESIGN`, and `APPLY_DESIGN` remain
-  `COMMAND_NOT_AVAILABLE` without state or RNG changes.
+- Focused Task 5.4 coverage: PASS, one unit file with 10 tests plus one exact-100-run determinism
+  file. It covers registration, unavailable apply, Design Mode rejections, exact empty no-ops,
+  overflow, all six operation kinds, LIFO, ID/sequence preservation, atomicity, fatal corruption,
+  FIFO, expected tick, and canonical serialization.
+- Task 2 through Task 5.3 regression selection: PASS, 9 files and 215 tests.
+- Complete unit suite: PASS, 19 files and 332 tests. Complete determinism suite: PASS, 4 files and
+  4 tests.
+- Design Mode scope: undo and redo are available only through the injected production factory;
+  `APPLY_DESIGN` remains `COMMAND_NOT_AVAILABLE` without state or RNG changes.
 - Published RNG, canonical-hash, money, and geometry compatibility selection: PASS, 5 files and 125
   tests;
   `seedToUint32("phase-one") === 2799575867` and
   `hashCanonicalState({ a: 1 }) === "9c3e82dd6fcae8b1"`; the published `0.000028 USD` energy-cost
   vector and Task 5.1 coordinate, rotation, occupancy, and port compatibility vectors remain green.
 - Routing diagnostic on the development i7-2600: `24 x 16`, 102 modules/occupied tiles, 10 existing
-  routes, 40 existing path points, and a 24-point candidate path. Connect median `13.4089 ms`, p95
-  `17.3131 ms`, max `22.7627 ms`; disconnect median `12.4253 ms`, p95 `16.0031 ms`, max `19.1424 ms`,
+  routes, 40 existing path points, and a 24-point candidate path. Connect median `13.8881 ms`, p95
+  `19.9269 ms`, max `27.3699 ms`; disconnect median `10.7683 ms`, p95 `14.8870 ms`, max `19.0893 ms`,
   with 200 samples each. It builds no adjacent-port graph or pathfinding work.
 - Design Mode diagnostic on the same host: `24 x 16`, 280 modules, 285/384 occupied tiles (`74.2%`),
-  and 0 routes. Enter median `19.5042 ms`, p95 `24.3973 ms`, max `26.7992 ms`; placement median
-  `23.2041 ms`, p95 `35.1063 ms`, max `104.1562 ms`; move median `20.4414 ms`, p95 `27.6005 ms`, max
-  `224.8774 ms`; rotation median `19.7512 ms`, p95 `23.7999 ms`, max `29.9358 ms`; removal median
-  `19.4595 ms`, p95 `24.4840 ms`, max `30.4349 ms`, with 200 samples each.
+  and 0 routes. Enter median `16.7308 ms`, p95 `21.6428 ms`, max `27.4148 ms`; placement median
+  `17.6411 ms`, p95 `24.2837 ms`, max `35.0756 ms`; move median `17.0019 ms`, p95 `22.5208 ms`, max
+  `27.1827 ms`; rotation median `16.6999 ms`, p95 `22.1574 ms`, max `28.5796 ms`; removal median
+  `17.1248 ms`, p95 `22.7270 ms`, max `29.6150 ms`; undo median `16.9555 ms`, p95 `21.6917 ms`, max
+  `25.5715 ms`; redo median `17.0013 ms`, p95 `21.8024 ms`, max `37.0843 ms`, with 200 samples each.
 - Grid diagnostic on the same host: `24 x 16`, 384 one-tile modules, 1,152 power/data nodes, and 368
-  edges. Occupancy median `0.5151 ms`, p95 `1.1475 ms`, max `2.8379 ms`; dense six-tile placement
-  median `0.5260 ms`, p95 `1.1706 ms`, max `2.3661 ms`; graph median `11.7520 ms`, p95
-  `16.8972 ms`, max `21.4340 ms`.
-- Tick diagnostic: empty median `0.0005 ms`, p95 `0.0013 ms`, max `0.7192 ms`; controlled private
-  fixture median `7.7991 ms`, p95 `11.2978 ms`, max `16.3208 ms`. The complete vertical-slice
+  edges. Occupancy median `0.4830 ms`, p95 `0.9497 ms`, max `1.6379 ms`; dense six-tile placement
+  median `0.5244 ms`, p95 `0.7729 ms`, max `1.9512 ms`; graph median `9.7960 ms`, p95 `12.2885 ms`,
+  max `17.3997 ms`.
+- Tick diagnostic: empty median `0.0004 ms`, p95 `0.0014 ms`, max `0.0662 ms`; controlled private
+  fixture median `6.5721 ms`, p95 `9.1420 ms`, max `13.2827 ms`. The complete vertical-slice
   i7-2600 under-4-ms gate remains open.
 - Formatting check, ESLint, strict TypeScript checking, and `corepack pnpm validate`: PASS.
 - Content validation: PASS, 12 modules, 8 tasks, 10 research nodes, 2 benchmarks, and 2 locales.
@@ -439,18 +456,18 @@ Updated: 2026-08-24
 
 ## Task boundary
 
-Task 5.3 is approved for checkpoint. No subsequent task has been selected or begun.
+Task 5.4 is implemented and pending coordinator review and checkpoint. No later task has begun.
 
 ## Explicitly deferred
 
 - Real-time tick scheduling, timers, catch-up, pause/speed host scheduling, and worker integration.
 - Every production gameplay command handler except `BUY_MODULE`, `SELL_INVENTORY_ITEM`,
   `ENTER_DESIGN_MODE`, `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`,
-  `CONNECT_PORTS`, `DISCONNECT_ROUTE`, and `CANCEL_DESIGN`.
+  `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, and `CANCEL_DESIGN`.
 - Automatic energy deductions, power capacity purchases, labor and relocation costs, task rewards,
   research costs/progression, maintenance, inflation, market events, scarcity, financing, interest,
   insolvency, bailout, bankruptcy, and financial game over.
 - Installed-module sales, auto-connect, auto-route, pathfinding, rerouting, route preview, apply,
-  undo/redo execution, hard route capacity, power delivery, thermal simulation, and overclock behavior.
+  hard route capacity, power delivery, thermal simulation, and overclock behavior.
 - Useful Compute, benchmarks, blueprints, replay execution, and balancing bot.
 - React/Pixi integration, IndexedDB, save/load, migrations, export, and import.

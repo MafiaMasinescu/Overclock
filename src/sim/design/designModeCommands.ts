@@ -13,11 +13,17 @@ import type {
 } from "../commands/commandHandlers.ts";
 import type {
   DesignDraftState,
+  DesignDraftOperation,
   FacilityState,
   JsonObject,
   ModuleInstanceState,
   RouteState,
 } from "../core/types.ts";
+import {
+  parseDesignDraftOperation,
+  assertValidDesignHistory,
+  type ParsedDesignDraftOperation,
+} from "./designModeState.ts";
 import { canonicalSerialize } from "../replay/canonicalState.ts";
 
 export type DesignModeCommandHandlers = Pick<
@@ -29,6 +35,8 @@ export type DesignModeCommandHandlers = Pick<
   | "REMOVE_MODULE"
   | "CONNECT_PORTS"
   | "DISCONNECT_ROUTE"
+  | "UNDO_DESIGN"
+  | "REDO_DESIGN"
   | "CANCEL_DESIGN"
 >;
 
@@ -218,6 +226,15 @@ function assertValidDraftGrid(
   );
 }
 
+function assertValidUndoRedoDraft(
+  facility: FacilityState,
+  draft: DesignDraftState,
+  content: ContentBundle,
+): void {
+  assertValidDraftGrid(facility, draft, content);
+  assertValidDesignHistory(draft.undoStack, draft.redoStack);
+}
+
 function removeAttachedRoutes(
   routes: Record<string, RouteState>,
   moduleInstanceId: string,
@@ -236,6 +253,366 @@ function removeAttachedRoutes(
     Reflect.deleteProperty(routes, routeKey);
   }
   return attached.map(([, route]) => structuredClone(route));
+}
+
+function sameCanonical(left: unknown, right: unknown): boolean {
+  return canonicalSerialize(left) === canonicalSerialize(right);
+}
+
+function cloneOperation(operation: ParsedDesignDraftOperation): DesignDraftOperation {
+  return JSON.parse(canonicalSerialize(operation)) as DesignDraftOperation;
+}
+
+function assertStoredModulePlacement(
+  facility: FacilityState,
+  draft: DesignDraftState,
+  module: ModuleInstanceState,
+  content: ContentBundle,
+): void {
+  const definition = resolveDefinition(content, module.definitionId);
+  if (definition === undefined) {
+    throw new Error("Stored module references an unknown definition.");
+  }
+  const placement = validateModulePlacement({
+    facilitySize: facility.size,
+    definitionId: module.definitionId,
+    position: module.position,
+    rotation: module.rotation,
+    modules: draft.modules,
+    content,
+  });
+  if (!placement.valid) {
+    throw new Error("Stored module cannot be restored into the current draft.");
+  }
+}
+
+function assertModuleAt(
+  draft: DesignDraftState,
+  moduleInstanceId: string,
+  position: { x: number; y: number },
+  rotation?: 0 | 90 | 180 | 270,
+): ModuleInstanceState {
+  const module = draft.modules[moduleInstanceId];
+  if (
+    module?.id !== moduleInstanceId ||
+    module.position.x !== position.x ||
+    module.position.y !== position.y ||
+    (rotation !== undefined && module.rotation !== rotation)
+  ) {
+    throw new Error("Draft module does not match the expected history state.");
+  }
+  return module;
+}
+
+function attachedRoutes(
+  routes: Readonly<Record<string, RouteState>>,
+  moduleInstanceId: string,
+): RouteState[] {
+  return Object.values(routes)
+    .filter(
+      (route) =>
+        route.from.moduleInstanceId === moduleInstanceId ||
+        route.to.moduleInstanceId === moduleInstanceId,
+    )
+    .toSorted((left, right) => compareStableStrings(left.id, right.id));
+}
+
+function assertAttachedRoutesEqual(
+  routes: Readonly<Record<string, RouteState>>,
+  moduleInstanceId: string,
+  expected: readonly RouteState[],
+): void {
+  const actual = attachedRoutes(routes, moduleInstanceId);
+  if (actual.length !== expected.length) {
+    throw new Error("Draft attached routes do not match the history operation.");
+  }
+  const expectedSorted = expected.toSorted((left, right) =>
+    compareStableStrings(left.id, right.id),
+  );
+  for (let index = 0; index < actual.length; index += 1) {
+    if (!sameCanonical(actual[index], expectedSorted[index])) {
+      throw new Error("Draft attached routes do not match the history operation.");
+    }
+  }
+}
+
+function restoreRoutes(draft: DesignDraftState, routes: readonly RouteState[]): void {
+  for (const route of routes) {
+    if (Object.hasOwn(draft.routes, route.id)) {
+      throw new Error("A restored route id already exists in the draft.");
+    }
+  }
+  for (const route of routes) {
+    draft.routes[route.id] = structuredClone(route);
+  }
+}
+
+function removeStoredRoutes(draft: DesignDraftState, routes: readonly RouteState[]): void {
+  for (const route of routes) {
+    const existing = draft.routes[route.id];
+    if (existing === undefined || !sameCanonical(existing, route)) {
+      throw new Error("Draft route does not match the stored history route.");
+    }
+  }
+  for (const route of routes) {
+    Reflect.deleteProperty(draft.routes, route.id);
+  }
+}
+
+function assertRoutesAbsent(draft: DesignDraftState, routes: readonly RouteState[]): void {
+  for (const route of routes) {
+    if (Object.hasOwn(draft.routes, route.id)) {
+      throw new Error("A stored route id unexpectedly exists in the draft.");
+    }
+  }
+}
+
+function assertUndoPrecondition(
+  facility: FacilityState,
+  draft: DesignDraftState,
+  operation: ParsedDesignDraftOperation,
+  content: ContentBundle,
+): void {
+  switch (operation.kind) {
+    case "place": {
+      const existing = draft.modules[operation.payload.module.id];
+      if (existing === undefined || !sameCanonical(existing, operation.payload.module)) {
+        throw new Error("Placed module does not match the stored history module.");
+      }
+      assertAttachedRoutesEqual(draft.routes, existing.id, []);
+      return;
+    }
+    case "move": {
+      const module = assertModuleAt(
+        draft,
+        operation.payload.moduleInstanceId,
+        operation.payload.newPosition,
+      );
+      assertAttachedRoutesEqual(draft.routes, module.id, []);
+      assertRoutesAbsent(draft, operation.payload.removedRoutes);
+      return;
+    }
+    case "rotate": {
+      const module = draft.modules[operation.payload.moduleInstanceId];
+      if (
+        module?.id !== operation.payload.moduleInstanceId ||
+        module.rotation !== operation.payload.newRotation
+      ) {
+        throw new Error("Draft module does not match the expected rotation history state.");
+      }
+      assertAttachedRoutesEqual(draft.routes, module.id, []);
+      assertRoutesAbsent(draft, operation.payload.removedRoutes);
+      return;
+    }
+    case "remove":
+      if (Object.hasOwn(draft.modules, operation.payload.module.id)) {
+        throw new Error("Removed module unexpectedly exists before remove undo.");
+      }
+      assertStoredModulePlacement(facility, draft, operation.payload.module, content);
+      assertRoutesAbsent(draft, operation.payload.removedRoutes);
+      return;
+    case "connect": {
+      const existing = draft.routes[operation.payload.route.id];
+      if (existing === undefined || !sameCanonical(existing, operation.payload.route)) {
+        throw new Error("Connected route does not match the stored history route.");
+      }
+      return;
+    }
+    case "disconnect":
+      assertRoutesAbsent(draft, [operation.payload.route]);
+      return;
+  }
+}
+
+function assertRedoPrecondition(
+  facility: FacilityState,
+  draft: DesignDraftState,
+  operation: ParsedDesignDraftOperation,
+  content: ContentBundle,
+): void {
+  switch (operation.kind) {
+    case "place":
+      if (Object.hasOwn(draft.modules, operation.payload.module.id)) {
+        throw new Error("Placed module unexpectedly exists before place redo.");
+      }
+      assertStoredModulePlacement(facility, draft, operation.payload.module, content);
+      return;
+    case "move": {
+      const module = assertModuleAt(
+        draft,
+        operation.payload.moduleInstanceId,
+        operation.payload.previousPosition,
+      );
+      assertAttachedRoutesEqual(draft.routes, module.id, operation.payload.removedRoutes);
+      return;
+    }
+    case "rotate": {
+      const module = draft.modules[operation.payload.moduleInstanceId];
+      if (
+        module?.id !== operation.payload.moduleInstanceId ||
+        module.rotation !== operation.payload.previousRotation
+      ) {
+        throw new Error("Draft module does not match the expected rotation history state.");
+      }
+      assertAttachedRoutesEqual(draft.routes, module.id, operation.payload.removedRoutes);
+      return;
+    }
+    case "remove": {
+      const existing = draft.modules[operation.payload.module.id];
+      if (existing === undefined || !sameCanonical(existing, operation.payload.module)) {
+        throw new Error("Draft module does not match the stored remove history module.");
+      }
+      assertAttachedRoutesEqual(draft.routes, existing.id, operation.payload.removedRoutes);
+      return;
+    }
+    case "connect":
+      assertRoutesAbsent(draft, [operation.payload.route]);
+      return;
+    case "disconnect": {
+      const existing = draft.routes[operation.payload.route.id];
+      if (existing === undefined || !sameCanonical(existing, operation.payload.route)) {
+        throw new Error("Disconnected route does not match the stored history route.");
+      }
+      return;
+    }
+  }
+}
+
+function applyUndoOperation(
+  facility: FacilityState,
+  draft: DesignDraftState,
+  operation: ParsedDesignDraftOperation,
+  content: ContentBundle,
+): void {
+  switch (operation.kind) {
+    case "place": {
+      const existing = draft.modules[operation.payload.module.id];
+      if (existing === undefined || !sameCanonical(existing, operation.payload.module)) {
+        throw new Error("Placed module does not match the stored history module.");
+      }
+      assertAttachedRoutesEqual(draft.routes, existing.id, []);
+      Reflect.deleteProperty(draft.modules, existing.id);
+      return;
+    }
+    case "move": {
+      const module = assertModuleAt(
+        draft,
+        operation.payload.moduleInstanceId,
+        operation.payload.newPosition,
+      );
+      assertAttachedRoutesEqual(draft.routes, module.id, []);
+      for (const route of operation.payload.removedRoutes) {
+        if (Object.hasOwn(draft.routes, route.id)) {
+          throw new Error("Removed route id unexpectedly exists before move undo.");
+        }
+      }
+      module.position = { ...operation.payload.previousPosition };
+      restoreRoutes(draft, operation.payload.removedRoutes);
+      return;
+    }
+    case "rotate": {
+      const module = draft.modules[operation.payload.moduleInstanceId];
+      if (
+        module?.id !== operation.payload.moduleInstanceId ||
+        module.rotation !== operation.payload.newRotation
+      ) {
+        throw new Error("Draft module does not match the expected rotation history state.");
+      }
+      assertAttachedRoutesEqual(draft.routes, module.id, []);
+      for (const route of operation.payload.removedRoutes) {
+        if (Object.hasOwn(draft.routes, route.id)) {
+          throw new Error("Removed route id unexpectedly exists before rotation undo.");
+        }
+      }
+      module.rotation = operation.payload.previousRotation;
+      restoreRoutes(draft, operation.payload.removedRoutes);
+      return;
+    }
+    case "remove": {
+      if (Object.hasOwn(draft.modules, operation.payload.module.id)) {
+        throw new Error("Removed module unexpectedly exists before remove undo.");
+      }
+      assertStoredModulePlacement(facility, draft, operation.payload.module, content);
+      draft.modules[operation.payload.module.id] = structuredClone(operation.payload.module);
+      restoreRoutes(draft, operation.payload.removedRoutes);
+      return;
+    }
+    case "connect": {
+      const existing = draft.routes[operation.payload.route.id];
+      if (existing === undefined || !sameCanonical(existing, operation.payload.route)) {
+        throw new Error("Connected route does not match the stored history route.");
+      }
+      Reflect.deleteProperty(draft.routes, existing.id);
+      return;
+    }
+    case "disconnect": {
+      restoreRoutes(draft, [operation.payload.route]);
+      return;
+    }
+  }
+}
+
+function applyRedoOperation(
+  facility: FacilityState,
+  draft: DesignDraftState,
+  operation: ParsedDesignDraftOperation,
+  content: ContentBundle,
+): void {
+  switch (operation.kind) {
+    case "place": {
+      if (Object.hasOwn(draft.modules, operation.payload.module.id)) {
+        throw new Error("Placed module unexpectedly exists before place redo.");
+      }
+      assertStoredModulePlacement(facility, draft, operation.payload.module, content);
+      draft.modules[operation.payload.module.id] = structuredClone(operation.payload.module);
+      return;
+    }
+    case "move": {
+      const module = assertModuleAt(
+        draft,
+        operation.payload.moduleInstanceId,
+        operation.payload.previousPosition,
+      );
+      assertAttachedRoutesEqual(draft.routes, module.id, operation.payload.removedRoutes);
+      removeStoredRoutes(draft, operation.payload.removedRoutes);
+      module.position = { ...operation.payload.newPosition };
+      return;
+    }
+    case "rotate": {
+      const module = draft.modules[operation.payload.moduleInstanceId];
+      if (
+        module?.id !== operation.payload.moduleInstanceId ||
+        module.rotation !== operation.payload.previousRotation
+      ) {
+        throw new Error("Draft module does not match the expected rotation history state.");
+      }
+      assertAttachedRoutesEqual(draft.routes, module.id, operation.payload.removedRoutes);
+      removeStoredRoutes(draft, operation.payload.removedRoutes);
+      module.rotation = operation.payload.newRotation;
+      return;
+    }
+    case "remove": {
+      const existing = draft.modules[operation.payload.module.id];
+      if (existing === undefined || !sameCanonical(existing, operation.payload.module)) {
+        throw new Error("Draft module does not match the stored remove history module.");
+      }
+      assertAttachedRoutesEqual(draft.routes, existing.id, operation.payload.removedRoutes);
+      removeStoredRoutes(draft, operation.payload.removedRoutes);
+      Reflect.deleteProperty(draft.modules, existing.id);
+      return;
+    }
+    case "connect":
+      restoreRoutes(draft, [operation.payload.route]);
+      return;
+    case "disconnect": {
+      const existing = draft.routes[operation.payload.route.id];
+      if (existing === undefined || !sameCanonical(existing, operation.payload.route)) {
+        throw new Error("Disconnected route does not match the stored history route.");
+      }
+      Reflect.deleteProperty(draft.routes, existing.id);
+      return;
+    }
+  }
 }
 
 export function createDesignModeCommandHandlers(content: ContentBundle): DesignModeCommandHandlers {
@@ -555,6 +932,52 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
       });
       draft.redoStack = [];
       assertValidDraftGrid(state.facility, draft, content);
+    },
+
+    UNDO_DESIGN({ state }) {
+      const draft = state.facility.designDraft;
+      if (draft === null) {
+        return REJECTIONS.notInDesignMode;
+      }
+      const stored = draft.undoStack.at(-1);
+      if (stored === undefined) {
+        assertValidUndoRedoDraft(state.facility, draft, content);
+        return;
+      }
+      const operation = parseDesignDraftOperation(stored);
+      assertUndoPrecondition(state.facility, draft, operation, content);
+      const revision = incrementRevision(draft);
+      if (revision === null) {
+        return REJECTIONS.invalidSystem;
+      }
+      applyUndoOperation(state.facility, draft, operation, content);
+      draft.revision = revision;
+      draft.undoStack = draft.undoStack.slice(0, -1);
+      draft.redoStack = [...draft.redoStack, cloneOperation(operation)];
+      assertValidUndoRedoDraft(state.facility, draft, content);
+    },
+
+    REDO_DESIGN({ state }) {
+      const draft = state.facility.designDraft;
+      if (draft === null) {
+        return REJECTIONS.notInDesignMode;
+      }
+      const stored = draft.redoStack.at(-1);
+      if (stored === undefined) {
+        assertValidUndoRedoDraft(state.facility, draft, content);
+        return;
+      }
+      const operation = parseDesignDraftOperation(stored);
+      assertRedoPrecondition(state.facility, draft, operation, content);
+      const revision = incrementRevision(draft);
+      if (revision === null) {
+        return REJECTIONS.invalidSystem;
+      }
+      applyRedoOperation(state.facility, draft, operation, content);
+      draft.revision = revision;
+      draft.redoStack = draft.redoStack.slice(0, -1);
+      draft.undoStack = [...draft.undoStack, cloneOperation(operation)];
+      assertValidUndoRedoDraft(state.facility, draft, content);
     },
 
     CANCEL_DESIGN({ state }) {

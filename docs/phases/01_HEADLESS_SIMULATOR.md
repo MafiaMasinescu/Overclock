@@ -136,8 +136,7 @@ details are fixed by
 
 ## Task 5.3: Deterministic manual routing
 
-Status: approved for checkpoint. The checkpoint hash is intentionally recorded by Git only after the
-commit exists.
+Status: checkpointed at `4d83988792cd02cbe81b6749696cd470ee422c77`.
 
 Task 5.3 includes only:
 
@@ -160,6 +159,29 @@ Task 5.3 does not implement auto-connect, auto-route, A-star, rerouting, preview
 undo/redo/apply execution, inventory/cash/labor/downtime effects, capacity reservation, power,
 workload, latency, congestion gameplay, thermal behavior, UI, saves, workers, or a later task.
 Compatibility details are fixed by `docs/decisions/ADR-0007_DETERMINISTIC_MANUAL_ROUTING.md`.
+
+## Task 5.4: Deterministic Design Mode undo and redo
+
+Status: implemented, pending review and checkpoint.
+
+Task 5.4 includes only:
+
+- content-injected production handlers for `UNDO_DESIGN` and `REDO_DESIGN` through the existing
+  registry, processor, and `SimCore` path;
+- accepted empty-stack exact no-ops, one revision increment per real transition, and atomic
+  `INVALID_SYSTEM` rejection for nonempty revision overflow;
+- LIFO transfer of the original detached operation records without new operation IDs or payload
+  reshaping;
+- exact restoration/removal of stored module and route records for place, move, rotate, remove,
+  connect, and disconnect, without sequence restoration or consumption;
+- fatal invariant behavior for malformed history or an impossible current-draft/history transition;
+- focused all-kind, atomicity, localization compatibility, exact 100-run determinism, and dense
+  undo/redo performance coverage.
+
+Task 5.4 does not implement `APPLY_DESIGN`, inventory revalidation or consumption, live-layout
+mutation, auto-routing, pathfinding, rerouting, capacity reservation, power, thermal behavior, UI,
+saves, workers, or any later task. Compatibility details are fixed by
+`docs/decisions/ADR-0008_DETERMINISTIC_DESIGN_MODE_UNDO_REDO.md`.
 
 ## Nu implementa
 

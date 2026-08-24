@@ -646,6 +646,13 @@ La intrarea în Design Mode, simulatorul creează `DesignDraft` din layout-ul li
 
 Draft-ul păstrează un command stack pentru undo și redo. Nu păstrează snapshot-uri complete după fiecare operație.
 
+`UNDO_DESIGN` și `REDO_DESIGN` transferă LIFO aceeași operație detașată între stack-uri și nu creează
+un nou operation ID. Stack-ul relevant gol este no-op acceptat; fiecare tranziție reală crește revision
+o dată. Modulele și rutele restaurate folosesc recordurile și ID-urile exacte din payload, fără să
+restaureze sau consume secvențele de ID și fără revalidare de inventory. Istoricul corupt sau o stare
+curentă incompatibilă cu operația este invariant fatal, nu respingere de gameplay. `APPLY_DESIGN`
+rămâne deferred.
+
 `CONNECT_PORTS` și `DISCONNECT_ROUTE` modifică numai rutele draft-ului. Pentru un connect manual,
 endpointurile se rezolvă după regulile ADR-0005 și se stochează în direcție canonică; power este
 output-to-input, data direcțional își păstrează direcția, iar data bidirecțional se sortează stabil.

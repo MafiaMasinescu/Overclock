@@ -107,6 +107,43 @@ function prepare(command: SimCommand, enterFirst: boolean): () => void {
   };
 }
 
+function prepareUndo(): () => void {
+  const core = createCore();
+  processCommand(core, { commandId: commandId(15), source: "debug", kind: "ENTER_DESIGN_MODE" });
+  processCommand(core, {
+    commandId: commandId(16),
+    source: "debug",
+    kind: "MOVE_MODULE",
+    moduleInstanceId: "dense-00-03",
+    position: { x: 3, y: 3 },
+  });
+  core.enqueue({ commandId: commandId(17), source: "debug", kind: "UNDO_DESIGN" });
+  return () => {
+    const [result] = core.processPendingCommands();
+    if (result?.accepted !== true)
+      throw new Error(`Performance fixture command rejected: ${JSON.stringify(result)}`);
+  };
+}
+
+function prepareRedo(): () => void {
+  const core = createCore();
+  processCommand(core, { commandId: commandId(18), source: "debug", kind: "ENTER_DESIGN_MODE" });
+  processCommand(core, {
+    commandId: commandId(19),
+    source: "debug",
+    kind: "MOVE_MODULE",
+    moduleInstanceId: "dense-00-03",
+    position: { x: 3, y: 3 },
+  });
+  processCommand(core, { commandId: commandId(20), source: "debug", kind: "UNDO_DESIGN" });
+  core.enqueue({ commandId: commandId(21), source: "debug", kind: "REDO_DESIGN" });
+  return () => {
+    const [result] = core.processPendingCommands();
+    if (result?.accepted !== true)
+      throw new Error(`Performance fixture command rejected: ${JSON.stringify(result)}`);
+  };
+}
+
 function percentile(sortedSamples: readonly number[], ratio: number): number {
   const index = Math.min(sortedSamples.length - 1, Math.ceil(sortedSamples.length * ratio) - 1);
   return sortedSamples[index] ?? 0;
@@ -210,6 +247,8 @@ const removal = measure(
   20,
   200,
 );
+const undo = measure(prepareUndo, 20, 200);
+const redo = measure(prepareRedo, 20, 200);
 
 const occupiedTiles = Object.values(denseModules).reduce(
   (total, module) =>
@@ -220,7 +259,7 @@ const occupiedTiles = Object.values(denseModules).reduce(
 );
 const cpu = cpus()[0]?.model ?? "unknown CPU";
 console.log(
-  "Task 5.3 Design Mode regression diagnostic (development machine; no final i7-2600 gate claim)",
+  "Task 5.4 Design Mode regression diagnostic (development machine; no final i7-2600 gate claim)",
 );
 console.log(
   `fixture: ${GRID_WIDTH} x ${GRID_HEIGHT} tiles, ${Object.keys(denseModules).length} modules, ` +
@@ -234,6 +273,8 @@ console.log(`placement validation and commit: ${format(placement)}`);
 console.log(`move validation and commit: ${format(movement)}`);
 console.log(`rotation validation and commit: ${format(rotation)}`);
 console.log(`removal validation and commit: ${format(removal)}`);
+console.log(`undo validation and commit: ${format(undo)}`);
+console.log(`redo validation and commit: ${format(redo)}`);
 console.log(
   `development machine: ${cpu}; ${process.platform} ${process.arch}; Node ${process.version}`,
 );
