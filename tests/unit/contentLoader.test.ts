@@ -141,4 +141,17 @@ describe("content loading", () => {
       true,
     );
   });
+
+  test("rejects module load power below idle power", () => {
+    const pack = clonePack();
+    const module = firstItem(pack.modules.modules);
+    module.loadPowerWatts = module.idlePowerWatts - 1;
+
+    const error = captureValidationError(pack);
+
+    expect(error.issues).toContainEqual({
+      path: "modules.modules[0].loadPowerWatts",
+      message: "load power must be greater than or equal to idle power",
+    });
+  });
 });

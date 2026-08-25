@@ -221,6 +221,12 @@ export function validateContent(raw: RawContentPack): ContentBundle {
         message: "thresholds must increase from normal to shutdown",
       });
     }
+    if (module.loadPowerWatts < module.idlePowerWatts) {
+      issues.push({
+        path: `modules.modules[${moduleIndex}].loadPowerWatts`,
+        message: "load power must be greater than or equal to idle power",
+      });
+    }
   });
 
   tasksFile.tasks.forEach((task, taskIndex) => {

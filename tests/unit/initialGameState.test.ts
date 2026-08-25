@@ -81,6 +81,15 @@ describe("initial GameState", () => {
         liveLayoutRevision: 0,
         thermalRevision: 0,
         designDraft: null,
+        power: {
+          layoutRevision: null,
+          totalRequestedPowerWatts: 0,
+          totalDeliveredPowerWatts: 0,
+          headroomWatts: 24_000,
+          energyCostUsdThisTick: 0,
+          byModule: {},
+          byRoute: {},
+        },
       },
       tasks: {
         activeSlotCount: 2,

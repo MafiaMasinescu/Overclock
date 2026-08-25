@@ -9,6 +9,7 @@ import { createDesignModeCommandHandlers } from "../../src/sim/design/designMode
 import { canonicalSerialize, hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
 
 const RELAY = "module-data-relay";
+const content = loadContentBundle();
 
 function commandId(sequence: number): string {
   return `54010000-0000-4000-8000-${sequence.toString().padStart(12, "0")}`;
@@ -101,8 +102,9 @@ function commands(): readonly SimCommand[] {
   ];
 }
 
+const COMMANDS = commands();
+
 function runFixture() {
-  const content = loadContentBundle();
   const initialState = createInitialGameState({ content, seed: "task-5-4-repeat" });
   initialState.inventory.stacks[RELAY] = {
     definitionId: RELAY,
@@ -114,7 +116,7 @@ function runFixture() {
     initialState,
     commandHandlers: createDesignModeCommandHandlers(content),
   });
-  const receipts = commands().map((entry) => core.enqueue(entry));
+  const receipts = COMMANDS.map((entry) => core.enqueue(entry));
   const results = core.processPendingCommands();
   const state = core.getStateForSave();
   const draft = state.facility.designDraft;

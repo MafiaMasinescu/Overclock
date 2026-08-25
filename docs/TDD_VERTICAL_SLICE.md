@@ -329,6 +329,7 @@ Setările grafice, volumele audio și limba se salvează separat de state-ul det
 ```ts
 nextModuleInstanceSequence: number;
 nextRouteSequence: number;
+power: FacilityPowerState;
 ```
 
 Valoarea pornește de la `1`, rămâne un positive safe integer și nu scade. Fiecare placement acceptat alocă `module-instance-` urmat de secvența zecimală pe minimum opt poziții cu zero-uri la stânga, apoi incrementează secvența exact o dată. Un placement respins nu consumă secvența. Remove și Cancel nu restaurează valori consumate, astfel încât ID-urile instanțelor nu se refolosesc în același save. Alocarea nu consumă RNG. Coliziunea unui ID generat sau imposibilitatea incrementării în intervalul safe integer produce `INVALID_SYSTEM` fără mutație. Formatul și secvența fac parte din compatibilitatea save/replay.
@@ -339,6 +340,26 @@ Valoarea pornește de la `1`, rămâne un positive safe integer și nu scade. Fi
 o dată. Respingerea, Disconnect, Cancel și viitorul Undo nu restaurează secvența; golurile sunt
 intenționate. Coliziunea ID-ului generat sau overflow-ul produce `INVALID_SYSTEM` fără mutație și nu
 consumă RNG.
+
+`FacilityPowerState` este un contract autoritativ aditiv, serializabil:
+
+```ts
+interface FacilityPowerState {
+  layoutRevision: number | null;
+  totalRequestedPowerWatts: number;
+  totalDeliveredPowerWatts: number;
+  headroomWatts: number;
+  energyCostUsdThisTick: number;
+  byModule: Record<ModuleInstanceId, ModulePowerDeliveryState>;
+  byRoute: Record<RouteId, RoutePowerDeliveryState>;
+}
+```
+
+`layoutRevision: null` marchează o stare dirty neevaluată: recordurile sunt goale, requested,
+delivered și cost sunt zero, iar headroom este capacitatea contractată. După calcul, revizia este
+`facility.liveLayoutRevision`, `byModule` acoperă exact modulele live, iar `byRoute` acoperă exact
+rutele live de power. Un Apply care înlocuiește layout-ul resetează starea la dirty; calculul are loc
+numai la următorul tick real.
 
 ### 10.1 Invariante globale
 
@@ -756,12 +777,49 @@ Power system calculează:
 
 Cooling-ul primește prioritate de safety. Jucătorul poate vedea de ce compute-ul scade când capacity este depășită.
 
+Contractul Task 6 folosește conținut validat immutable și layout-ul live. Pentru un modul care nu
+este shutdown:
+
+```text
+base demand = idlePowerWatts dacă startupTicksRemaining > 0, altfel loadPowerWatts
+requested power = base demand / binEfficiencyRatio
+minimum operational power = idlePowerWatts / binEfficiencyRatio
+```
+
+Un source direct este un modul din categoria `power` cu cel puțin un port `power-out`; propriul
+consum vine din capacitatea contractată. Celelalte module au nevoie de rute power incoming. Capacitatea
+contractată este globală, iar route capacity, source-output-port capacity și sink-input-port capacity
+se aplică simultan și sunt shared între toate rutele care folosesc același port. Lungimea și tile-urile
+path-ului, crossings, overlap, data, airflow și adjacent-port graph nu influențează livrarea electrică.
+
+Prioritatea fixă este: power-distribution sources; cooling; memory și control; compute;
+interconnect și I/O. Fiecare tier rulează mai întâi un minimum pass, apoi un remaining-demand pass,
+cu modulele sortate după instance ID și rutele consumate după route ID. Un source poate alimenta
+rute numai dacă nu este shutdown, avea startup zero la începutul tick-ului și primește minimum power.
+
+Livrarea sub minimum pune modulul în `brownout` și oprește decrementarea startup-ului. La minimum
+sau peste, startup scade exact o dată; modulul devine `online` la zero, iar brownout-ul se recuperează
+automat. Shutdown și cooldown sunt păstrate. Limiting-reason precedence este: `shutdown`,
+`missing-route`, `source-unavailable`, `contracted-capacity`, `route-capacity`, `none`.
+
 Costul energiei:
 
 ```text
 energy kWh = power watts / 1000 × simulated seconds / 3600
 cost = energy kWh × price per kWh
 ```
+
+Task 6 calculează `energyCostUsdThisTick` cu exact `0.1` secunde prin helper-ul monetar existent, dar
+nu deduce cash și nu modifică agregatele economy. Settlement-ul rămâne în stage-ul ulterior
+`apply-economy-and-energy-costs`.
+
+Checkpoint-ul funcțional Task 6 a trecut verificarea de corectitudine și determinism, inclusiv
+testele exacte de 100 de rulări neschimbate, dar nu este aprobat ca performance-complete. Pragul
+pure-power p95 sub `1 ms` și pragul complete production tick p95 sub `4 ms` rămân deschise. Comanda
+combinată `corepack pnpm test` rămâne sensibilă la host load cu timeout-urile determinism neschimbate;
+gate-urile focused Task 6, complete unit și standalone determinism sunt verificate separat, fără
+skip-uri sau discovery restrâns. Următorul task exact este `Phase 1 Task 6.1: Performance Hardening`,
+nu Task 7; Task 6.1 nu a început.
 
 ## 22. Task system
 

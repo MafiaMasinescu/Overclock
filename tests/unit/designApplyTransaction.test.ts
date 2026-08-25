@@ -64,6 +64,26 @@ function changedDraftState(): GameState {
   const removed = module("removed", 0, 0);
   const added = module("added", 3, 0);
   state.facility.modules = { [removed.id]: removed };
+  Object.assign(state.facility, {
+    power: {
+      layoutRevision: state.facility.liveLayoutRevision,
+      totalRequestedPowerWatts: 260,
+      totalDeliveredPowerWatts: 260,
+      headroomWatts: state.facility.contractedPowerWatts - 260,
+      energyCostUsdThisTick: 0.000001,
+      byModule: {
+        [removed.id]: {
+          moduleInstanceId: removed.id,
+          requestedPowerWatts: 260,
+          minimumPowerWatts: 90,
+          deliveredPowerWatts: 260,
+          powerFactor: 1,
+          limitingReason: "none",
+        },
+      },
+      byRoute: {},
+    },
+  });
   state.facility.designDraft = {
     revision: 2,
     modules: { [added.id]: added },
@@ -107,6 +127,15 @@ describe("APPLY_DESIGN", () => {
       overclock: { profile: "boost", frequencyRatio: 1.1, voltageRatio: 1.05 },
     });
     expect(after.facility.liveLayoutRevision).toBe(before.facility.liveLayoutRevision + 1);
+    expect(after.facility.power).toEqual({
+      layoutRevision: null,
+      totalRequestedPowerWatts: 0,
+      totalDeliveredPowerWatts: 0,
+      headroomWatts: after.facility.contractedPowerWatts,
+      energyCostUsdThisTick: 0,
+      byModule: {},
+      byRoute: {},
+    });
     expect(after.facility.nextModuleInstanceSequence).toBe(
       before.facility.nextModuleInstanceSequence,
     );

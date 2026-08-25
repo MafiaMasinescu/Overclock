@@ -12,6 +12,7 @@ const COMMAND_IDS = [
   "10000000-0000-4000-8000-000000000002",
   "10000000-0000-4000-8000-000000000003",
 ] as const;
+const content = loadContentBundle();
 
 function createCommand(commandId: string): Extract<SimCommand, { kind: "SET_GUIDANCE_MODE" }> {
   return {
@@ -42,7 +43,7 @@ function runDeterministicFixture() {
   };
   const core = new SimCore({
     initialState: createInitialGameState({
-      content: loadContentBundle(),
+      content,
       seed: "task-three-repeat-fixture",
     }),
     commandHandlers,

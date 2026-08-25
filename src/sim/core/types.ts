@@ -100,6 +100,39 @@ export interface ThermalTileState {
   temperatureC: number;
 }
 
+export type PowerLimitingReason =
+  | "none"
+  | "shutdown"
+  | "missing-route"
+  | "source-unavailable"
+  | "contracted-capacity"
+  | "route-capacity";
+
+export interface ModulePowerDeliveryState {
+  moduleInstanceId: ModuleInstanceId;
+  requestedPowerWatts: number;
+  minimumPowerWatts: number;
+  deliveredPowerWatts: number;
+  powerFactor: number;
+  limitingReason: PowerLimitingReason;
+}
+
+export interface RoutePowerDeliveryState {
+  routeId: RouteId;
+  deliveredPowerWatts: number;
+  utilizationRatio: number;
+}
+
+export interface FacilityPowerState {
+  layoutRevision: number | null;
+  totalRequestedPowerWatts: number;
+  totalDeliveredPowerWatts: number;
+  headroomWatts: number;
+  energyCostUsdThisTick: number;
+  byModule: Record<ModuleInstanceId, ModulePowerDeliveryState>;
+  byRoute: Record<RouteId, RoutePowerDeliveryState>;
+}
+
 export interface DesignDraftOperation {
   operationId: string;
   kind: "place" | "move" | "rotate" | "remove" | "connect" | "disconnect";
@@ -129,6 +162,7 @@ export interface FacilityState {
   liveLayoutRevision: number;
   thermalRevision: number;
   designDraft: DesignDraftState | null;
+  power: FacilityPowerState;
 }
 
 export interface InventoryStack {

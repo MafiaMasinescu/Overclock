@@ -24,6 +24,8 @@
     "performance:routing": "node tests/performance/manualRouting.performance.ts",
     "performance:grid": "node tests/performance/gridGeometry.performance.ts",
     "performance:tick": "node tests/performance/tickPipeline.performance.ts",
+    "performance:power": "node tests/performance/powerDomain.performance.ts",
+    "performance:power-tick": "node tests/performance/powerTick.performance.ts",
     "test:e2e": "playwright test",
     "validate": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm content:validate && corepack pnpm test:unit && corepack pnpm build"
   },

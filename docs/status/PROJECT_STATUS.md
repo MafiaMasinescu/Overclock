@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-08-24
+Updated: 2026-08-25
 
 ## Current phase
 
@@ -15,12 +15,15 @@ Updated: 2026-08-24
   at `4d83988792cd02cbe81b6749696cd470ee422c77`.
 - Phase 1 Task 5.4, deterministic `UNDO_DESIGN` and `REDO_DESIGN`, is checkpointed at
   `631f9d1379a0f12091247ea6a14a5a214dd87548`.
-- Phase 1 Task 5.5, deterministic Design Apply preview and atomic `APPLY_DESIGN`, is implemented
-  and pending coordinator review and checkpoint.
+- Phase 1 Task 5.5, deterministic Design Apply preview and atomic `APPLY_DESIGN`, is checkpointed at
+  `24276727271a90e0b2c825be6687aa7996443715`.
+- Phase 1 Task 6, deterministic power demand, routing-limited delivery, startup, brownout, route
+  utilization, and current-tick energy-cost calculation, has a reviewed functional checkpoint:
+  correctness and determinism verification passed, but performance completion is not approved.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
-  `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, and `CANCEL_DESIGN`. No production
-  gameplay tick system has started.
+  `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, and `CANCEL_DESIGN`. The only
+  production gameplay tick system is Task 6's `calculate-power-demand-and-delivery` stage.
 
 ## Implemented deterministic foundation
 
@@ -160,7 +163,8 @@ Updated: 2026-08-24
   stacks and revision.
 - Move, rotate, and remove delete all attached draft routes in stable route-ID order, copy them into
   the operation payload, and preserve unrelated routes. No rerouting or adjacent-graph build occurs.
-- `APPLY_DESIGN` remains unregistered and returns `COMMAND_NOT_AVAILABLE`.
+- At the Task 5.2 checkpoint, `APPLY_DESIGN` was unregistered and returned
+  `COMMAND_NOT_AVAILABLE`; Task 5.5 now registers the transaction described below.
 
 ## Phase 1 Task 5.3 implementation
 
@@ -253,6 +257,29 @@ Updated: 2026-08-24
 - `src/sim/core/types.ts`:
   - `FacilityState.nextModuleInstanceSequence: number`
   - `FacilityState.nextRouteSequence: number`
+  - `FacilityState.power: FacilityPowerState`
+  - `PowerLimitingReason`
+  - `ModulePowerDeliveryState`
+  - `RoutePowerDeliveryState`
+  - `FacilityPowerState`
+- `src/sim/power/powerDemand.ts`:
+  - `calculateModulePowerDemand(module, definition)`
+  - `calculatePowerDemand(modules, content)`
+- `src/sim/power/powerTopology.ts`:
+  - `isDirectlySuppliedPowerSource(module, content)`
+  - `createPowerTopology(facility, content)`
+- `src/sim/power/powerAllocation.ts`:
+  - `calculateSourcePortCapacityWatts(portCapacityWatts, sourcePowerFactor)`
+  - `allocatePowerDelivery(facility, demands, topology, content)`
+- `src/sim/power/powerTransitions.ts`:
+  - `applyPowerOperationalTransitions(modules, deliveries)`
+- `src/sim/power/facilityPower.ts`:
+  - `calculateFacilityPower(state, content)`
+  - `createPowerTickSystems(content): TickSystemRegistry`
+- `src/sim/power/powerState.ts`:
+  - `createDirtyPowerState(contractedPowerWatts)`
+  - `validatePowerState(state, content, previousModules?)`
+  - `assertValidPowerState(state, content, previousModules?)`
 - `src/sim/design/designModeState.ts`:
   - `assertValidDesignModeState(state, minimumModuleInstanceSequence?, minimumRouteSequence?): void`
 - `src/sim/design/designModeCommands.ts`:
@@ -382,47 +409,37 @@ Updated: 2026-08-24
 
 ## Verification
 
-- Focused Task 5.4 coverage: PASS, one unit file with 10 tests plus one exact-100-run determinism
-  file. It covers registration, unavailable apply, Design Mode rejections, exact empty no-ops,
-  overflow, all six operation kinds, LIFO, ID/sequence preservation, atomicity, fatal corruption,
-  FIFO, expected tick, and canonical serialization.
-- Task 2 through Task 5.3 regression selection: PASS, 9 files and 215 tests.
-- Complete unit suite: PASS, 19 files and 332 tests. Complete determinism suite: PASS, 4 files and
-  4 tests.
-- Design Mode scope: undo and redo are available only through the injected production factory;
-  `APPLY_DESIGN` remains `COMMAND_NOT_AVAILABLE` without state or RNG changes.
-- Published RNG, canonical-hash, money, and geometry compatibility selection: PASS, 5 files and 125
-  tests;
-  `seedToUint32("phase-one") === 2799575867` and
-  `hashCanonicalState({ a: 1 }) === "9c3e82dd6fcae8b1"`; the published `0.000028 USD` energy-cost
-  vector and Task 5.1 coordinate, rotation, occupancy, and port compatibility vectors remain green.
-- Routing diagnostic on the development i7-2600: `24 x 16`, 102 modules/occupied tiles, 10 existing
-  routes, 40 existing path points, and a 24-point candidate path. Connect median `13.8881 ms`, p95
-  `19.9269 ms`, max `27.3699 ms`; disconnect median `10.7683 ms`, p95 `14.8870 ms`, max `19.0893 ms`,
-  with 200 samples each. It builds no adjacent-port graph or pathfinding work.
-- Design Mode diagnostic on the same host: `24 x 16`, 280 modules, 285/384 occupied tiles (`74.2%`),
-  and 0 routes. Enter median `16.7308 ms`, p95 `21.6428 ms`, max `27.4148 ms`; placement median
-  `17.6411 ms`, p95 `24.2837 ms`, max `35.0756 ms`; move median `17.0019 ms`, p95 `22.5208 ms`, max
-  `27.1827 ms`; rotation median `16.6999 ms`, p95 `22.1574 ms`, max `28.5796 ms`; removal median
-  `17.1248 ms`, p95 `22.7270 ms`, max `29.6150 ms`; undo median `16.9555 ms`, p95 `21.6917 ms`, max
-  `25.5715 ms`; redo median `17.0013 ms`, p95 `21.8024 ms`, max `37.0843 ms`, with 200 samples each.
-- Grid diagnostic on the same host: `24 x 16`, 384 one-tile modules, 1,152 power/data nodes, and 368
-  edges. Occupancy median `0.4830 ms`, p95 `0.9497 ms`, max `1.6379 ms`; dense six-tile placement
-  median `0.5244 ms`, p95 `0.7729 ms`, max `1.9512 ms`; graph median `9.7960 ms`, p95 `12.2885 ms`,
-  max `17.3997 ms`.
-- Tick diagnostic: empty median `0.0004 ms`, p95 `0.0014 ms`, max `0.0662 ms`; controlled private
-  fixture median `6.5721 ms`, p95 `9.1420 ms`, max `13.2827 ms`. The complete vertical-slice
-  i7-2600 under-4-ms gate remains open.
-- Formatting check, ESLint, strict TypeScript checking, and `corepack pnpm validate`: PASS.
+- Focused Task 6 coverage: PASS, 3 files and 43 tests, including both exact-100-run power determinism
+  vectors. Complete unit suite: PASS, 24 files and 394 tests.
+- Complete determinism suite: PASS, 6 files and 7 tests with all explicit 15-second timeouts
+  unchanged. The combined `corepack pnpm test` command remains host-load sensitive: an earlier run
+  passed all unit tests but hit unchanged timeouts in the pre-existing Task 3 and Task 5.4
+  exact-100-run files. No test was skipped, no timeout was raised, and discovery was not narrowed.
+- Published RNG, canonical-hash, money, geometry, routing, undo/redo, and Apply compatibility vectors
+  remain covered by the passing unit and determinism selections.
+- Pure Task 6 power diagnostic on the development i7-2600 (`24 x 16`, 250 modules, 4 sources, 270
+  power routes, 60,000 W contracted, 500 samples): median `1.5970 ms`, p95 `2.6259 ms`, max
+  `5.9753 ms`. The requested p95 below `1 ms` is not met.
+- Complete production power-tick diagnostic on the same fixture and host (200 samples): median
+  `28.1030 ms`, p95 `36.7306 ms`, max `141.6638 ms`. Isolated p95 proxies were cloning
+  `10.0032 ms`, canonical validation `20.3600 ms`, power calculation `4.1771 ms`, and freeze/commit
+  `1.7822 ms`.
+  The p95 below `4 ms` gate remains open.
+- Existing diagnostics completed: Apply preview/apply p95 `59.0372/42.5961 ms`; routing
+  connect/disconnect p95 `24.1001/18.0402 ms`; Design Mode operation p95 values
+  `27.9098-35.3817 ms`; grid occupancy/placement/graph p95 `1.3127/1.0978/26.1613 ms`; empty/private
+  tick p95 `0.0022/14.5596 ms`.
+- Formatting check, ESLint, strict TypeScript checking, content validation, production build, and
+  aggregate `corepack pnpm validate`: PASS.
 - Content validation: PASS, 12 modules, 8 tasks, 10 research nodes, 2 benchmarks, and 2 locales.
 - Production build: PASS, 846 modules transformed.
 - `git diff --check`: PASS.
 - Forbidden import/API scans: PASS; no random, wall-clock, scheduling, React, PixiJS, rendering, UI,
   DOM, browser storage, or worker matches in `src/sim` or `src/grid`, and no `Map`, `Set`, or `Date`
   in authoritative state contracts.
-- GDD, Word documents, module content, and balance drift checks: PASS; those files are unchanged.
-  The intentional Markdown TDD diff is limited to the approved route sequence, manual routing, path,
-  crossing/capacity, `INVALID_ROUTE`, and deterministic command contracts.
+- GDD, Word documents, module content, balance values, and route content drift checks: PASS; those
+  files are unchanged. The Markdown TDD diff is limited to the approved additive Task 6 power-state,
+  demand, delivery, transition, and energy-cost contract.
 
 ## Known risks
 
@@ -449,6 +466,14 @@ Updated: 2026-08-24
   content bundle and pass the returned handlers to the existing processor or `SimCore` registry.
 - The final i7-2600 under-4-ms performance gate remains open until the complete controlled vertical
   slice fixture exists.
+- Task 6's controlled fixture already misses both requested timing targets. Pure calculation is
+  dominated by topology and allocation; complete ticks are dominated by ADR-0003 cloning,
+  canonical validation, power validation, and cross-stage orchestration. A persistent topology cache
+  or broader tick candidate/validation redesign requires a separate ADR and explicit approval.
+- Exact-100-run determinism files remain sensitive to host scheduling near their unchanged
+  15-second per-test limits. The standalone suite passes with the unchanged test configuration,
+  while a combined unit-plus-determinism run can time out after the unit suite on the same loaded
+  host.
 - The dense adjacent-port graph diagnostic intentionally rebuilds derived data and currently uses a
   pairwise node comparison. It is not on the tick path; Task 5.2 or connectivity work should profile
   mutation-time rebuild frequency before deciding whether a spatial candidate index is warranted.
@@ -471,19 +496,41 @@ Updated: 2026-08-24
 
 ## Task boundary
 
-Task 5.5 is implemented and pending coordinator review and checkpoint. No later task has begun; the
-next task remains pending coordinator decision.
+Task 6 has a reviewed functional checkpoint: functional correctness and determinism verification
+passed, while the pure-power p95 below `1 ms` and complete production-tick p95 below `4 ms` gates
+remain open. The combined `corepack pnpm test` command remains sensitive to host load at the
+unchanged exact-100-run determinism timeouts. The exact next task is
+`Phase 1 Task 6.1: Performance Hardening`, not Task 7. Neither Task 6.1 nor Task 7 has begun.
+
+## Phase 1 Task 6 implementation
+
+- `FacilityState.power` is authoritative serializable data with an explicit dirty shape and complete
+  calculated module/power-route coverage tied to `liveLayoutRevision`.
+- Validated immutable content supplies idle/load demand, minimum power, categories, ports, and
+  capacities. Demand divides by finite positive bin efficiency and does not apply overclock,
+  workload, or thermal factors.
+- Direct power sources consume global contracted capacity first. Routed delivery shares source
+  output, route, and sink input capacities; allocation uses fixed category tiers, stable IDs, and a
+  minimum pass before remaining demand.
+- Power delivery owns automatic startup, brownout, and recovery while preserving shutdown and
+  cooldown. Sources that finish startup supply routes beginning on the following tick.
+- Facility totals, headroom, module Power Factors/reasons, route flow/utilization, and the Task 4
+  exact-0.1-second energy cost are calculated without economy settlement or RNG use.
+- Production registers only `calculate-power-demand-and-delivery`. Apply resets changed layouts to
+  dirty; drafts and command-only processing do not run power. Failures remain transactional under
+  ADR-0003.
 
 ## Explicitly deferred
 
 - Real-time tick scheduling, timers, catch-up, pause/speed host scheduling, and worker integration.
 - Every production gameplay command handler except `BUY_MODULE`, `SELL_INVENTORY_ITEM`,
   `ENTER_DESIGN_MODE`, `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`,
-  `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, and `CANCEL_DESIGN`.
+  `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, and
+  `CANCEL_DESIGN`.
 - Automatic energy deductions, power capacity purchases, labor and relocation costs, task rewards,
   research costs/progression, maintenance, inflation, market events, scarcity, financing, interest,
   insolvency, bailout, bankruptcy, and financial game over.
-- Installed-module sales, auto-connect, auto-route, pathfinding, rerouting, route preview, apply,
-  hard route capacity, power delivery, thermal simulation, and overclock behavior.
+- Installed-module sales, auto-connect, auto-route, pathfinding, rerouting, route preview, thermal
+  simulation, and overclock behavior.
 - Useful Compute, benchmarks, blueprints, replay execution, and balancing bot.
 - React/Pixi integration, IndexedDB, save/load, migrations, export, and import.

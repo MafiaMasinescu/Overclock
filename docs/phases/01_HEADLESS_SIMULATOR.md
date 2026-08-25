@@ -185,7 +185,7 @@ saves, workers, or any later task. Compatibility details are fixed by
 
 ## Task 5.5: Deterministic Design Apply preview and transaction
 
-Status: implemented, pending coordinator review and checkpoint.
+Status: checkpointed at `24276727271a90e0b2c825be6687aa7996443715`.
 
 Task 5.5 implements only the existing-registry `APPLY_DESIGN` handler and shared pure preview;
 stable final-diff, inventory, salvage, labor, net-cost, and downtime calculation; atomic live-layout
@@ -193,6 +193,37 @@ replacement, net inventory consumption, economy settlement, affected-module offl
 and `STALE_DESIGN_PREVIEW`. It does not add functional completeness checks, compute/power/thermal/
 airflow/task-risk preview, tick work, graph construction, financing, UI, saves, workers, or Task 5.6.
 Compatibility details are fixed by `docs/decisions/ADR-0009_DETERMINISTIC_DESIGN_APPLY_TRANSACTION.md`.
+
+## Task 6: Deterministic power demand and routing-limited delivery
+
+Status: reviewed functional checkpoint; correctness and determinism verification passed, but
+performance completion is not approved.
+
+Task 6 adds authoritative dirty/calculated facility power state; pure demand, topology, allocation,
+operational transition, facility calculation, and validation APIs; shared contracted, source-port,
+route, and sink-port limits; fixed priority tiers with minimum-first allocation; startup, online,
+brownout and recovery behavior; route flow/utilization; and Task 4 energy-cost calculation without
+settlement. Production registers only `calculate-power-demand-and-delivery`, consumes no RNG, scans
+no path tiles, and builds no adjacent-port graph. Changed Design Apply resets power to dirty and the
+next real tick recalculates it. Compatibility details are fixed by
+`docs/decisions/ADR-0010_DETERMINISTIC_POWER_DEMAND_AND_DELIVERY.md`.
+
+Task 6 does not implement automatic energy deduction, capacity purchasing, workload allocation,
+heat, temperature, cooling effects, throttling, stability, shutdown/damage, overclock power,
+Useful Compute, task/research progress, pathfinding, saves, UI, or another production tick stage.
+
+The exact 100-run determinism coverage remains unchanged. The pure-power p95 target below `1 ms`
+and complete production-tick p95 target below `4 ms` both remain open. The combined
+`corepack pnpm test` command remains sensitive to host load at the unchanged determinism timeouts;
+focused Task 6, complete unit, and standalone determinism verification pass without skipped tests
+or narrowed discovery.
+
+## Task 6.1: Performance Hardening
+
+Status: exact next task; not started. Task 7 is not next and has not begun.
+
+Task 6.1 is limited to closing the open Task 6 performance gates while preserving the accepted
+functional, deterministic, serialization, hash, startup-boundary, and rollback contracts.
 
 ## Nu implementa
 
