@@ -25,6 +25,16 @@ import {
   type ParsedDesignDraftOperation,
 } from "./designModeState.ts";
 import { canonicalSerialize } from "../replay/canonicalState.ts";
+import {
+  calculateDesignApplyPreviewForTransaction,
+  isDesignApplyPreviewRejection,
+} from "./designApplyPreview.ts";
+import {
+  addMicrodollars,
+  isMicrodollarAlignedUsd,
+  microdollarsToUsd,
+  usdToMicrodollars,
+} from "../economy/money.ts";
 
 export type DesignModeCommandHandlers = Pick<
   CommandHandlerRegistry,
@@ -37,6 +47,7 @@ export type DesignModeCommandHandlers = Pick<
   | "DISCONNECT_ROUTE"
   | "UNDO_DESIGN"
   | "REDO_DESIGN"
+  | "APPLY_DESIGN"
   | "CANCEL_DESIGN"
 >;
 
@@ -53,6 +64,14 @@ const REJECTIONS = {
   insufficientInventory: {
     code: "INSUFFICIENT_INVENTORY",
     messageKey: "errors.insufficient-inventory",
+  },
+  insufficientCash: {
+    code: "INSUFFICIENT_CASH",
+    messageKey: "errors.insufficient-cash",
+  },
+  staleDesignPreview: {
+    code: "STALE_DESIGN_PREVIEW",
+    messageKey: "errors.stale-design-preview",
   },
   invalidSystem: { code: "INVALID_SYSTEM", messageKey: "errors.invalid-system" },
   outOfBounds: { code: "OUT_OF_BOUNDS", messageKey: "errors.out-of-bounds" },
@@ -978,6 +997,128 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
       draft.redoStack = draft.redoStack.slice(0, -1);
       draft.undoStack = [...draft.undoStack, cloneOperation(operation)];
       assertValidUndoRedoDraft(state.facility, draft, content);
+    },
+
+    APPLY_DESIGN({ state }, command) {
+      const draft = state.facility.designDraft;
+      if (draft === null) {
+        return REJECTIONS.notInDesignMode;
+      }
+      if (
+        !Number.isSafeInteger(command.expectedDraftRevision) ||
+        command.expectedDraftRevision < 0 ||
+        !isMicrodollarAlignedUsd(command.acceptedCostUsd) ||
+        !Number.isSafeInteger(command.acceptedDowntimeTicks) ||
+        command.acceptedDowntimeTicks < 0
+      ) {
+        return REJECTIONS.invalidPayload;
+      }
+      if (command.expectedDraftRevision !== draft.revision) {
+        return {
+          code: "STALE_DRAFT_REVISION",
+          messageKey: "errors.stale-draft-revision",
+        };
+      }
+
+      const preview = calculateDesignApplyPreviewForTransaction(state, content);
+      if (isDesignApplyPreviewRejection(preview)) {
+        switch (preview.code) {
+          case "NOT_IN_DESIGN_MODE":
+            return REJECTIONS.notInDesignMode;
+          case "INSUFFICIENT_INVENTORY":
+            return REJECTIONS.insufficientInventory;
+          case "INVALID_SYSTEM":
+            return REJECTIONS.invalidSystem;
+        }
+      }
+      if (
+        command.acceptedCostUsd !== preview.netCostUsd ||
+        command.acceptedDowntimeTicks !== preview.downtimeTicks
+      ) {
+        return REJECTIONS.staleDesignPreview;
+      }
+      if (
+        !Number.isSafeInteger(state.facility.liveLayoutRevision) ||
+        state.facility.liveLayoutRevision < 0 ||
+        (preview.hasLayoutChanges && state.facility.liveLayoutRevision >= Number.MAX_SAFE_INTEGER)
+      ) {
+        return REJECTIONS.invalidSystem;
+      }
+
+      let nextCashUsd: number;
+      let nextTotalExpenseUsd: number;
+      let nextTotalIncomeUsd: number;
+      try {
+        const cashMicrodollars = usdToMicrodollars(state.economy.cashUsd);
+        const creditLimitMicrodollars = usdToMicrodollars(state.economy.creditLimitUsd);
+        const netCostMicrodollars = usdToMicrodollars(preview.netCostUsd);
+        const nextCashMicrodollars = addMicrodollars(cashMicrodollars, -netCostMicrodollars);
+        if (nextCashMicrodollars < -creditLimitMicrodollars) {
+          return REJECTIONS.insufficientCash;
+        }
+        nextCashUsd = microdollarsToUsd(nextCashMicrodollars);
+        nextTotalExpenseUsd = microdollarsToUsd(
+          addMicrodollars(
+            usdToMicrodollars(state.economy.totalExpenseUsd),
+            usdToMicrodollars(preview.laborCostUsd),
+          ),
+        );
+        nextTotalIncomeUsd = microdollarsToUsd(
+          addMicrodollars(
+            usdToMicrodollars(state.economy.totalIncomeUsd),
+            usdToMicrodollars(preview.salvageCreditUsd),
+          ),
+        );
+      } catch (error: unknown) {
+        if (error instanceof RangeError) {
+          return REJECTIONS.invalidSystem;
+        }
+        throw error;
+      }
+
+      if (preview.hasLayoutChanges) {
+        const finalModules = structuredClone(draft.modules);
+        const finalRoutes = structuredClone(draft.routes);
+        const affectedModuleIds = [
+          ...new Set([
+            ...preview.addedModuleIds,
+            ...preview.movedModuleIds,
+            ...preview.rotatedModuleIds,
+          ]),
+        ].toSorted(compareStableStrings);
+        for (const moduleInstanceId of affectedModuleIds) {
+          const module = finalModules[moduleInstanceId];
+          if (module === undefined) continue;
+          const definition = resolveDefinition(content, module.definitionId);
+          if (definition === undefined) {
+            throw new Error("Validated Design Apply module definition is missing.");
+          }
+          finalModules[moduleInstanceId] = {
+            ...module,
+            operationalState: "offline",
+            startupTicksRemaining: definition.startupTicks,
+          };
+        }
+        for (const entry of preview.inventoryConsumption) {
+          const stack = state.inventory.stacks[entry.definitionId];
+          if (stack === undefined || stack.quantity < entry.quantity) {
+            throw new Error("Validated Design Apply inventory stack changed unexpectedly.");
+          }
+          const remainingQuantity = stack.quantity - entry.quantity;
+          if (remainingQuantity === 0) {
+            Reflect.deleteProperty(state.inventory.stacks, entry.definitionId);
+          } else {
+            state.inventory.stacks[entry.definitionId] = { ...stack, quantity: remainingQuantity };
+          }
+        }
+        state.facility.modules = finalModules;
+        state.facility.routes = finalRoutes;
+        state.facility.liveLayoutRevision += 1;
+        state.economy.cashUsd = nextCashUsd;
+        state.economy.totalExpenseUsd = nextTotalExpenseUsd;
+        state.economy.totalIncomeUsd = nextTotalIncomeUsd;
+      }
+      state.facility.designDraft = null;
     },
 
     CANCEL_DESIGN({ state }) {

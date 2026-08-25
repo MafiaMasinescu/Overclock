@@ -90,7 +90,7 @@ test("registers the production Design Mode undo and redo handlers", () => {
 });
 
 describe("UNDO_DESIGN and REDO_DESIGN", () => {
-  test("leaves APPLY_DESIGN unavailable and rejects outside Design Mode", () => {
+  test("registers APPLY_DESIGN and rejects it outside Design Mode", () => {
     const core = createCore();
     expect(process(core, command(1, "UNDO_DESIGN"))).toMatchObject({
       accepted: false,
@@ -109,7 +109,7 @@ describe("UNDO_DESIGN and REDO_DESIGN", () => {
         acceptedCostUsd: 0,
         acceptedDowntimeTicks: 0,
       }),
-    ).toMatchObject({ accepted: false, code: "COMMAND_NOT_AVAILABLE" });
+    ).toMatchObject({ accepted: false, code: "NOT_IN_DESIGN_MODE" });
   });
 
   test("accepts exact empty-stack no-ops, including at maximum revision", () => {

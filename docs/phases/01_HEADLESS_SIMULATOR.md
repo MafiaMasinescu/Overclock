@@ -162,7 +162,7 @@ Compatibility details are fixed by `docs/decisions/ADR-0007_DETERMINISTIC_MANUAL
 
 ## Task 5.4: Deterministic Design Mode undo and redo
 
-Status: implemented, pending review and checkpoint.
+Status: checkpointed at `631f9d1379a0f12091247ea6a14a5a214dd87548`.
 
 Task 5.4 includes only:
 
@@ -182,6 +182,17 @@ Task 5.4 does not implement `APPLY_DESIGN`, inventory revalidation or consumptio
 mutation, auto-routing, pathfinding, rerouting, capacity reservation, power, thermal behavior, UI,
 saves, workers, or any later task. Compatibility details are fixed by
 `docs/decisions/ADR-0008_DETERMINISTIC_DESIGN_MODE_UNDO_REDO.md`.
+
+## Task 5.5: Deterministic Design Apply preview and transaction
+
+Status: implemented, pending coordinator review and checkpoint.
+
+Task 5.5 implements only the existing-registry `APPLY_DESIGN` handler and shared pure preview;
+stable final-diff, inventory, salvage, labor, net-cost, and downtime calculation; atomic live-layout
+replacement, net inventory consumption, economy settlement, affected-module offline/startup reset,
+and `STALE_DESIGN_PREVIEW`. It does not add functional completeness checks, compute/power/thermal/
+airflow/task-risk preview, tick work, graph construction, financing, UI, saves, workers, or Task 5.6.
+Compatibility details are fixed by `docs/decisions/ADR-0009_DETERMINISTIC_DESIGN_APPLY_TRANSACTION.md`.
 
 ## Nu implementa
 

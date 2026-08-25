@@ -30,6 +30,7 @@
     "insufficient-inventory": "Inventar insuficient.",
     "invalid-payload": "Comanda conține date invalide.",
     "research-required": "Cercetarea necesară nu este finalizată.",
+    "stale-design-preview": "Previzualizarea Design Mode nu mai este actuală.",
     "stale-tick": "Comanda a fost creată pentru un alt tick al simulării."
   },
   "modules": {

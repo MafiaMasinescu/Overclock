@@ -13,11 +13,14 @@ Updated: 2026-08-24
   commands, is validated and checkpointed at `916476b6e5e8db6253606e7463781e7b594bf325`.
 - Phase 1 Task 5.3, deterministic manual `CONNECT_PORTS` and `DISCONNECT_ROUTE`, is checkpointed
   at `4d83988792cd02cbe81b6749696cd470ee422c77`.
-- Phase 1 Task 5.4, deterministic `UNDO_DESIGN` and `REDO_DESIGN`, is implemented and pending
-  review and checkpoint.
+- Phase 1 Task 5.4, deterministic `UNDO_DESIGN` and `REDO_DESIGN`, is checkpointed at
+  `631f9d1379a0f12091247ea6a14a5a214dd87548`.
+- Phase 1 Task 5.5, deterministic Design Apply preview and atomic `APPLY_DESIGN`, is implemented
+  and pending coordinator review and checkpoint.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
-  `DISCONNECT_ROUTE`, and `CANCEL_DESIGN`. No production gameplay tick system has started.
+  `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, and `CANCEL_DESIGN`. No production
+  gameplay tick system has started.
 
 ## Implemented deterministic foundation
 
@@ -185,8 +188,9 @@ Updated: 2026-08-24
 
 ## Phase 1 Task 5.4 implementation
 
-- `UNDO_DESIGN` and `REDO_DESIGN` are registered through the existing immutable-content Design Mode
-  factory, command processor, and `SimCore` path. `APPLY_DESIGN` remains unavailable.
+- At the Task 5.4 checkpoint, `UNDO_DESIGN` and `REDO_DESIGN` were registered through the existing
+  immutable-content Design Mode factory, command processor, and `SimCore` path; Task 5.5 now adds
+  the registered `APPLY_DESIGN` transaction described below.
 - Empty relevant stacks are accepted exact no-ops, including at maximum revision. A nonempty stack
   with revision overflow rejects atomically as `INVALID_SYSTEM`.
 - Real undo and redo move the same logical detached operation between LIFO stacks, preserve its
@@ -454,9 +458,21 @@ Updated: 2026-08-24
   route invariants at command time; keep it out of pointer movement and profile any future route or
   segment index before adding one.
 
+## Phase 1 Task 5.5 implementation
+
+- `APPLY_DESIGN` is registered through the existing immutable-content Design Mode factory, command
+  processor, and `SimCore` path. Its pure preview has stable final-diff, inventory consumption,
+  salvage, labor, net-cost, and maximum-startup downtime values; `STALE_DESIGN_PREVIEW` is localized
+  in English and Romanian.
+- Apply revalidates current inventory and all structural invariants, commits completely or not at all,
+  preserves sequences/RNG/thermal/tick/unrelated state, and never builds the adjacent-port graph.
+- Current preview intentionally defers functional compute, power, thermal, airflow, and task-risk
+  effects until authoritative systems exist.
+
 ## Task boundary
 
-Task 5.4 is implemented and pending coordinator review and checkpoint. No later task has begun.
+Task 5.5 is implemented and pending coordinator review and checkpoint. No later task has begun; the
+next task remains pending coordinator decision.
 
 ## Explicitly deferred
 

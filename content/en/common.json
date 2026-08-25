@@ -30,6 +30,7 @@
     "insufficient-inventory": "Insufficient inventory.",
     "invalid-payload": "The command payload is invalid.",
     "research-required": "The required research is not completed.",
+    "stale-design-preview": "The Design Mode preview is no longer current.",
     "stale-tick": "The command was created for a different simulation tick."
   },
   "modules": {

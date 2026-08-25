@@ -11,6 +11,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/unit/**/*.test.ts", "tests/determinism/**/*.test.ts"],
+    fileParallelism: false,
     passWithNoTests: false,
   },
 });

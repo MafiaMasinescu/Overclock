@@ -687,6 +687,24 @@ istoric; ele nu au no-op acceptat.
 
 UI afișează preview-ul și cere confirmare. Comanda finală include `draftRevision`. Dacă draft-ul s-a schimbat după preview, simulatorul respinge apply-ul și cere recalculare.
 
+### Task 5.5 Design Apply contract
+
+`calculateDesignApplyPreview(state, content)` returns detached readonly plain data for the active
+draft. It reports the stable final live-to-draft module/route difference; sorted added, removed,
+moved, rotated, and deduplicated changed IDs; net inventory consumption and informational book value;
+per-unit-quantized automatic installed-module salvage; gross labor; net cost; and maximum affected
+module startup downtime. It is blocked for no draft, current inventory shortfall, or safe-arithmetic
+and layout-revision capacity failure; malformed authoritative grid, route, content, or history remains
+a fatal invariant.
+
+`APPLY_DESIGN` validates active draft, payload, draft revision, authoritative invariants, inventory,
+the shared preview, accepted net cost and downtime, capacity, and final credit in that order. A changed
+Apply atomically replaces detached live modules/routes, consumes only net required inventory, settles
+gross lifetime expense/income and net cash, resets affected final modules offline with full startup,
+increments live-layout revision once, and closes the draft. An unchanged final layout accepts only
+zero cost/downtime and closes the draft without layout, inventory, economy, sequence, or RNG mutation.
+Compute, power, thermal, airflow, Useful Compute, and task-risk preview fields remain deferred.
+
 ## 20. Thermal model
 
 Modelul termic oferă hotspot-uri vizibile fără simulare CFD.
