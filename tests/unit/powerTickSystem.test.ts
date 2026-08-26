@@ -5,7 +5,11 @@ import { createInitialGameState } from "../../src/sim/core/createInitialGameStat
 import { SimCore } from "../../src/sim/core/simCore.ts";
 import type { GameState, ModuleInstanceState, RouteState } from "../../src/sim/core/types.ts";
 import { createDirtyPowerState } from "../../src/sim/power/powerState.ts";
-import { createPowerTickSystems } from "../../src/sim/power/facilityPower.ts";
+import {
+  createPowerTickSystems,
+  type PowerResultCacheEvent,
+  type PowerTopologyCacheEvent,
+} from "../../src/sim/power/facilityPower.ts";
 import { canonicalSerialize, hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
 
 const content = loadContentBundle();
@@ -156,7 +160,130 @@ describe("production power tick system", () => {
     expect(hashCanonicalState(afterSecond)).not.toBe(firstHash);
   });
 
-  test("still rejects structurally corrupted persisted power before the next production tick", () => {
+  test("recalculates after startup completion, then reuses only the stable third-tick result", () => {
+    const topologyEvents: PowerTopologyCacheEvent[] = [];
+    const resultEvents: PowerResultCacheEvent[] = [];
+    const state = createStartupBoundaryState();
+    const route = state.facility.routes["route-power"];
+    if (route === undefined) throw new Error("Missing stable-cache route fixture.");
+    route.capacityPerSecond = 100;
+    const core = new SimCore({
+      initialState: state,
+      tickSystems: createPowerTickSystems(content, {
+        onTopologyCacheEvent(event) {
+          topologyEvents.push(event);
+        },
+        onPowerResultCacheEvent(event) {
+          resultEvents.push(event);
+        },
+      }),
+    });
+    const initialRng = core.getStateForSave().rngState;
+
+    core.step();
+    const afterFirst = core.getStateForSave();
+    expect(afterFirst.tick).toBe(1);
+    expect(afterFirst.facility.modules["source"]).toMatchObject({
+      operationalState: "online",
+      startupTicksRemaining: 0,
+    });
+    expect(afterFirst.facility.power.byModule["sink"]).toMatchObject({
+      deliveredPowerWatts: 0,
+      limitingReason: "source-unavailable",
+    });
+
+    core.step();
+    const afterSecond = core.getStateForSave();
+    expect(afterSecond.tick).toBe(2);
+    expect(afterSecond.facility.power.byModule["sink"]).toMatchObject({
+      deliveredPowerWatts: 100,
+      limitingReason: "route-capacity",
+    });
+
+    core.step();
+    const afterThird = core.getStateForSave();
+    expect(afterThird.tick).toBe(3);
+    expect(afterThird.facility.power).toEqual(afterSecond.facility.power);
+    expect(topologyEvents).toEqual(["clear", "rebuild", "hit", "hit"]);
+    expect(resultEvents).toEqual(["calculated", "calculated", "reused"]);
+    expect(afterFirst.rngState).toBe(initialRng);
+    expect(afterSecond.rngState).toBe(initialRng);
+    expect(afterThird.rngState).toBe(initialRng);
+  });
+
+  test("accepts a persisted startup-completion result across a cold lifecycle boundary", () => {
+    const first = createCore(createStartupBoundaryState());
+    first.step();
+    const persisted = first.getStateForSave();
+
+    const resumed = createCore(persisted);
+    const secondStep = resumed.step();
+    const afterSecond = resumed.getStateForSave();
+
+    expect(secondStep).toMatchObject({ startTick: 1, endTick: 2, ticksExecuted: 1 });
+    expect(afterSecond.facility.power.byModule["sink"]).toMatchObject({
+      deliveredPowerWatts: 700,
+      limitingReason: "route-capacity",
+    });
+    expect(afterSecond.rngState).toBe(persisted.rngState);
+  });
+
+  test.each([
+    {
+      name: "brownout",
+      expectedState: "brownout",
+      configure(state: GameState) {
+        state.facility.contractedPowerWatts = 240;
+        state.facility.power = createDirtyPowerState(240);
+      },
+    },
+    {
+      name: "recovery",
+      expectedState: "online",
+      configure(state: GameState) {
+        const sink = state.facility.modules["sink"];
+        if (sink === undefined) throw new Error("Missing recovery sink fixture.");
+        sink.operationalState = "brownout";
+        sink.startupTicksRemaining = 0;
+      },
+    },
+    {
+      name: "shutdown",
+      expectedState: "shutdown",
+      configure(state: GameState) {
+        const sink = state.facility.modules["sink"];
+        if (sink === undefined) throw new Error("Missing shutdown sink fixture.");
+        sink.operationalState = "shutdown";
+        sink.startupTicksRemaining = 0;
+      },
+    },
+    {
+      name: "cooldown preservation",
+      expectedState: "online",
+      configure(state: GameState) {
+        const sink = state.facility.modules["sink"];
+        if (sink === undefined) throw new Error("Missing cooldown sink fixture.");
+        sink.operationalState = "online";
+        sink.startupTicksRemaining = 0;
+        sink.cooldownTicksRemaining = 7;
+      },
+    },
+  ])("does not reinterpret the stored $name generation at a lifecycle boundary", (testCase) => {
+    const state = createState();
+    testCase.configure(state);
+    const first = createCore(state);
+    first.step();
+    const persisted = first.getStateForSave();
+    expect(persisted.facility.modules["sink"]?.operationalState).toBe(testCase.expectedState);
+
+    const resumed = createCore(persisted);
+    resumed.step();
+
+    expect(resumed.tick).toBe(2);
+    expect(resumed.getStateForSave().rngState).toBe(persisted.rngState);
+  });
+
+  test("rejects structurally corrupted persisted power at the lifecycle boundary", () => {
     const core = createCore(createStartupBoundaryState());
     core.step();
     const corrupted = core.getStateForSave();
@@ -164,14 +291,7 @@ describe("production power tick system", () => {
     if (routeResult === undefined) throw new Error("Missing persisted route result fixture.");
     routeResult.deliveredPowerWatts = 701;
     routeResult.utilizationRatio = 701 / 700;
-    const failing = createCore(corrupted);
-    const before = failing.getStateForSave();
-
-    expect(() => failing.step()).toThrow(
-      "Simulator invariant violation at tick 1 during stage calculate-power-demand-and-delivery",
-    );
-    expect(failing.getStateForSave()).toEqual(before);
-    expect(failing.tick).toBe(1);
+    expect(() => createCore(corrupted)).toThrow("Invalid power state");
   });
 
   test("ignores draft modules and routes while preserving the complete draft", () => {
@@ -194,21 +314,11 @@ describe("production power tick system", () => {
     expect(after.facility.designDraft).toEqual(beforeDraft);
   });
 
-  test("rolls back the complete tick, transitions, power results, and RNG on invalid input state", () => {
+  test("rejects invalid dirty Power input at the lifecycle boundary", () => {
     const state = createState();
     state.facility.power.totalRequestedPowerWatts = 1;
-    const core = createCore(state);
-    const before = core.getStateForSave();
 
-    expect(() => core.step()).toThrow(
-      "Simulator invariant violation at tick 0 during stage calculate-power-demand-and-delivery",
-    );
-
-    const after = core.getStateForSave();
-    expect(after).toEqual(before);
-    expect(after.tick).toBe(0);
-    expect(after.rngState).toBe(before.rngState);
-    expect(after.facility.modules["sink"]?.startupTicksRemaining).toBe(2);
+    expect(() => createCore(state)).toThrow("Invalid power state");
   });
 
   test("rolls back finite-arithmetic failures without changing a previously committed tick", () => {

@@ -6,6 +6,8 @@ import { createInitialGameState } from "../../src/sim/core/createInitialGameStat
 import { SimCore } from "../../src/sim/core/simCore.ts";
 import type { ModuleInstanceState } from "../../src/sim/core/types.ts";
 import { createInventoryEconomyCommandHandlers } from "../../src/sim/economy/inventoryTransactions.ts";
+import { calculateDesignApplyPreview } from "../../src/sim/design/designApplyPreview.ts";
+import { createDesignModeCommandHandlers } from "../../src/sim/design/designModeCommands.ts";
 import { createPowerTickSystems } from "../../src/sim/power/facilityPower.ts";
 import { createDirtyPowerState } from "../../src/sim/power/powerState.ts";
 import { canonicalSerialize, hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
@@ -120,6 +122,8 @@ function runStartupBoundary() {
   const afterFirst = core.getStateForSave();
   const secondStep = core.step();
   const afterSecond = core.getStateForSave();
+  const thirdStep = core.step();
+  const afterThird = core.getStateForSave();
   return {
     firstStep,
     firstTick: {
@@ -137,6 +141,14 @@ function runStartupBoundary() {
       state: canonicalSerialize(afterSecond),
       hash: hashCanonicalState(afterSecond),
       rngState: afterSecond.rngState,
+    },
+    thirdStep,
+    thirdTick: {
+      tick: afterThird.tick,
+      sinkPower: afterThird.facility.power.byModule["sink"],
+      state: canonicalSerialize(afterThird),
+      hash: hashCanonicalState(afterThird),
+      rngState: afterThird.rngState,
     },
     initialRngState,
   };
@@ -169,9 +181,92 @@ test("repeats the production startup boundary and following-tick delivery exactl
     deliveredPowerWatts: 700,
     utilizationRatio: 1,
   });
+  expect(expected.thirdStep).toMatchObject({ startTick: 2, endTick: 3, ticksExecuted: 1 });
+  expect(expected.thirdTick.sinkPower).toEqual(expected.secondTick.sinkPower);
   expect(expected.firstTick.rngState).toBe(expected.initialRngState);
   expect(expected.secondTick.rngState).toBe(expected.initialRngState);
+  expect(expected.thirdTick.rngState).toBe(expected.initialRngState);
   for (let runIndex = 1; runIndex < 100; runIndex += 1) {
     expect(runStartupBoundary()).toEqual(expected);
+  }
+});
+
+function runTask61CacheLifecycle() {
+  const state = createInitialGameState({ content, seed: "task-6-1-exact-100" });
+  state.facility.thermalTiles = [];
+  state.inventory.stacks["module-data-relay"] = {
+    definitionId: "module-data-relay",
+    quantity: 1,
+    averageAcquisitionCostUsd: 700,
+  };
+  const cacheEvents: string[] = [];
+  const core = new SimCore({
+    initialState: state,
+    commandHandlers: createDesignModeCommandHandlers(content),
+    tickSystems: createPowerTickSystems(content, {
+      onTopologyCacheEvent(event) {
+        cacheEvents.push(event);
+      },
+    }),
+  });
+  core.step();
+  const commands: readonly SimCommand[] = [
+    {
+      commandId: "61010000-0000-4000-8000-000000000001",
+      source: "player",
+      kind: "ENTER_DESIGN_MODE",
+    },
+    {
+      commandId: "61010000-0000-4000-8000-000000000002",
+      source: "player",
+      kind: "PLACE_MODULE",
+      definitionId: "module-data-relay",
+      position: { x: 0, y: 0 },
+      rotation: 0,
+    },
+    {
+      commandId: "61010000-0000-4000-8000-000000000003",
+      source: "player",
+      kind: "UNDO_DESIGN",
+    },
+    {
+      commandId: "61010000-0000-4000-8000-000000000004",
+      source: "player",
+      kind: "REDO_DESIGN",
+    },
+  ];
+  const receipts = commands.map((command) => core.enqueue(command));
+  const commandResults = core.processPendingCommands();
+  const preview = calculateDesignApplyPreview(core.getStateForSave(), content);
+  if (preview.status !== "ready") throw new Error("Expected ready deterministic Apply preview.");
+  const applyCommand: SimCommand = {
+    commandId: "61010000-0000-4000-8000-000000000005",
+    source: "player",
+    kind: "APPLY_DESIGN",
+    expectedDraftRevision: preview.draftRevision,
+    acceptedCostUsd: preview.netCostUsd,
+    acceptedDowntimeTicks: preview.downtimeTicks,
+  };
+  const applyReceipt = core.enqueue(applyCommand);
+  const applyResults = core.processPendingCommands();
+  core.step(2);
+  const finalState = core.getStateForSave();
+  return {
+    receipts,
+    commandResults,
+    applyReceipt,
+    applyResults,
+    cacheEvents,
+    state: canonicalSerialize(finalState),
+    hash: hashCanonicalState(finalState),
+    rngState: finalState.rngState,
+  };
+}
+
+test("repeats Task 6.1 cold, warm, draft, Apply invalidation, state, hash, and RNG exactly 100 times", () => {
+  const expected = runTask61CacheLifecycle();
+  expect(expected.cacheEvents).toEqual(["clear", "rebuild", "rebuild", "hit"]);
+  for (let runIndex = 1; runIndex < 100; runIndex += 1) {
+    expect(runTask61CacheLifecycle()).toEqual(expected);
   }
 });

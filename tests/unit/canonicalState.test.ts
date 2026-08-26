@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { canonicalSerialize, hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
+import {
+  assertCanonicalSerializable,
+  canonicalSerialize,
+  hashCanonicalState,
+} from "../../src/sim/replay/canonicalState.ts";
 
 describe("canonical authoritative state", () => {
   test("sorts object keys recursively without changing array order", () => {
@@ -31,6 +35,16 @@ describe("canonical authoritative state", () => {
     second["seed"] = "foundation";
 
     expect(canonicalSerialize(first)).toBe(canonicalSerialize(second));
+  });
+
+  test("validates a supported graph without producing canonical text", () => {
+    expect(() => {
+      assertCanonicalSerializable({
+        z: null,
+        list: [{ b: 2, a: 1 }, 3],
+        a: { y: 2, x: 1 },
+      });
+    }).not.toThrow();
   });
 
   test.each([
@@ -117,5 +131,41 @@ describe("canonical authoritative state", () => {
     expect(() => canonicalSerialize(new StateArray(1, 2))).toThrow(
       "an array with a nonstandard prototype",
     );
+  });
+
+  test("validation-only traversal rejects invalid values and cyclic graphs", () => {
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    const accessor = {};
+    Object.defineProperty(accessor, "tick", { enumerable: true, get: () => 1 });
+    const sparse = new Array<unknown>(2);
+    sparse[1] = "present";
+    const symbolProperty = { value: 1 };
+    Object.defineProperty(symbolProperty, Symbol("hidden"), { value: 2, enumerable: true });
+    const nonEnumerableProperty = { value: 1 };
+    Object.defineProperty(nonEnumerableProperty, "hidden", { value: 2 });
+    const customArray: number[] & { label?: string } = [1, 2];
+    customArray.label = "custom";
+    const replacedArrayPrototype = [1, 2];
+    Object.setPrototypeOf(replacedArrayPrototype, null);
+
+    for (const value of [
+      { value: undefined },
+      { value: Number.POSITIVE_INFINITY },
+      { value: new Date(0) },
+      { value: new Map([["key", "value"]]) },
+      { value: () => 1 },
+      cyclic,
+      accessor,
+      sparse,
+      symbolProperty,
+      nonEnumerableProperty,
+      customArray,
+      replacedArrayPrototype,
+    ]) {
+      expect(() => {
+        assertCanonicalSerializable(value);
+      }).toThrow(/canonical serialization/i);
+    }
   });
 });

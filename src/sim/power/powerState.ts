@@ -45,7 +45,7 @@ function pushIf(
   if (condition) issues.push({ path, message });
 }
 
-function validateTransition(
+export function isValidPowerOperationalTransition(
   previous: Readonly<ModuleInstanceState>,
   next: Readonly<ModuleInstanceState>,
   deliveredPowerWatts: number,
@@ -319,7 +319,7 @@ export function validatePowerState(
     if (module !== undefined && calculationInputModule !== undefined) {
       pushIf(
         issues,
-        !validateTransition(
+        !isValidPowerOperationalTransition(
           calculationInputModule,
           module,
           result.deliveredPowerWatts,
@@ -487,15 +487,11 @@ export function validatePowerState(
     } else {
       const incomingRouteIds = incomingRouteIdsByModule[moduleId] ?? [];
       if (incomingRouteIds.length === 0) expectedReason = "missing-route";
-      else if (calculationInputModules === undefined && result.deliveredPowerWatts === 0) {
-        pushIf(
-          issues,
-          !["source-unavailable", "contracted-capacity", "route-capacity"].includes(
-            result.limitingReason,
-          ),
-          `facility.power.byModule.${moduleId}.limitingReason`,
-          "must use a routed-delivery limiting reason",
-        );
+      else if (
+        calculationInputModules === undefined &&
+        result.deliveredPowerWatts === 0 &&
+        result.limitingReason === "source-unavailable"
+      ) {
         continue;
       } else if (
         calculationInputModules !== undefined &&
@@ -580,4 +576,11 @@ export function assertValidPowerState(
       `Invalid power state:\n${issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")}`,
     );
   }
+}
+
+export function assertValidStoredPowerState(
+  state: Readonly<GameState>,
+  content: ContentBundle,
+): void {
+  assertValidPowerState(state, content);
 }

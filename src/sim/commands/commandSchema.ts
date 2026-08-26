@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { canonicalSerialize } from "../replay/canonicalState.ts";
+import { assertCanonicalSerializable } from "../replay/canonicalState.ts";
 import type { SimCommand } from "./contracts.ts";
 
 const finiteNumberSchema = z.number();
@@ -241,7 +241,7 @@ function hasExactOptionalExpectedTick(command: ParsedSimCommand): command is Sim
 }
 
 export function parseSimCommand(input: unknown): SimCommand {
-  canonicalSerialize(input);
+  assertCanonicalSerializable(input);
   const command = simCommandSchema.parse(input);
   if (!hasExactOptionalExpectedTick(command)) {
     throw new Error("Command expectedTick must be omitted instead of undefined.");

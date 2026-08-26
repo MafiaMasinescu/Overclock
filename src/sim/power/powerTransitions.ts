@@ -3,34 +3,55 @@ import type { ModuleInstanceState, ModulePowerDeliveryState } from "../core/type
 export function applyPowerOperationalTransitions(
   modules: Readonly<Record<string, ModuleInstanceState>>,
   deliveries: Readonly<Record<string, ModulePowerDeliveryState>>,
+  stableModuleIds?: readonly string[],
+  inputUsesStableModuleOrder = false,
 ): Record<string, ModuleInstanceState> {
-  const transitioned: Record<string, ModuleInstanceState> = {};
-  for (const moduleId of Object.keys(modules).toSorted()) {
+  const currentModuleIds = inputUsesStableModuleOrder ? stableModuleIds : Object.keys(modules);
+  if (currentModuleIds === undefined) throw new Error("Power transition module IDs are missing.");
+  const moduleIds = stableModuleIds ?? currentModuleIds.toSorted();
+  let transitioned: Record<string, ModuleInstanceState> | undefined;
+  if (
+    !inputUsesStableModuleOrder &&
+    currentModuleIds.some((moduleId, index) => moduleId !== moduleIds[index])
+  ) {
+    transitioned = {};
+    for (const moduleId of moduleIds) {
+      const module = modules[moduleId];
+      if (module === undefined) throw new Error("Power transition module coverage is incomplete.");
+      transitioned[moduleId] = module;
+    }
+  }
+  for (const moduleId of moduleIds) {
     const module = modules[moduleId];
     const delivery = deliveries[moduleId];
     if (module?.id !== moduleId || delivery === undefined) {
       throw new Error("Power transition records must cover matching module IDs.");
     }
-    const next = { ...module };
+    let nextStartupTicksRemaining = module.startupTicksRemaining;
     if (module.operationalState === "shutdown") {
-      transitioned[moduleId] = next;
       continue;
     }
+    let nextOperationalState: ModuleInstanceState["operationalState"];
     if (
       delivery.requestedPowerWatts > 0 &&
       delivery.deliveredPowerWatts < delivery.minimumPowerWatts
     ) {
-      next.operationalState = "brownout";
-      transitioned[moduleId] = next;
-      continue;
-    }
-    if (module.startupTicksRemaining > 0) {
-      next.startupTicksRemaining = module.startupTicksRemaining - 1;
-      next.operationalState = next.startupTicksRemaining === 0 ? "online" : "starting";
+      nextOperationalState = "brownout";
     } else {
-      next.operationalState = "online";
+      nextStartupTicksRemaining = Math.max(0, module.startupTicksRemaining - 1);
+      nextOperationalState = nextStartupTicksRemaining === 0 ? "online" : "starting";
     }
-    transitioned[moduleId] = next;
+    if (
+      nextOperationalState !== module.operationalState ||
+      nextStartupTicksRemaining !== module.startupTicksRemaining
+    ) {
+      transitioned ??= { ...modules };
+      transitioned[moduleId] = {
+        ...module,
+        operationalState: nextOperationalState,
+        startupTicksRemaining: nextStartupTicksRemaining,
+      };
+    }
   }
-  return transitioned;
+  return transitioned ?? modules;
 }

@@ -2,7 +2,7 @@ import type { GameState } from "../core/types.ts";
 import { AuthoritativeState } from "../core/authoritativeState.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import { assertValidDesignModeState } from "../design/designModeState.ts";
-import { canonicalSerialize } from "../replay/canonicalState.ts";
+import { assertCanonicalSerializable } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "./contracts.ts";
 import {
@@ -47,7 +47,7 @@ function validateCandidateState(
   minimumModuleInstanceSequence: number,
   minimumRouteSequence: number,
 ): void {
-  canonicalSerialize(candidate);
+  assertCanonicalSerializable(candidate);
   if (candidate.tick !== expectedTick) {
     throw new Error("Command handlers must not advance or replace the current simulation tick.");
   }

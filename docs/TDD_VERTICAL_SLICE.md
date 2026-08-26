@@ -813,13 +813,37 @@ Task 6 calculează `energyCostUsdThisTick` cu exact `0.1` secunde prin helper-ul
 nu deduce cash și nu modifică agregatele economy. Settlement-ul rămâne în stage-ul ulterior
 `apply-economy-and-energy-costs`.
 
-Checkpoint-ul funcțional Task 6 a trecut verificarea de corectitudine și determinism, inclusiv
-testele exacte de 100 de rulări neschimbate, dar nu este aprobat ca performance-complete. Pragul
-pure-power p95 sub `1 ms` și pragul complete production tick p95 sub `4 ms` rămân deschise. Comanda
-combinată `corepack pnpm test` rămâne sensibilă la host load cu timeout-urile determinism neschimbate;
-gate-urile focused Task 6, complete unit și standalone determinism sunt verificate separat, fără
-skip-uri sau discovery restrâns. Următorul task exact este `Phase 1 Task 6.1: Performance Hardening`,
-nu Task 7; Task 6.1 nu a început.
+Task 6.1 păstrează formulele, prioritățile, ordinea stabilă, limita de startup, tick-ul de `0.1`
+secunde, rollback-ul fatal, RNG-ul, hash-urile și serializarea Task 6. Fiecare `SimCore` deține un
+cache derivat privat pentru topologia și rezultatul Power, în afara `GameState`; topologia se
+reconstruiește numai după schimbarea `liveLayoutRevision` sau o limită explicită de lifecycle.
+Draft edit, undo, redo, cancel și procesarea exclusivă de comenzi nu invalidează topologia live.
+
+La limitele care au nevoie numai de validare, simulatorul verifică aceleași tipuri primitive,
+prototype-uri, descriptori, numere finite, arrays dense și grafuri aciclice fără să construiască
+text JSON canonic care ar fi imediat eliminat. Serializarea canonică și hash-urile rămân neschimbate
+acolo unde output-ul lor este necesar. Cele două teste deterministe grele păstrează exact 100 de
+rulări independente, timeout-ul de 15 secunde și toate aserțiunile existente.
+
+Tick-ul Power normal folosește structural sharing, copiază numai ramurile modificate, validează
+invariantele Power afectate și îngheață incremental numai obiectele noi. New game, state replacement,
+Apply, reconstrucția topologiei și validarea explicită de debug/test păstrează validarea completă
+relevantă. Cache-ul și scratch buffers nu intră în saves, snapshots, receipts, replay, serializarea
+canonică sau hash-uri. Decizia și supersedarea limitată a ADR-0003 sunt documentate în
+`ADR-0011_INCREMENTAL_TICK_TRANSACTIONS_AND_DERIVED_POWER_CACHE.md`.
+
+Validarea rezultatului Power persistat îl tratează ca istoric și nu reinterpretează disponibilitatea
+sursei folosind o stare operațională apărută după calcul. Rezultatul nou rămâne validat strict față
+de input-ul exact de la începutul tick-ului; un motiv contradictoriu din aceeași generație produce
+rollback fatal. Cache-ul de rezultat cere identitate neschimbată pentru module, Power și routes,
+plus aceleași capacity, price și live revision.
+
+Pe i7-2600, în production mode după JIT warm-up, fixture-ul auditat după corecție a obținut pure
+Power p95 `0.0013 ms` pentru 500 samples și complete production tick p95 `0.0311 ms` pentru 200
+samples; ambele praguri trec. Reconstrucția rece a topologiei este raportată separat: median
+`1.8128 ms`, p95 `2.7236 ms`, maximum `7.9483 ms`, 200 samples. Startup completion și recalcularea
+forțată din tick-ul următor au p95 `3.7369 ms` și `3.7034 ms`, măsurate separat cu topologia caldă.
+Task 7 nu a început.
 
 ## 22. Task system
 

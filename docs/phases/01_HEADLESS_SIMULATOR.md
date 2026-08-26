@@ -212,18 +212,41 @@ Task 6 does not implement automatic energy deduction, capacity purchasing, workl
 heat, temperature, cooling effects, throttling, stability, shutdown/damage, overclock power,
 Useful Compute, task/research progress, pathfinding, saves, UI, or another production tick stage.
 
-The exact 100-run determinism coverage remains unchanged. The pure-power p95 target below `1 ms`
-and complete production-tick p95 target below `4 ms` both remain open. The combined
-`corepack pnpm test` command remains sensitive to host load at the unchanged determinism timeouts;
-focused Task 6, complete unit, and standalone determinism verification pass without skipped tests
-or narrowed discovery.
+Task 6.1 closes the Task 6 performance gates without changing the accepted formulas, ordering,
+startup boundary, rollback, serialization, hash, or RNG contracts.
 
 ## Task 6.1: Performance Hardening
 
-Status: exact next task; not started. Task 7 is not next and has not begun.
+Status: implemented and measured; uncommitted pending review and approval. Task 7 has not begun.
 
-Task 6.1 is limited to closing the open Task 6 performance gates while preserving the accepted
-functional, deterministic, serialization, hash, startup-boundary, and rollback contracts.
+Each `SimCore` owns a private Power topology and result cache outside `GameState`. Topology rebuilds
+only after `liveLayoutRevision` changes or an explicit lifecycle replacement. Structural-sharing
+transactions copy changed Power branches, scoped validators protect every normal Power commit, and
+incremental freezing stops at existing frozen branches. New game, replacement, Apply, explicit
+debug/test, and reconstruction boundaries retain broad validation. Compatibility details and the
+limited supersession of ADR-0003 are fixed by
+`docs/decisions/ADR-0011_INCREMENTAL_TICK_TRANSACTIONS_AND_DERIVED_POWER_CACHE.md`.
+
+Validation-only command, lifecycle, save, and legacy-system boundaries still traverse and reject the
+complete unsupported graph categories, but do not materialize canonical JSON text merely to discard
+it. Canonical serialization and hash output remain unchanged. This correction keeps both heavy
+determinism fixtures at exactly 100 independent runs and leaves Vitest's 15-second timeout and serial
+file configuration unchanged.
+
+The checkpoint correctness repair separates stored-result validation from same-generation result
+validation. A persisted result is historical and is not reinterpreted with a later operational
+state; a newly calculated result is still validated fatally against the exact tick-start inputs.
+Consequently, a source completing startup in tick N remains unavailable in that committed result,
+forces recalculation in tick N+1, and can then supply its sink. Result-cache reuse additionally
+requires unchanged module, Power, and route branch identities plus contracted capacity, energy
+price, and live revision. Transition-producing results are not cached for the following tick.
+
+On the target i7-2600 in production mode after the repair, the warmed audited fixture passed both
+targets: pure Power p95 `0.0013 ms` over 500 samples and complete production-tick p95 `0.0311 ms`
+over 200 samples. Cold topology reconstruction was measured separately at median `1.8128 ms`, p95
+`2.7236 ms`, and maximum `7.9483 ms` over 200 samples. Startup completion and following-tick forced
+recalculation were measured as distinct warm-topology production ticks at p95 `3.7369 ms` and
+`3.7034 ms`. No wall-time assertion was added to the unit suite.
 
 ## Nu implementa
 

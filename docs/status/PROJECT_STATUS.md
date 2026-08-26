@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-08-25
+Updated: 2026-08-26
 
 ## Current phase
 
@@ -18,8 +18,12 @@ Updated: 2026-08-25
 - Phase 1 Task 5.5, deterministic Design Apply preview and atomic `APPLY_DESIGN`, is checkpointed at
   `24276727271a90e0b2c825be6687aa7996443715`.
 - Phase 1 Task 6, deterministic power demand, routing-limited delivery, startup, brownout, route
-  utilization, and current-tick energy-cost calculation, has a reviewed functional checkpoint:
-  correctness and determinism verification passed, but performance completion is not approved.
+  utilization, and current-tick energy-cost calculation, is checkpointed at
+  `496b249031e244a4c7331faf493b30f63e157e35` and pushed to `origin/main`.
+- Phase 1 Task 6.1, deterministic tick-pipeline and Power performance hardening, including the
+  checkpoint startup-generation correctness and determinism-timeout stability repairs, is
+  implemented and measured. It remains uncommitted pending review and approval; Task 7 has not
+  begun.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
   `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, and `CANCEL_DESIGN`. The only
@@ -394,12 +398,13 @@ Updated: 2026-08-25
   remain reserved.
 - Duplicate valid client command IDs are not deduplicated in Task 2; ordered command streams own
   their identifiers, and replay/transport policy remains deferred.
-- Command candidates and injected tick-system candidates use the platform-neutral `structuredClone`
-  implementation available in the supported Node and browser runtimes. Empty production ticks do
-  not clone the complete state. Later gameplay tasks may introduce narrower system candidates after
-  measuring the complete fixture.
-- Canonical candidate validation runs after each injected system stage. Production Task 3 registers
-  no systems, so the empty hot path avoids full-state serialization.
+- Command candidates and legacy mutable tick-system candidates use the platform-neutral
+  `structuredClone` implementation available in supported Node and browser runtimes. Registered
+  structural-sharing runtimes instead copy changed branches and must provide scoped lifecycle and
+  result validation under ADR-0011.
+- Canonical candidate validation runs after each legacy injected system stage. The structural Power
+  runtime uses targeted validation on normal ticks and complete relevant validation at new-game,
+  replacement, structural-mutation, topology-reconstruction, and explicit diagnostic boundaries.
 - The temporary initial credit limit remains `0`; tests may supply another finite nonnegative value.
 - Content prices and salvage ratios remain current-version inputs. Task 4 adds no market history,
   scarcity, inflation, or price snapshot to inventory stacks.
@@ -409,26 +414,44 @@ Updated: 2026-08-25
 
 ## Verification
 
-- Focused Task 6 coverage: PASS, 3 files and 43 tests, including both exact-100-run power determinism
-  vectors. Complete unit suite: PASS, 24 files and 394 tests.
-- Complete determinism suite: PASS, 6 files and 7 tests with all explicit 15-second timeouts
-  unchanged. The combined `corepack pnpm test` command remains host-load sensitive: an earlier run
-  passed all unit tests but hit unchanged timeouts in the pre-existing Task 3 and Task 5.4
-  exact-100-run files. No test was skipped, no timeout was raised, and discovery was not narrowed.
+- Focused Task 6 and Task 6.1 coverage: PASS, 4 files and 79 tests, including historical startup
+  generation acceptance, strict same-generation contradiction rejection, topology/result-cache
+  lifecycle and dynamic-input invalidation, changed Apply, draft/undo/redo/cancel stability,
+  replacement, cold/warm equality, fatal state/RNG rollback, brownout/recovery/shutdown/cooldown
+  boundaries, structural sharing, incremental immutability, scratch isolation, and RNG preservation.
+- Complete unit suite: PASS, 25 files and 431 tests. Complete standalone determinism suite: PASS, 6
+  files and 8 tests with all exact-100 runs and explicit 15-second timeouts unchanged. The timeout
+  repair separates validation-only canonical graph traversal from canonical text construction;
+  unsupported values still fail and hashes/serialized output are unchanged. No timeout, exact-run
+  assertion, discovery, `fileParallelism`, or worker setting changed.
+- Before repair, three isolated clean-process runs measured Design undo/redo at `22.213`, `18.872`,
+  and `20.429` seconds and SimCore determinism at `16.895`, `16.349`, and `14.350` seconds. Base
+  checkpoint runs overlapped the same unstable range. After repair, the three isolated timings were
+  `12.170/10.942/10.740` and `8.017/7.998/8.060` seconds. Together in one serial process they passed
+  at `12.242` and `9.574` seconds.
+- The final complete `corepack pnpm test` command passed twice consecutively in clean processes: 25
+  files/431 unit tests followed by 6 files/8 determinism tests in each run, with wall times `81.142`
+  and `81.028` seconds.
 - Published RNG, canonical-hash, money, geometry, routing, undo/redo, and Apply compatibility vectors
   remain covered by the passing unit and determinism selections.
-- Pure Task 6 power diagnostic on the development i7-2600 (`24 x 16`, 250 modules, 4 sources, 270
-  power routes, 60,000 W contracted, 500 samples): median `1.5970 ms`, p95 `2.6259 ms`, max
-  `5.9753 ms`. The requested p95 below `1 ms` is not met.
-- Complete production power-tick diagnostic on the same fixture and host (200 samples): median
-  `28.1030 ms`, p95 `36.7306 ms`, max `141.6638 ms`. Isolated p95 proxies were cloning
-  `10.0032 ms`, canonical validation `20.3600 ms`, power calculation `4.1771 ms`, and freeze/commit
-  `1.7822 ms`.
-  The p95 below `4 ms` gate remains open.
+- Fresh pre-optimization reproduction on the target i7-2600: pure Power median `1.4983 ms`, p95
+  `2.5410 ms`, max `4.5027 ms`; complete tick median `45.4178 ms`, p95 `77.3539 ms`, max
+  `102.3123 ms`. Stage p95 values were clone `11.8016 ms`, canonical validation `39.4833 ms`, Power
+  `7.6584 ms`, freeze `3.3009 ms`, and derived/orchestration residual `15.1097 ms`.
+- Final post-repair production-mode i7-2600 diagnostic on the same audited fixture after separate
+  JIT warm-up: warm pure Power median `0.0009 ms`, p95 `0.0013 ms`, max `0.1267 ms`, 500 samples;
+  complete production tick median `0.0163 ms`, p95 `0.0311 ms`, max `0.2605 ms`, 200 samples. Both
+  acceptance targets pass.
+- Cold topology reconstruction was excluded from setup and steady timing and measured separately:
+  median `1.8128 ms`, p95 `2.7236 ms`, max `7.9483 ms`, 200 samples. Dirty-input proxies reported
+  Power recalculation p95 `0.6753 ms` and targeted validation p95 `1.6424 ms`. Startup completion and
+  following-tick forced recalculation were timed separately as warm-topology production ticks at p95
+  `3.7369 ms` and `3.7034 ms`; fixture construction and the first topology-building tick were
+  excluded, while the transition work itself remained timed.
 - Existing diagnostics completed: Apply preview/apply p95 `59.0372/42.5961 ms`; routing
   connect/disconnect p95 `24.1001/18.0402 ms`; Design Mode operation p95 values
   `27.9098-35.3817 ms`; grid occupancy/placement/graph p95 `1.3127/1.0978/26.1613 ms`; empty/private
-  tick p95 `0.0022/14.5596 ms`.
+  tick p95 now `0.0097/10.0025 ms` for empty/private fixtures.
 - Formatting check, ESLint, strict TypeScript checking, content validation, production build, and
   aggregate `corepack pnpm validate`: PASS.
 - Content validation: PASS, 12 modules, 8 tasks, 10 research nodes, 2 benchmarks, and 2 locales.
@@ -438,8 +461,7 @@ Updated: 2026-08-25
   DOM, browser storage, or worker matches in `src/sim` or `src/grid`, and no `Map`, `Set`, or `Date`
   in authoritative state contracts.
 - GDD, Word documents, module content, balance values, and route content drift checks: PASS; those
-  files are unchanged. The Markdown TDD diff is limited to the approved additive Task 6 power-state,
-  demand, delivery, transition, and energy-cost contract.
+  files are unchanged. Markdown TDD/status/phase and ADR-0011 changes are limited to Task 6.1.
 
 ## Known risks
 
@@ -453,9 +475,9 @@ Updated: 2026-08-25
   before a later fatal failure require future host/replay decisions.
 - Save checksum and migration behavior are not implemented; the TDD reserves SHA-256 for save
   integrity.
-- The controlled private-system fixture currently pays for a full isolated candidate clone and one
-  canonical validation per tick. This is intentionally diagnostic, not proof of the final i7-2600
-  p95 gate; later systems should introduce narrower candidates if the complete fixture requires it.
+- Legacy mutable system callbacks still pay for an isolated candidate clone and broad canonical
+  validation. A future production system may opt into structural sharing only with explicit
+  copy-on-write ownership, lifecycle validation, and targeted output invariants.
 - `SimulatorInvariantError.commandId` uses an internal diagnostic identifier for tick-system errors
   so the Task 2 command-error field remains backward compatible; tick-system consumers should use
   the added `tick` and `stage` diagnostics.
@@ -464,16 +486,17 @@ Updated: 2026-08-25
   instead of ad hoc floating-point arithmetic.
 - The transaction registry is intentionally explicit: callers must inject the validated immutable
   content bundle and pass the returned handlers to the existing processor or `SimCore` registry.
-- The final i7-2600 under-4-ms performance gate remains open until the complete controlled vertical
-  slice fixture exists.
-- Task 6's controlled fixture already misses both requested timing targets. Pure calculation is
-  dominated by topology and allocation; complete ticks are dominated by ADR-0003 cloning,
-  canonical validation, power validation, and cross-stage orchestration. A persistent topology cache
-  or broader tick candidate/validation redesign requires a separate ADR and explicit approval.
-- Exact-100-run determinism files remain sensitive to host scheduling near their unchanged
-  15-second per-test limits. The standalone suite passes with the unchanged test configuration,
-  while a combined unit-plus-determinism run can time out after the unit suite on the same loaded
-  host.
+- The final complete vertical-slice fixture may add later systems that consume the remaining tick
+  budget. Task 6.1 proves only the audited Power fixture and preserves the broader under-4-ms gate
+  for future integrated profiling.
+- Result-cache invalidation intentionally names every current authoritative Power input. Future
+  Power formulas must extend that dirty-input key and its regression tests before using new state.
+- Stored Power results do not contain a serialized calculation-input generation. Lifecycle and
+  topology-rebuild validation therefore prove historical structural consistency without
+  reinterpreting source availability from a later operational state. Strict targeted validation
+  proves every new result against its exact tick-start inputs before commit.
+- Wall-time diagnostics remain sensitive to host scheduling. Performance acceptance uses a
+  controlled warmed diagnostic; normal tests contain no unstable timing assertion.
 - The dense adjacent-port graph diagnostic intentionally rebuilds derived data and currently uses a
   pairwise node comparison. It is not on the tick path; Task 5.2 or connectivity work should profile
   mutation-time rebuild frequency before deciding whether a spatial candidate index is warranted.
@@ -496,11 +519,9 @@ Updated: 2026-08-25
 
 ## Task boundary
 
-Task 6 has a reviewed functional checkpoint: functional correctness and determinism verification
-passed, while the pure-power p95 below `1 ms` and complete production-tick p95 below `4 ms` gates
-remain open. The combined `corepack pnpm test` command remains sensitive to host load at the
-unchanged exact-100-run determinism timeouts. The exact next task is
-`Phase 1 Task 6.1: Performance Hardening`, not Task 7. Neither Task 6.1 nor Task 7 has begun.
+Task 6.1 is implemented, measured, and uncommitted pending review and approval. Correctness,
+determinism, and both controlled performance targets pass without changed gameplay behavior,
+timeouts, discovery, or assertions. Task 7 has not begun.
 
 ## Phase 1 Task 6 implementation
 
@@ -518,7 +539,35 @@ unchanged exact-100-run determinism timeouts. The exact next task is
   exact-0.1-second energy cost are calculated without economy settlement or RNG use.
 - Production registers only `calculate-power-demand-and-delivery`. Apply resets changed layouts to
   dirty; drafts and command-only processing do not run power. Failures remain transactional under
-  ADR-0003.
+  ADR-0003 and ADR-0011.
+
+## Phase 1 Task 6.1 implementation
+
+- Every `SimCore` materializes its own Power runtime. Its private topology cache contains stable
+  ordering, resolved definitions/ports/routes, numeric indexes, capacity groups, and allocation
+  indexes outside authoritative state.
+- Topology is keyed by `liveLayoutRevision`, rebuilt after changed Apply, and cleared explicitly at
+  construction or validated state replacement. Draft-only edits, undo, redo, cancel, command-only
+  processing, and unrelated commands do not invalidate it.
+- A validated warm result may be reused only while the module, Power, and route branches retain
+  identity, contracted capacity, energy price, and live revision retain value, and the preceding
+  calculation caused no operational transition. Module identity covers source operational,
+  startup/cooldown, demand, and other allocation inputs. Startup completion therefore invalidates
+  reuse and makes a source available only on the following tick.
+- Production Power ticks use copy-on-write structural sharing and targeted Power validation. Initial
+  state, replacement, structural mutation, and topology-reconstruction boundaries validate stored
+  historical Power structure. A new result is checked against the exact tick-start state, so a
+  contradictory same-generation limiting reason still causes deterministic fatal rollback.
+- Initial/replacement state is detached and frozen once. Tick commit recursively freezes only new
+  branches and stops at objects already verified by the owning authoritative state; newly
+  shallow-frozen branches are still traversed, so retained references cannot mutate authoritative
+  state.
+- Private typed allocation/validation scratch arrays and reusable demand records are never reachable
+  from authoritative state, canonical serialization, hashes, saves, snapshots, receipts, or replay
+  data. Power still consumes no RNG.
+- ADR-0011 supersedes only ADR-0003 decisions 15 and 16 for registered structural-sharing runtimes;
+  immutable stage order, fixed tick timing, atomicity, rollback, RNG protection, and the legacy
+  mutable-system fallback remain intact.
 
 ## Explicitly deferred
 

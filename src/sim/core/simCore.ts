@@ -3,14 +3,16 @@ import { CommandProcessor, SimulatorInvariantError } from "../commands/commandPr
 import { CommandQueue } from "../commands/commandQueue.ts";
 import { parseSimCommand } from "../commands/commandSchema.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "../commands/contracts.ts";
-import { canonicalSerialize } from "../replay/canonicalState.ts";
+import { assertCanonicalSerializable } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import { assertValidDesignModeState } from "../design/designModeState.ts";
 import { AuthoritativeState } from "./authoritativeState.ts";
 import {
   TICK_SYSTEM_STAGE_ORDER,
+  type TickSystemRegistration,
   type TickSystemRegistry,
+  type TickSystemRuntime,
   type TickSystemStage,
 } from "./tickSystems.ts";
 import type { GameState } from "./types.ts";
@@ -99,8 +101,25 @@ function parseClockCommand(command: ClockCommand): ClockCommand {
   return parsed;
 }
 
-function hasRegisteredSystem(tickSystems: TickSystemRegistry): boolean {
+type TickSystemRuntimeRegistry = Readonly<Partial<Record<TickSystemStage, TickSystemRuntime>>>;
+
+function hasRegisteredSystem(tickSystems: TickSystemRuntimeRegistry): boolean {
   return TICK_SYSTEM_STAGE_ORDER.some((stage) => tickSystems[stage] !== undefined);
+}
+
+function createTickSystemRuntime(registration: TickSystemRegistration): TickSystemRuntime {
+  return typeof registration === "function"
+    ? { executionMode: "mutable-clone", run: registration }
+    : registration.createRuntime();
+}
+
+function createTickSystemRuntimes(tickSystems: TickSystemRegistry): TickSystemRuntimeRegistry {
+  const runtimes: Partial<Record<TickSystemStage, TickSystemRuntime>> = {};
+  for (const stage of TICK_SYSTEM_STAGE_ORDER) {
+    const registration = tickSystems[stage];
+    if (registration !== undefined) runtimes[stage] = createTickSystemRuntime(registration);
+  }
+  return Object.freeze(runtimes);
 }
 
 function createQueuedCommandHandlers(
@@ -112,28 +131,18 @@ function createQueuedCommandHandlers(
   return Object.freeze(queuedHandlers);
 }
 
-function freezeSystemCandidate(value: unknown): void {
-  if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
-    return;
-  }
-
-  for (const child of Object.values(value)) {
-    freezeSystemCandidate(child);
-  }
-  Object.freeze(value);
-}
-
 export class SimCore {
   private readonly authoritativeState: AuthoritativeState;
   private readonly commandQueue: CommandQueue;
   private readonly commandProcessor: CommandProcessor;
-  private readonly tickSystems: TickSystemRegistry;
+  private readonly tickSystems: TickSystemRuntimeRegistry;
   private readonly runsTickSystems: boolean;
+  private readonly runsMutableTickSystems: boolean;
 
   constructor({ initialState, commandHandlers, tickSystems = {} }: SimCoreOptions) {
     assertValidClockAndTick(initialState);
     assertValidDesignModeState(initialState);
-    canonicalSerialize(initialState);
+    assertCanonicalSerializable(initialState);
 
     this.authoritativeState = new AuthoritativeState(initialState);
     this.commandQueue = new CommandQueue();
@@ -141,8 +150,17 @@ export class SimCore {
       { initialState, handlers: createQueuedCommandHandlers(commandHandlers ?? {}) },
       { state: this.authoritativeState, queue: this.commandQueue },
     );
-    this.tickSystems = Object.freeze({ ...tickSystems });
+    this.tickSystems = createTickSystemRuntimes(Object.freeze({ ...tickSystems }));
     this.runsTickSystems = hasRegisteredSystem(this.tickSystems);
+    this.runsMutableTickSystems = TICK_SYSTEM_STAGE_ORDER.some(
+      (stage) => this.tickSystems[stage]?.executionMode === "mutable-clone",
+    );
+    const ownedInitialState = this.authoritativeState.readInternal();
+    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
+      const runtime = this.tickSystems[stage];
+      runtime?.clearDerivedState?.();
+      runtime?.validateLifecycleState?.(ownedInitialState);
+    }
   }
 
   get tick(): number {
@@ -214,8 +232,25 @@ export class SimCore {
   getStateForSave(): GameState {
     const snapshot = this.authoritativeState.snapshot();
     assertValidClockAndTick(snapshot);
-    canonicalSerialize(snapshot);
+    assertCanonicalSerializable(snapshot);
     return snapshot;
+  }
+
+  replaceState(state: GameState): void {
+    if (this.commandProcessor.pendingCommandCount !== 0) {
+      throw new Error("Cannot replace simulator state while commands are pending.");
+    }
+    assertValidClockAndTick(state);
+    assertValidInventoryEconomyState(state);
+    assertValidDesignModeState(state);
+    assertCanonicalSerializable(state);
+    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
+      this.tickSystems[stage]?.validateLifecycleState?.(state);
+    }
+    this.authoritativeState.replaceSnapshot(state);
+    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
+      this.tickSystems[stage]?.clearDerivedState?.();
+    }
   }
 
   private executeTickSystemsAndCommit(): void {
@@ -226,7 +261,7 @@ export class SimCore {
       return;
     }
 
-    const candidate = structuredClone(current);
+    let candidate = this.runsMutableTickSystems ? structuredClone(current) : current;
     const candidateRng = createSeededRngFromState(candidate.rngState);
     let lastExecutedStage: TickSystemStage | undefined;
 
@@ -238,17 +273,26 @@ export class SimCore {
 
       try {
         lastExecutedStage = stage;
-        system({ state: candidate, rng: candidateRng });
-        candidate.rngState = candidateRng.getState();
+        if (system.executionMode === "structural-sharing") {
+          candidate = system.run({ state: candidate, rng: candidateRng });
+        } else {
+          system.run({ state: candidate, rng: candidateRng });
+        }
+        const nextRngState = candidateRng.getState();
+        if (candidate.rngState !== nextRngState) {
+          candidate = { ...candidate, rngState: nextRngState };
+        }
         this.assertSystemControlledFields(candidate, current);
         assertValidRngState(candidate.rngState);
-        assertValidInventoryEconomyState(candidate);
-        assertValidDesignModeState(
-          candidate,
-          current.facility.nextModuleInstanceSequence,
-          current.facility.nextRouteSequence,
-        );
-        canonicalSerialize(candidate);
+        if (this.runsMutableTickSystems) {
+          assertValidInventoryEconomyState(candidate);
+          assertValidDesignModeState(
+            candidate,
+            current.facility.nextModuleInstanceSequence,
+            current.facility.nextRouteSequence,
+          );
+          assertCanonicalSerializable(candidate);
+        }
       } catch (cause: unknown) {
         throw new TickSystemInvariantError(current.tick, stage, cause);
       }
@@ -259,7 +303,6 @@ export class SimCore {
     }
 
     try {
-      freezeSystemCandidate(candidate);
       this.authoritativeState.commitOwned(this.completeTick(candidate));
     } catch (cause: unknown) {
       throw new TickSystemInvariantError(current.tick, lastExecutedStage, cause);

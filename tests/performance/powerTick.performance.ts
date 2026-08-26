@@ -1,11 +1,16 @@
-import { cpus } from "node:os";
+import { cpus, release } from "node:os";
 
 import { SimCore } from "../../src/sim/core/simCore.ts";
-import { canonicalSerialize } from "../../src/sim/replay/canonicalState.ts";
+import { createPowerAllocationScratch } from "../../src/sim/power/powerAllocation.ts";
 import {
   calculateFacilityPower,
   createPowerTickSystems,
 } from "../../src/sim/power/facilityPower.ts";
+import {
+  assertValidPowerTickResult,
+  createPowerTickValidationScratch,
+} from "../../src/sim/power/powerTickValidation.ts";
+import { createPowerTopology } from "../../src/sim/power/powerTopology.ts";
 import {
   assertPowerPerformanceFixtureExercisesConstraints,
   createPowerPerformanceFixture,
@@ -60,77 +65,107 @@ function measureStep(warmups: number, sampleCount: number): Summary {
   return summarize(samples);
 }
 
-function deepFreeze(value: unknown): void {
-  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return;
-  for (const child of Object.values(value)) deepFreeze(child);
-  Object.freeze(value);
+function createStartupTransitionCore(seed: string): SimCore {
+  const state = createPowerPerformanceFixture(seed);
+  const source = state.facility.modules["source-00"];
+  if (source === undefined) throw new Error("Missing audited startup-transition source.");
+  source.operationalState = "starting";
+  source.startupTicksRemaining = 2;
+  return new SimCore({
+    initialState: state,
+    tickSystems: createPowerTickSystems(powerPerformanceContent),
+  });
 }
 
-function profilePhases(sampleCount: number): Record<string, Summary> {
-  const fixture = createPowerPerformanceFixture("power-tick-profile");
-  const cloneSamples: number[] = [];
-  const canonicalSamples: number[] = [];
-  const powerSamples: number[] = [];
-  const freezeCommitSamples: number[] = [];
-  for (let sample = 0; sample < sampleCount; sample += 1) {
+function measureStartupTransitionPaths(warmups: number, sampleCount: number) {
+  const startupCompletionSamples: number[] = [];
+  const followingTickRecalculationSamples: number[] = [];
+  for (let iteration = 0; iteration < warmups + sampleCount; iteration += 1) {
+    const core = createStartupTransitionCore(`power-startup-transition-${iteration}`);
+    core.step();
     let start = process.hrtime.bigint();
-    const candidate = structuredClone(fixture);
-    cloneSamples.push(elapsed(start));
-
+    core.step();
+    const startupCompletionMs = elapsed(start);
     start = process.hrtime.bigint();
-    canonicalSerialize(candidate);
-    canonicalSamples.push(elapsed(start));
-
-    start = process.hrtime.bigint();
-    const calculation = calculateFacilityPower(candidate, powerPerformanceContent);
-    powerSamples.push(elapsed(start));
-
-    candidate.facility.modules = calculation.modules;
-    candidate.facility.power = calculation.power;
-    start = process.hrtime.bigint();
-    deepFreeze(candidate);
-    const committed = { ...candidate, tick: candidate.tick + 1 };
-    void committed;
-    freezeCommitSamples.push(elapsed(start));
+    core.step();
+    const followingTickRecalculationMs = elapsed(start);
+    if (iteration >= warmups) {
+      startupCompletionSamples.push(startupCompletionMs);
+      followingTickRecalculationSamples.push(followingTickRecalculationMs);
+    }
   }
   return {
-    "candidate cloning": summarize(cloneSamples),
-    "canonical validation": summarize(canonicalSamples),
-    "power calculation": summarize(powerSamples),
-    "freezing and commit": summarize(freezeCommitSamples),
+    "startup-completion tick (warm topology)": summarize(startupCompletionSamples),
+    "following-tick forced recalculation (warm topology)": summarize(
+      followingTickRecalculationSamples,
+    ),
   };
 }
 
-const summary = measureStep(20, 200);
+function profileOptimizedPhases(warmups: number, sampleCount: number): Record<string, Summary> {
+  const state = createPowerPerformanceFixture("power-tick-profile");
+  const topology = createPowerTopology(state.facility, powerPerformanceContent);
+  const allocationScratch = createPowerAllocationScratch(topology);
+  const validationScratch = createPowerTickValidationScratch(topology);
+  const demandScratch = {};
+  for (let warmup = 0; warmup < warmups; warmup += 1) {
+    const result = calculateFacilityPower(
+      state,
+      powerPerformanceContent,
+      topology,
+      allocationScratch,
+      demandScratch,
+    );
+    state.facility.modules = result.modules;
+    state.facility.power = result.power;
+  }
+  const powerSamples: number[] = [];
+  const validationSamples: number[] = [];
+  for (let sample = 0; sample < sampleCount; sample += 1) {
+    let start = process.hrtime.bigint();
+    const result = calculateFacilityPower(
+      state,
+      powerPerformanceContent,
+      topology,
+      allocationScratch,
+      demandScratch,
+    );
+    powerSamples.push(elapsed(start));
+    start = process.hrtime.bigint();
+    assertValidPowerTickResult(state, result, topology, powerPerformanceContent, validationScratch);
+    validationSamples.push(elapsed(start));
+  }
+  return {
+    "forced cached Power recalculation proxy": summarize(powerSamples),
+    "targeted validation after recalculation proxy": summarize(validationSamples),
+  };
+}
+
+const summary = measureStep(100, 200);
+const phases = profileOptimizedPhases(100, 200);
+const startupPaths = measureStartupTransitionPaths(50, 200);
 const format = (value: number) => value.toFixed(4);
-console.log("Task 6 complete production power-tick diagnostic (vertical-slice gate p95 < 4 ms)");
+const formatSummary = (value: Summary) =>
+  `median=${format(value.medianMs)} ms, p95=${format(value.p95Ms)} ms, max=${format(value.maximumMs)} ms, samples=${value.sampleCount}`;
+
+console.log("Task 6.1 complete production power-tick diagnostic (target p95 < 4 ms)");
 console.log(
   `fixture: ${POWER_FIXTURE_WIDTH} x ${POWER_FIXTURE_HEIGHT}, modules=${POWER_FIXTURE_MODULE_COUNT}, sources=${POWER_FIXTURE_SOURCE_COUNT}, powerRoutes=${POWER_FIXTURE_ROUTE_COUNT}, contractedWatts=${POWER_FIXTURE_CONTRACTED_WATTS}, startupAndBrownout=true, sharedSourceAndSinkCapacity=true`,
 );
-console.log(
-  `median=${format(summary.medianMs)} ms, p95=${format(summary.p95Ms)} ms, max=${format(summary.maximumMs)} ms, samples=${summary.sampleCount}`,
-);
-console.log(
-  `development machine: ${cpus()[0]?.model ?? "unknown CPU"}; ${process.platform} ${process.arch}; Node ${process.version}`,
-);
-if (summary.p95Ms > 4) {
-  console.log(
-    "p95 exceeded 4 ms on this development machine; isolated phase proxies and residual follow:",
-  );
-  const phases = profilePhases(100);
-  let proxyMedianTotal = 0;
-  let proxyP95Total = 0;
-  for (const [label, phase] of Object.entries(phases)) {
-    proxyMedianTotal += phase.medianMs;
-    proxyP95Total += phase.p95Ms;
-    console.log(
-      `${label}: median=${format(phase.medianMs)} ms, p95=${format(phase.p95Ms)} ms, max=${format(phase.maximumMs)} ms, samples=${phase.sampleCount}`,
-    );
-  }
-  console.log(
-    `stage validation/orchestration residual: median=${format(Math.max(0, summary.medianMs - proxyMedianTotal))} ms, p95=${format(Math.max(0, summary.p95Ms - proxyP95Total))} ms (derived from complete step minus isolated proxies)`,
-  );
-  console.log(
-    "profiling note: phase proxies run the same operations in isolation; the residual includes SimCore system-field, RNG, inventory, Design Mode, and power invariant validation plus cross-phase runtime effects.",
-  );
+console.log(`complete tick: ${formatSummary(summary)}`);
+for (const [label, phase] of Object.entries(phases)) {
+  console.log(`${label}: ${formatSummary(phase)}`);
 }
+for (const [label, pathSummary] of Object.entries(startupPaths)) {
+  console.log(`${label}: ${formatSummary(pathSummary)}`);
+}
+console.log(
+  "profiling note: the warmed complete tick uses the validated result-cache hit; forced recalculation and validation proxies show the dirty-input path and are not additive to the steady-state tick.",
+);
+console.log(
+  "startup profiling note: fixture construction and the first topology-building tick are excluded; startup completion and following-tick recalculation are measured as separate production SimCore ticks.",
+);
+console.log(
+  `machine: ${cpus()[0]?.model ?? "unknown CPU"}; ${process.platform} ${release()} ${process.arch}; Node ${process.version}; NODE_ENV=${process.env["NODE_ENV"] ?? "unset"}; V8 JIT with Node TypeScript type stripping`,
+);
+console.log(`target: ${summary.p95Ms < 4 ? "PASS" : "FAIL"}`);

@@ -1,10 +1,8 @@
-import { cpus } from "node:os";
+import { cpus, release } from "node:os";
 
-import { calculateFacilityPower } from "../../src/sim/power/facilityPower.ts";
-import { allocatePowerDelivery } from "../../src/sim/power/powerAllocation.ts";
-import { calculatePowerDemand } from "../../src/sim/power/powerDemand.ts";
+import { createPowerTickSystems } from "../../src/sim/power/facilityPower.ts";
 import { createPowerTopology } from "../../src/sim/power/powerTopology.ts";
-import { applyPowerOperationalTransitions } from "../../src/sim/power/powerTransitions.ts";
+import { createSeededRngFromState } from "../../src/sim/rng/seededRng.ts";
 import {
   assertPowerPerformanceFixtureExercisesConstraints,
   createPowerPerformanceFixture,
@@ -19,76 +17,86 @@ import {
 
 assertPowerPerformanceFixtureExercisesConstraints();
 
+interface Summary {
+  readonly medianMs: number;
+  readonly p95Ms: number;
+  readonly maximumMs: number;
+  readonly sampleCount: number;
+}
+
 function percentile(sorted: readonly number[], ratio: number): number {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)] ?? 0;
 }
 
-function measure(warmups: number, sampleCount: number) {
-  const fixture = createPowerPerformanceFixture("power-domain-performance");
-  for (let warmup = 0; warmup < warmups; warmup += 1) {
-    calculateFacilityPower(fixture, powerPerformanceContent);
-  }
-  const samples: number[] = [];
-  for (let sample = 0; sample < sampleCount; sample += 1) {
-    const start = process.hrtime.bigint();
-    calculateFacilityPower(fixture, powerPerformanceContent);
-    samples.push(Number(process.hrtime.bigint() - start) / 1_000_000);
-  }
+function summarize(samples: number[]): Summary {
   const sorted = samples.toSorted((left, right) => left - right);
   return {
     medianMs: percentile(sorted, 0.5),
     p95Ms: percentile(sorted, 0.95),
     maximumMs: sorted.at(-1) ?? 0,
-    sampleCount,
+    sampleCount: samples.length,
   };
 }
 
-const summary = measure(50, 500);
+function elapsed(start: bigint): number {
+  return Number(process.hrtime.bigint() - start) / 1_000_000;
+}
+
+function measureWarmPower(warmups: number, sampleCount: number): Summary {
+  let state = createPowerPerformanceFixture("power-domain-performance");
+  const registration =
+    createPowerTickSystems(powerPerformanceContent)["calculate-power-demand-and-delivery"];
+  if (registration === undefined || typeof registration === "function") {
+    throw new Error("Power performance runtime factory is missing.");
+  }
+  const runtime = registration.createRuntime();
+  if (runtime.executionMode !== "structural-sharing") {
+    throw new Error("Power performance runtime must use structural sharing.");
+  }
+  runtime.clearDerivedState?.();
+  runtime.validateLifecycleState?.(state);
+  const rng = createSeededRngFromState(state.rngState);
+  for (let warmup = 0; warmup < warmups; warmup += 1) {
+    state = runtime.run({ state, rng });
+  }
+  const samples: number[] = [];
+  for (let sample = 0; sample < sampleCount; sample += 1) {
+    const start = process.hrtime.bigint();
+    state = runtime.run({ state, rng });
+    samples.push(elapsed(start));
+  }
+  return summarize(samples);
+}
+
+function measureColdTopology(warmups: number, sampleCount: number): Summary {
+  const fixture = createPowerPerformanceFixture("power-topology-reconstruction");
+  for (let warmup = 0; warmup < warmups; warmup += 1) {
+    createPowerTopology(fixture.facility, powerPerformanceContent);
+  }
+  const samples: number[] = [];
+  for (let sample = 0; sample < sampleCount; sample += 1) {
+    const start = process.hrtime.bigint();
+    createPowerTopology(fixture.facility, powerPerformanceContent);
+    samples.push(elapsed(start));
+  }
+  return summarize(samples);
+}
+
+const warmPower = measureWarmPower(200, 500);
+const coldTopology = measureColdTopology(50, 200);
 const format = (value: number) => value.toFixed(4);
-console.log("Task 6 pure power-domain diagnostic (target p95 < 1 ms on i7-2600)");
+const formatSummary = (summary: Summary) =>
+  `median=${format(summary.medianMs)} ms, p95=${format(summary.p95Ms)} ms, max=${format(summary.maximumMs)} ms, samples=${summary.sampleCount}`;
+
+console.log("Task 6.1 warmed steady-state pure Power runtime diagnostic (target p95 < 1 ms)");
 console.log(
   `fixture: ${POWER_FIXTURE_WIDTH} x ${POWER_FIXTURE_HEIGHT}, modules=${POWER_FIXTURE_MODULE_COUNT}, sources=${POWER_FIXTURE_SOURCE_COUNT}, powerRoutes=${POWER_FIXTURE_ROUTE_COUNT}, contractedWatts=${POWER_FIXTURE_CONTRACTED_WATTS}, startupAndBrownout=true, sharedSourceAndSinkCapacity=true`,
 );
+console.log(`warm topology/result cache hit: ${formatSummary(warmPower)}`);
 console.log(
-  `median=${format(summary.medianMs)} ms, p95=${format(summary.p95Ms)} ms, max=${format(summary.maximumMs)} ms, samples=${summary.sampleCount}`,
+  `cold topology reconstruction (fixture setup excluded): ${formatSummary(coldTopology)}`,
 );
 console.log(
-  `development machine: ${cpus()[0]?.model ?? "unknown CPU"}; ${process.platform} ${process.arch}; Node ${process.version}`,
+  `machine: ${cpus()[0]?.model ?? "unknown CPU"}; ${process.platform} ${release()} ${process.arch}; Node ${process.version}; NODE_ENV=${process.env["NODE_ENV"] ?? "unset"}; V8 JIT with Node TypeScript type stripping`,
 );
-if (summary.p95Ms >= 1) {
-  const fixture = createPowerPerformanceFixture("power-domain-split");
-  const demandSamples: number[] = [];
-  const topologySamples: number[] = [];
-  const allocationSamples: number[] = [];
-  const transitionSamples: number[] = [];
-  for (let sample = 0; sample < 200; sample += 1) {
-    let start = process.hrtime.bigint();
-    const demands = calculatePowerDemand(fixture.facility.modules, powerPerformanceContent);
-    demandSamples.push(Number(process.hrtime.bigint() - start) / 1_000_000);
-    start = process.hrtime.bigint();
-    const topology = createPowerTopology(fixture.facility, powerPerformanceContent);
-    topologySamples.push(Number(process.hrtime.bigint() - start) / 1_000_000);
-    start = process.hrtime.bigint();
-    const allocation = allocatePowerDelivery(
-      fixture.facility,
-      demands,
-      topology,
-      powerPerformanceContent,
-    );
-    allocationSamples.push(Number(process.hrtime.bigint() - start) / 1_000_000);
-    start = process.hrtime.bigint();
-    applyPowerOperationalTransitions(fixture.facility.modules, allocation.byModule);
-    transitionSamples.push(Number(process.hrtime.bigint() - start) / 1_000_000);
-  }
-  for (const [label, samples] of [
-    ["demand", demandSamples],
-    ["topology", topologySamples],
-    ["allocation", allocationSamples],
-    ["transitions", transitionSamples],
-  ] as const) {
-    const sorted = samples.toSorted((left, right) => left - right);
-    console.log(
-      `${label}: median=${format(percentile(sorted, 0.5))} ms, p95=${format(percentile(sorted, 0.95))} ms, max=${format(sorted.at(-1) ?? 0)} ms, samples=${samples.length}`,
-    );
-  }
-}
+console.log(`target: ${warmPower.p95Ms < 1 ? "PASS" : "FAIL"}`);

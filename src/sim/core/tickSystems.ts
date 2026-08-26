@@ -32,4 +32,32 @@ export interface TickSystemContext {
 
 export type TickSystem = (context: TickSystemContext) => void;
 
-export type TickSystemRegistry = Readonly<Partial<Record<TickSystemStage, TickSystem>>>;
+interface TickSystemRuntimeLifecycle {
+  readonly validateLifecycleState?: (state: Readonly<GameState>) => void;
+  readonly clearDerivedState?: () => void;
+}
+
+export interface MutableTickSystemRuntime extends TickSystemRuntimeLifecycle {
+  readonly executionMode: "mutable-clone";
+  readonly run: TickSystem;
+}
+
+export interface StructuralSharingTickSystemContext {
+  readonly state: Readonly<GameState>;
+  readonly rng: SeededRng;
+}
+
+export interface StructuralSharingTickSystemRuntime extends TickSystemRuntimeLifecycle {
+  readonly executionMode: "structural-sharing";
+  readonly run: (context: StructuralSharingTickSystemContext) => GameState;
+}
+
+export type TickSystemRuntime = MutableTickSystemRuntime | StructuralSharingTickSystemRuntime;
+
+export interface TickSystemFactory {
+  readonly createRuntime: () => TickSystemRuntime;
+}
+
+export type TickSystemRegistration = TickSystem | TickSystemFactory;
+
+export type TickSystemRegistry = Readonly<Partial<Record<TickSystemStage, TickSystemRegistration>>>;
