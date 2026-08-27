@@ -48,6 +48,20 @@ describe("content loading", () => {
     expect(Object.isFrozen(bundle.locales.en.ui)).toBe(true);
   });
 
+  test("loads explicit thermal behavior for every supplied module", () => {
+    const bundle = loadContentBundle();
+
+    expect(bundle.modules["module-vacuum-tube-logic"]).toMatchObject({
+      thermalBehavior: { role: "none" },
+    });
+    expect(bundle.modules["module-air-mover"]).toMatchObject({
+      thermalBehavior: { role: "local-airflow", rangeTiles: 4 },
+    });
+    expect(bundle.modules["module-room-cooling"]).toMatchObject({
+      thermalBehavior: { role: "extraction" },
+    });
+  });
+
   test("reports the exact path for an unknown research prerequisite", () => {
     const pack = clonePack();
     firstItem(pack.research.nodes).prerequisites = ["research-does-not-exist"];
@@ -152,6 +166,55 @@ describe("content loading", () => {
     expect(error.issues).toContainEqual({
       path: "modules.modules[0].loadPowerWatts",
       message: "load power must be greater than or equal to idle power",
+    });
+  });
+
+  test("rejects thermal behavior that contradicts cooling and airflow content", () => {
+    const pack = clonePack();
+    const airMover = pack.modules.modules.find(({ id }) => id === "module-air-mover");
+    if (airMover === undefined) {
+      throw new Error("Expected the supplied air mover module.");
+    }
+    airMover.thermalBehavior = { role: "local-airflow", rangeTiles: 4 };
+    airMover.ports = airMover.ports.filter(({ kind }) => kind !== "airflow");
+
+    const error = captureValidationError(pack);
+
+    expect(error.issues).toContainEqual({
+      path: "modules.modules[10].thermalBehavior",
+      message: "local-airflow thermal behavior requires at least one airflow port",
+    });
+  });
+
+  test("rejects cooling watts on a module with no thermal behavior", () => {
+    const pack = clonePack();
+    const logic = pack.modules.modules.find(({ id }) => id === "module-vacuum-tube-logic");
+    if (logic === undefined) {
+      throw new Error("Expected the supplied logic module.");
+    }
+    logic.coolingWatts = 1;
+
+    const error = captureValidationError(pack);
+
+    expect(error.issues).toContainEqual({
+      path: "modules.modules[1].thermalBehavior",
+      message: "none thermal behavior requires zero cooling watts",
+    });
+  });
+
+  test("rejects an extraction module without cooling capacity", () => {
+    const pack = clonePack();
+    const roomCooling = pack.modules.modules.find(({ id }) => id === "module-room-cooling");
+    if (roomCooling === undefined) {
+      throw new Error("Expected the supplied room cooling module.");
+    }
+    roomCooling.coolingWatts = 0;
+
+    const error = captureValidationError(pack);
+
+    expect(error.issues).toContainEqual({
+      path: "modules.modules[11].thermalBehavior",
+      message: "extraction thermal behavior requires positive cooling watts",
     });
   });
 });

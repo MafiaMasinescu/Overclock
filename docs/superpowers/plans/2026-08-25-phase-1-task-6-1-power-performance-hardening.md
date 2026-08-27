@@ -213,7 +213,7 @@ ADR-0010, and the user-approved Task 6.1 prompt for this task.
   pass/fail status.
 - [ ] Keep ADR-0003 and ADR-0010 historical text unchanged.
 
-### Task 9: Full verification and uncommitted handoff
+### Task 9: Full verification and checkpoint handoff
 
 **Files:** all Task 6.1 changes only.
 
@@ -226,5 +226,6 @@ ADR-0010, and the user-approved Task 6.1 prompt for this task.
 - [ ] Run final production diagnostics with separate warm-up, at least 500 pure samples, at least
   200 complete-tick samples, and separately reported cold topology reconstruction.
 - [ ] Record CPU, runtime, OS, build mode, and target-hardware status.
-- [ ] Inspect every modified/untracked file, leave all Task 6.1 work uncommitted, do not push, and do
-  not begin Task 7.
+- [x] Inspect every modified/untracked file. Task 6.1 is checkpointed at
+  `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc` and pushed to `origin/main`; do not begin later work
+  without separate approval.

@@ -762,6 +762,62 @@ Simulatorul trimite temperaturile tile-urilor numai când se schimbă peste un e
 
 Heatmap-ul reprezintă aceeași temperatură folosită de simulator. Nu creează o simulare vizuală separată.
 
+### 20.3 Task 7 thermal contract
+
+The rules in this subsection replace the abbreviated thermal formulas above for Task 7 implementation.
+
+For an eligible module:
+
+```text
+effectiveFullLoadPowerWatts = loadPowerWatts / binEfficiencyRatio
+powerRatio = clamp(deliveredPowerWatts / effectiveFullLoadPowerWatts, 0, 1)
+moduleHeatWatts = heatWattsAtLoad * powerRatio / binThermalRatio
+```
+
+Both bin ratios are finite and strictly positive. Offline and shutdown modules, and modules with
+zero delivered power, produce zero heat. Starting and brownout are proportional; cooling modules
+produce their own heat under the same rule. Workload allocation and frequency/voltage overclock heat
+remain deferred. Module heat is divided equally across every occupied tile, so rotation changes only
+the occupied positions and the distributed total is conserved.
+
+Every module declares strict `thermalBehavior`: `none`, `local-airflow { rangeTiles }`, or
+`extraction`. Local airflow is `coolingWatts * clamp(PowerFactor, 0, 1)`: divide capacity equally
+between rotated airflow ports, then equally across each port's directional nominal range beginning at
+the external adjacent tile. Out-of-bounds positions discard cooling; modules do not block airflow;
+there is no wrapping, airflow route, or `airflowUnits` simulation effect. Effective extraction is base
+`facility.extractionCapacityWatts` plus powered extraction-module cooling capacity; extraction emits
+no directional local cooling. Global pressure uses raw generated heat before local cooling.
+
+All next temperatures read one prior generation. Diffusion uses N/E/S/W in fixed order, omits missing
+neighbors, and never rounds individual tiles. The update order is heat, local cooling, diffusion,
+global pressure, ambient recovery `coefficient * (ambient - previous) * dt`, then clamp to
+`[max(balancing.minimumTemperatureC, ambientTemperatureC - 10), balancing.maximumTemperatureC]`.
+`thermalRevision` increments exactly once when any authoritative temperature changes; sub-epsilon
+changes remain authoritative and epsilon is snapshot policy only. Apply preserves temperatures, while
+`step(0)` and command-only processing do not run thermal.
+
+### 20.4 Production runtime, rollback, and diagnostics
+
+Production registers only `calculate-heat-generation` and `update-thermal-state`, after Power and
+before later throttling/stability stages. One private paired runtime belongs to each `SimCore`; it
+caches topology by `liveLayoutRevision` and facility dimensions, stable indexes, reusable numeric
+buffers, a validated immutable Power-input identity, and one tagged pending generation. It is never
+part of `GameState`, snapshots, receipts, saves, replay, canonical serialization, or hashes.
+
+Generation validates current stored Power, creates a tagged private result, and update requires that
+exact tick/layout/dimension/facility/Power/tile/topology match. Missing or stale pending generation,
+non-finite numeric output, invalid coverage, or unsafe revision is fatal. Pending data is cleared on
+both success and failure. A failing thermal stage rolls back the current candidate state, tick,
+clock, RNG, Power output, tiles, and revision; completed ticks and earlier command commits retain
+their established transaction semantics. Changed output allocates only the thermal records whose
+temperatures change and reuses immutable coordinate records.
+
+Run `corepack pnpm performance:thermal` for the audited 24 by 16 diagnostic. It reports cold topology
+construction, 500 warm pure generation/update samples, 200 warm complete production ticks,
+dirty-layout rebuild, startup transition, and forced validation paths, excluding setup and JIT
+warm-up. The Task 7 hard targets on the i7-2600 are warm pure p95 below `0.5 ms` and complete
+production p95 below `4 ms`; cold and transition measurements are reported separately.
+
 ## 21. Power model
 
 Facility-ul cumpără o capacitate electrică abstractă. Nu simulăm tipul sursei de energie.
@@ -843,7 +899,11 @@ Power p95 `0.0013 ms` pentru 500 samples și complete production tick p95 `0.031
 samples; ambele praguri trec. Reconstrucția rece a topologiei este raportată separat: median
 `1.8128 ms`, p95 `2.7236 ms`, maximum `7.9483 ms`, 200 samples. Startup completion și recalcularea
 forțată din tick-ul următor au p95 `3.7369 ms` și `3.7034 ms`, măsurate separat cu topologia caldă.
-Task 7 nu a început.
+Task 7 is complete and checkpointed by the commit containing this status text: ADR-0012, content
+validation, pure generation and update, production runtime, rollback, determinism, and audited
+performance diagnostics are present.
+Thermal throttling, Thermal Factor, shutdown/cooldown recovery, frequency/voltage overclock heat,
+snapshots, heatmap UI, workers, and saves remain deferred.
 
 ## 22. Task system
 

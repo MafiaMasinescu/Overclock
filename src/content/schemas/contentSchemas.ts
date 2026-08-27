@@ -4,6 +4,7 @@ const idSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 const localizationKeySchema = z.string().min(3);
 const finiteNonNegativeSchema = z.number().nonnegative();
 const positiveIntegerSchema = z.number().int().positive();
+const positiveSafeIntegerSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
 export const gridPointSchema = z.object({
   x: z.number().int(),
@@ -17,6 +18,17 @@ export const modulePortSchema = z.object({
   offset: z.number().int().nonnegative(),
   capacityPerSecond: finiteNonNegativeSchema,
 });
+
+export const thermalBehaviorSchema = z.discriminatedUnion("role", [
+  z.object({ role: z.literal("none") }).strict(),
+  z
+    .object({
+      role: z.literal("local-airflow"),
+      rangeTiles: positiveSafeIntegerSchema,
+    })
+    .strict(),
+  z.object({ role: z.literal("extraction") }).strict(),
+]);
 
 export const moduleDefinitionSchema = z.object({
   id: idSchema,
@@ -43,6 +55,7 @@ export const moduleDefinitionSchema = z.object({
   heatWattsAtLoad: finiteNonNegativeSchema,
   coolingWatts: finiteNonNegativeSchema,
   airflowUnits: finiteNonNegativeSchema,
+  thermalBehavior: thermalBehaviorSchema,
   stableFrequencyRatio: z.number().min(0.5).max(2),
   thermal: z.object({
     normalMaxC: z.number(),

@@ -227,6 +227,38 @@ export function validateContent(raw: RawContentPack): ContentBundle {
         message: "load power must be greater than or equal to idle power",
       });
     }
+    switch (module.thermalBehavior.role) {
+      case "none":
+        if (module.coolingWatts !== 0) {
+          issues.push({
+            path: `modules.modules[${moduleIndex}].thermalBehavior`,
+            message: "none thermal behavior requires zero cooling watts",
+          });
+        }
+        break;
+      case "local-airflow":
+        if (module.coolingWatts <= 0) {
+          issues.push({
+            path: `modules.modules[${moduleIndex}].thermalBehavior`,
+            message: "local-airflow thermal behavior requires positive cooling watts",
+          });
+        }
+        if (!module.ports.some((port) => port.kind === "airflow")) {
+          issues.push({
+            path: `modules.modules[${moduleIndex}].thermalBehavior`,
+            message: "local-airflow thermal behavior requires at least one airflow port",
+          });
+        }
+        break;
+      case "extraction":
+        if (module.coolingWatts <= 0) {
+          issues.push({
+            path: `modules.modules[${moduleIndex}].thermalBehavior`,
+            message: "extraction thermal behavior requires positive cooling watts",
+          });
+        }
+        break;
+    }
   });
 
   tasksFile.tasks.forEach((task, taskIndex) => {

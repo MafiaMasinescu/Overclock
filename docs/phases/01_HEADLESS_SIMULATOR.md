@@ -217,7 +217,7 @@ startup boundary, rollback, serialization, hash, or RNG contracts.
 
 ## Task 6.1: Performance Hardening
 
-Status: implemented and measured; uncommitted pending review and approval. Task 7 has not begun.
+Status: checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc` and pushed to `origin/main`.
 
 Each `SimCore` owns a private Power topology and result cache outside `GameState`. Topology rebuilds
 only after `liveLayoutRevision` changes or an explicit lifecycle replacement. Structural-sharing
@@ -247,6 +247,26 @@ over 200 samples. Cold topology reconstruction was measured separately at median
 `2.7236 ms`, and maximum `7.9483 ms` over 200 samples. Startup completion and following-tick forced
 recalculation were measured as distinct warm-topology production ticks at p95 `3.7369 ms` and
 `3.7034 ms`. No wall-time assertion was added to the unit suite.
+
+## Task 7: Deterministic thermal model
+
+Task 7's single final public checkpoint is the commit containing this status section. Task 7.1
+establishes ADR-0012, strict thermal content behavior, structural thermal-state validation, and
+private runtime contracts only. Task 7.2 implements pure heat generation and double-buffered update
+behavior. Task 7.3 integrates the two registered thermal stages through a per-`SimCore` runtime with
+transactional validation and revision semantics. Task 7.4 completes the audited dense
+cold/warm/integrated diagnostic, cache and allocation hardening, final regressions, and permanent
+documentation. The final fixture is grid-valid 24 by 16 with at least 288 occupied tiles, mixed 1 by
+1 through 3 by 2 footprints, all rotations, powered compute, local airflow, extraction, shared Power
+capacities, startup/brownout, and nonuniform thermal state. The hard i7-2600 gates are warm pure
+thermal p95 below `0.5 ms` and warm complete production Power plus thermal p95 below `4 ms`;
+cold/rebuild/transition paths are measured and reported separately by
+`corepack pnpm performance:thermal`.
+
+Task 7 is complete after passing its final review, complete test runs, determinism, validation, and
+hard performance gates. It does not implement throttling, shutdown/cooldown recovery,
+frequency/voltage overclock heat, Thermal Factor, snapshots, heatmap UI, workers, or saves. The next
+planned Phase 1 task is `Phase 1 Task 8: Deterministic overclock profiles and stability`.
 
 ## Nu implementa
 

@@ -95,6 +95,20 @@ Deschide adresa afișată în terminal, implicit `http://localhost:4173/`. Produ
 
 Oprește oricare dintre servere cu `Ctrl+C` în terminalul în care rulează.
 
+## Thermal performance diagnostic
+
+For the audited 24 by 16 thermal fixture, run:
+
+```powershell
+corepack pnpm performance:thermal
+```
+
+The command does not modify game state. It measures cold topology, warmed pure thermal work, the
+complete Power-plus-thermal production tick, dirty-layout rebuild, startup transition, and forced
+thermal validation separately. Fixture setup and JIT warm-up are excluded; output includes median,
+p95, maximum, samples, and execution environment. Task 7 targets are p95 below `0.5 ms` for pure
+thermal work and below `4 ms` for the complete production tick on the i7-2600.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

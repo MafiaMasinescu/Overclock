@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-08-26
+Updated: 2026-08-27
 
 ## Current phase
 
@@ -22,12 +22,15 @@ Updated: 2026-08-26
   `496b249031e244a4c7331faf493b30f63e157e35` and pushed to `origin/main`.
 - Phase 1 Task 6.1, deterministic tick-pipeline and Power performance hardening, including the
   checkpoint startup-generation correctness and determinism-timeout stability repairs, is
-  implemented and measured. It remains uncommitted pending review and approval; Task 7 has not
-  begun.
+  checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc` and pushed to `origin/main`.
+- Phase 1 Task 7, deterministic thermal contract, pure domain, transactional production integration,
+  and performance hardening, is complete and checkpointed by the commit containing this status
+  update.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
-  `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, and `CANCEL_DESIGN`. The only
-  production gameplay tick system is Task 6's `calculate-power-demand-and-delivery` stage.
+  `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, and `CANCEL_DESIGN`. Production
+  gameplay tick systems are Task 6's `calculate-power-demand-and-delivery` plus Task 7's
+  `calculate-heat-generation` and `update-thermal-state` stages.
 
 ## Implemented deterministic foundation
 
@@ -358,6 +361,49 @@ Updated: 2026-08-26
   multi-tick call also remain committed.
 - Tick systems cannot change tick, simulated seconds, pause, or speed.
 
+## Phase 1 Task 7 implementation
+
+- Every module content record declares validated `thermalBehavior`: `none`, directional
+  `local-airflow` with a positive range, or `extraction`. Airflow capacity scales by Power Factor,
+  uses rotated external-port rays, adds overlapping contributions, discards out-of-bounds shares,
+  and does not use `airflowUnits` or `RouteState`. Powered extraction augments the authoritative
+  base facility capacity only for global pressure.
+- Heat uses the ADR-0012 delivered-power formula, divides equally across the rotated footprint, and
+  includes cooling-module self-heat. All temperature writes read one prior field, use fixed N/E/S/W
+  diffusion, apply heat/cooling/diffusion/raw-heat pressure/ambient recovery/clamp in that order,
+  and do not round individual tiles.
+- `thermalTiles` and `thermalRevision` remain the sole authoritative thermal branches. A revision
+  advances once only when an exact temperature changes; sub-epsilon changes remain authoritative.
+  Apply preserves temperatures, while command-only processing and `step(0)` do not run thermal.
+- The per-`SimCore` private runtime owns topology, stable indexes, typed-array scratch, validated
+  immutable Power-input identity, and one tagged pending generation. It invalidates on lifecycle
+  replacement, runtime/content replacement, changed live layout revision, or facility dimensions;
+  it is excluded from GameState, serialization, hashes, saves, receipts, snapshots, and replay.
+- Both thermal stages use targeted validation and transactional structural sharing. A thermal error
+  clears pending data and preserves the current authoritative state, tick, clock, RNG, Power result,
+  thermal tiles, and revision. Changed records reuse immutable coordinates and unaffected state
+  branches retain identity.
+- `corepack pnpm performance:thermal` runs the audited 24 by 16 dense fixture and reports cold,
+  warm pure, warm complete Power-plus-thermal, dirty-layout rebuild, startup transition, and forced
+  validation measurements with environment metadata and explicit warm-up policy. The final hard
+  targets pass: warm pure p95 `0.4173 ms` across 500 samples and warm complete production p95
+  `2.1939 ms` across 200 samples on the i7-2600. Cold/rebuild/transition paths remain separately
+  reported; the preferred integrated `< 1 ms` p95 headroom remains a future opportunity.
+
+| Audited Task 7.4 path | Median | p95 | Maximum | Samples |
+| --- | ---: | ---: | ---: | ---: |
+| Cold thermal topology construction | 0.2109 ms | 0.4703 ms | 1.0104 ms | 200 |
+| Warm pure heat generation plus update | 0.2215 ms | 0.4173 ms | 1.2694 ms | 500 |
+| Warm complete Power plus thermal production tick | 1.0960 ms | 2.1939 ms | 4.1767 ms | 200 |
+| Dirty-layout rebuild production tick | 3.0399 ms | 4.7943 ms | 12.6301 ms | 200 |
+| Startup Power-transition production tick | 1.4260 ms | 2.2970 ms | 3.1257 ms | 200 |
+| Forced thermal validation path | 0.1263 ms | 0.1516 ms | 0.2333 ms | 200 |
+
+The measurement used Node `v24.11.0`, V8 JIT/type stripping, Windows `10.0.19045` x64, and an Intel
+i7-2600. Each direct path had 100 unmeasured warm-up iterations; fixture construction and state
+replacement were outside measured intervals, while fresh-core transition paths also discarded 100
+warm-up iterations.
+
 ## Frozen compatibility decisions
 
 - Seed conversion is FNV-1a 32-bit over each UTF-16 code unit, low byte then high byte.
@@ -452,16 +498,22 @@ Updated: 2026-08-26
   connect/disconnect p95 `24.1001/18.0402 ms`; Design Mode operation p95 values
   `27.9098-35.3817 ms`; grid occupancy/placement/graph p95 `1.3127/1.0978/26.1613 ms`; empty/private
   tick p95 now `0.0097/10.0025 ms` for empty/private fixtures.
-- Formatting check, ESLint, strict TypeScript checking, content validation, production build, and
-  aggregate `corepack pnpm validate`: PASS.
-- Content validation: PASS, 12 modules, 8 tasks, 10 research nodes, 2 benchmarks, and 2 locales.
-- Production build: PASS, 846 modules transformed.
-- `git diff --check`: PASS.
-- Forbidden import/API scans: PASS; no random, wall-clock, scheduling, React, PixiJS, rendering, UI,
-  DOM, browser storage, or worker matches in `src/sim` or `src/grid`, and no `Map`, `Set`, or `Date`
-  in authoritative state contracts.
-- GDD, Word documents, module content, balance values, and route content drift checks: PASS; those
-  files are unchanged. Markdown TDD/status/phase and ADR-0011 changes are limited to Task 6.1.
+- Task 7 focused coverage: PASS, 5 files and 53 tests, including content roles, structural state,
+  pure heat/cooling/diffusion, transactional stages, runtime cache reuse/invalidation, rollback,
+  revision/identity behavior, deterministic thermal hash, and the audited fixture.
+- Task 1 through Task 6.1 regression and published compatibility selection: PASS, 13 files and 243
+  tests for seed/RNG, canonical hash, money, geometry/ports, routing, undo/Apply, Power, and exact
+  determinism vectors.
+- Final `corepack pnpm test` passed twice in separate clean processes: 29 files/472 unit tests then
+  6 files/8 determinism tests on each run. Exact 100-run loops, timeouts, and assertions remain
+  unchanged.
+- Formatting, ESLint, strict TypeScript, content validation, production build, and aggregate
+  `corepack pnpm validate`: PASS. Content validation reports 12 modules, 8 tasks, 10 research nodes,
+  2 benchmarks, and 2 locales; the production build transforms 846 modules.
+- `git diff --check`, forbidden simulator API/import scan, and thermal adjacent-port-graph scan:
+  PASS. GDD and Word documents are unchanged. `content/balancing.json` is unchanged; the only module
+  content additions are the approved `thermalBehavior` declarations, with no numerical balance or
+  route-content drift.
 
 ## Known risks
 
@@ -519,9 +571,10 @@ Updated: 2026-08-26
 
 ## Task boundary
 
-Task 6.1 is implemented, measured, and uncommitted pending review and approval. Correctness,
-determinism, and both controlled performance targets pass without changed gameplay behavior,
-timeouts, discovery, or assertions. Task 7 has not begun.
+Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc` on local `main` and
+`origin/main`. Task 7.1 through 7.4 are complete and checkpointed by the commit containing this
+status update. The next planned Phase 1 task is
+`Phase 1 Task 8: Deterministic overclock profiles and stability`.
 
 ## Phase 1 Task 6 implementation
 
