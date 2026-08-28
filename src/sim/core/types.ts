@@ -46,6 +46,26 @@ export interface OverclockSettings {
   voltageRatio: number;
 }
 
+export interface ModuleOverclockResultState {
+  moduleInstanceId: ModuleInstanceId;
+  profile: OverclockProfile;
+  requestedFrequencyRatio: number;
+  requestedVoltageRatio: number;
+  dynamicPowerFactor: number;
+  sampledTemperatureC: number;
+  thermalFactor: number;
+  retryRate: number;
+  invalidSampleRate: number;
+  stabilityFactor: number;
+  shutdownReason: "thermal" | null;
+}
+
+export interface FacilityOverclockState {
+  layoutRevision: number | null;
+  thermalRevision: number | null;
+  byModule: Record<ModuleInstanceId, ModuleOverclockResultState>;
+}
+
 export interface SimulationClockState {
   paused: boolean;
   speed: SimulationSpeed;
@@ -163,6 +183,7 @@ export interface FacilityState {
   thermalRevision: number;
   designDraft: DesignDraftState | null;
   power: FacilityPowerState;
+  overclock: FacilityOverclockState;
 }
 
 export interface InventoryStack {

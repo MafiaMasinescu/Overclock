@@ -132,6 +132,75 @@ function airflowDefinition(
 }
 
 describe("pure thermal topology and generation", () => {
+  test("uses the shared overclock factor once with proportional delivery and preserved thermal exclusions", () => {
+    const logic = content.modules["module-vacuum-tube-logic"];
+    if (logic === undefined) throw new Error("Missing overclockable thermal fixture.");
+    const dynamicPowerFactor = 1.1 ** 2 * 1.25;
+    const effectiveFullLoadPowerWatts = logic.loadPowerWatts * dynamicPowerFactor;
+    const expectedFullHeatWatts = logic.heatWattsAtLoad * dynamicPowerFactor;
+    const boosted = module("boosted", logic.id, { x: 0, y: 0 }, 0, "online", {
+      overclock: { profile: "boost", frequencyRatio: 1.25, voltageRatio: 1.1 },
+    });
+    const partial = module("partial", logic.id, { x: 0, y: 1 }, 0, "brownout", {
+      overclock: { profile: "boost", frequencyRatio: 1.25, voltageRatio: 1.1 },
+    });
+    const starting = module("starting", logic.id, { x: 0, y: 2 }, 0, "starting", {
+      overclock: { profile: "boost", frequencyRatio: 1.25, voltageRatio: 1.1 },
+    });
+    const offline = module("offline", logic.id, { x: 0, y: 3 }, 0, "offline", {
+      overclock: { profile: "boost", frequencyRatio: 1.25, voltageRatio: 1.1 },
+    });
+    const shutdown = module("shutdown", logic.id, { x: 0, y: 4 }, 0, "shutdown", {
+      overclock: { profile: "boost", frequencyRatio: 1.25, voltageRatio: 1.1 },
+    });
+    const cooler = module("cooler", "module-air-mover", { x: 2, y: 0 });
+    const current = facility(
+      4,
+      5,
+      [boosted, partial, starting, offline, shutdown, cooler],
+      [
+        delivery("boosted", effectiveFullLoadPowerWatts),
+        delivery("partial", effectiveFullLoadPowerWatts / 2, 0.5),
+        delivery(
+          "starting",
+          logic.idlePowerWatts,
+          logic.idlePowerWatts / effectiveFullLoadPowerWatts,
+        ),
+        delivery("offline", effectiveFullLoadPowerWatts),
+        delivery("shutdown", effectiveFullLoadPowerWatts),
+        delivery("cooler", 420),
+      ],
+    );
+
+    const result = calculateHeatGeneration(
+      current,
+      content,
+      buildThermalTopology(current, content),
+    );
+
+    expect(result.heatWattsOnTile.slice(0, 2)).toEqual([
+      expectedFullHeatWatts / 2,
+      expectedFullHeatWatts / 2,
+    ]);
+    expect(result.heatWattsOnTile.slice(4, 6)).toEqual([
+      expectedFullHeatWatts / 4,
+      expectedFullHeatWatts / 4,
+    ]);
+    expect(result.heatWattsOnTile.slice(8, 10)).toEqual([
+      (expectedFullHeatWatts * logic.idlePowerWatts) / effectiveFullLoadPowerWatts / 2,
+      (expectedFullHeatWatts * logic.idlePowerWatts) / effectiveFullLoadPowerWatts / 2,
+    ]);
+    expect(result.heatWattsOnTile.slice(12, 16)).toEqual([0, 0, 0, 0]);
+    expect(result.heatWattsOnTile[2]).toBe(110);
+    expect(result.totalGeneratedHeatWatts).toBeCloseTo(
+      expectedFullHeatWatts +
+        expectedFullHeatWatts / 2 +
+        (expectedFullHeatWatts * logic.idlePowerWatts) / effectiveFullLoadPowerWatts +
+        110,
+      12,
+    );
+  });
+
   test("uses operational state and delivered power for proportional heat", () => {
     const modules = [
       module("offline", "module-data-relay", { x: 0, y: 0 }, 0, "offline"),

@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-08-27
+Updated: 2026-08-28
 
 ## Current phase
 
@@ -26,11 +26,16 @@ Updated: 2026-08-27
 - Phase 1 Task 7, deterministic thermal contract, pure domain, transactional production integration,
   and performance hardening, is complete and checkpointed by the commit containing this status
   update.
+- Phase 1 Task 8, deterministic Overclock and Stability foundations, pure formulas, lifecycle,
+  transactional commands, production integration, and performance hardening, is complete. The next
+  planned task is Phase 1 Task 9: Useful Compute.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
-  `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, and `CANCEL_DESIGN`. Production
+  `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN`,
+  `SET_OVERCLOCK_PROFILE`, and `SET_MANUAL_OVERCLOCK`. Production
   gameplay tick systems are Task 6's `calculate-power-demand-and-delivery` plus Task 7's
-  `calculate-heat-generation` and `update-thermal-state` stages.
+  `calculate-heat-generation`, `update-thermal-state`, and
+  `apply-throttling-stability-and-shutdown` stages.
 
 ## Implemented deterministic foundation
 
@@ -573,8 +578,7 @@ warm-up iterations.
 
 Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc` on local `main` and
 `origin/main`. Task 7.1 through 7.4 are complete and checkpointed by the commit containing this
-status update. The next planned Phase 1 task is
-`Phase 1 Task 8: Deterministic overclock profiles and stability`.
+status update. Task 8 is complete; its next planned task is `Phase 1 Task 9: Useful Compute`.
 
 ## Phase 1 Task 6 implementation
 

@@ -159,6 +159,63 @@ describe("power demand", () => {
     };
     expect(Object.keys(calculatePowerDemand(modules, content))).toEqual(["a", "z"]);
   });
+
+  test("uses shared Overclock demand after startup while preserving startup, shutdown, minimum, and ineligible behavior", () => {
+    const boost = { profile: "boost" as const, frequencyRatio: 1.25, voltageRatio: 1.1 };
+    const dynamicPowerFactor = 1.1 ** 2 * 1.25;
+    const expectedBoostLoad = 1_450 * dynamicPowerFactor;
+
+    expect(
+      calculateModulePowerDemand(
+        module("startup", COMPUTE, { startupTicksRemaining: 3, overclock: boost }),
+        definition(COMPUTE),
+      ),
+    ).toMatchObject({ requestedPowerWatts: 650, minimumPowerWatts: 650 });
+    expect(
+      calculateModulePowerDemand(
+        module("ready", COMPUTE, { overclock: boost }),
+        definition(COMPUTE),
+      ),
+    ).toMatchObject({ requestedPowerWatts: expectedBoostLoad, minimumPowerWatts: 650 });
+    expect(
+      calculateModulePowerDemand(
+        module("brownout", COMPUTE, { operationalState: "brownout", overclock: boost }),
+        definition(COMPUTE),
+      ),
+    ).toMatchObject({ requestedPowerWatts: expectedBoostLoad, minimumPowerWatts: 650 });
+    expect(
+      calculateModulePowerDemand(
+        module("shutdown", COMPUTE, { operationalState: "shutdown", overclock: boost }),
+        definition(COMPUTE),
+      ),
+    ).toMatchObject({ requestedPowerWatts: 0, minimumPowerWatts: 0 });
+    expect(
+      calculateModulePowerDemand(
+        module("efficient", COMPUTE, { binEfficiencyRatio: 1.25, overclock: boost }),
+        definition(COMPUTE),
+      ),
+    ).toMatchObject({
+      requestedPowerWatts: expectedBoostLoad / 1.25,
+      minimumPowerWatts: 650 / 1.25,
+    });
+    expect(calculateModulePowerDemand(module("ineligible", IO), definition(IO))).toMatchObject({
+      requestedPowerWatts: definition(IO).loadPowerWatts,
+      minimumPowerWatts: definition(IO).idlePowerWatts,
+    });
+    expect(
+      calculateModulePowerDemand(module("balanced", COMPUTE), definition(COMPUTE))
+        .requestedPowerWatts,
+    ).toBe(1_450);
+    expect(
+      calculateModulePowerDemand(
+        module("boost", COMPUTE, { overclock: boost }),
+        definition(COMPUTE),
+      ).requestedPowerWatts,
+    ).toBeGreaterThan(
+      calculateModulePowerDemand(module("balanced", COMPUTE), definition(COMPUTE))
+        .requestedPowerWatts,
+    );
+  });
 });
 
 describe("power topology and allocation", () => {

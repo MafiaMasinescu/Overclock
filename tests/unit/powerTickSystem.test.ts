@@ -4,6 +4,7 @@ import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
 import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
 import { SimCore } from "../../src/sim/core/simCore.ts";
 import type { GameState, ModuleInstanceState, RouteState } from "../../src/sim/core/types.ts";
+import type { StructuralSharingTickSystemContext } from "../../src/sim/core/tickSystems.ts";
 import { createDirtyPowerState } from "../../src/sim/power/powerState.ts";
 import {
   createPowerTickSystems,
@@ -209,6 +210,121 @@ describe("production power tick system", () => {
     expect(afterFirst.rngState).toBe(initialRng);
     expect(afterSecond.rngState).toBe(initialRng);
     expect(afterThird.rngState).toBe(initialRng);
+  });
+
+  test("recalculates on the tick after an authoritative Overclock setting change", () => {
+    const resultEvents: PowerResultCacheEvent[] = [];
+    let workloadRuns = 0;
+    const state = createStartupBoundaryState();
+    const route = state.facility.routes["route-power"];
+    if (route === undefined) throw new Error("Missing Overclock cache route fixture.");
+    route.capacityPerSecond = 100;
+    const core = new SimCore({
+      initialState: state,
+      tickSystems: {
+        ...createPowerTickSystems(content, {
+          onPowerResultCacheEvent(event) {
+            resultEvents.push(event);
+          },
+        }),
+        "calculate-workload-allocation": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                workloadRuns += 1;
+                if (workloadRuns !== 3) return state;
+                const sink = state.facility.modules["sink"];
+                if (sink === undefined) throw new Error("Missing Overclock cache sink fixture.");
+                return {
+                  ...state,
+                  facility: {
+                    ...state.facility,
+                    modules: {
+                      ...state.facility.modules,
+                      sink: {
+                        ...sink,
+                        overclock: {
+                          profile: "boost" as const,
+                          frequencyRatio: 1.25,
+                          voltageRatio: 1.1,
+                        },
+                      },
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    });
+
+    core.step();
+    core.step();
+    core.step();
+    const beforeRecalculation = core.getStateForSave();
+    const previousRequested =
+      beforeRecalculation.facility.power.byModule["sink"]?.requestedPowerWatts;
+
+    core.step();
+    const afterRecalculation = core.getStateForSave();
+
+    expect(resultEvents).toEqual(["calculated", "calculated", "reused", "calculated"]);
+    expect(afterRecalculation.facility.power.byModule["sink"]?.requestedPowerWatts).toBeGreaterThan(
+      previousRequested ?? 0,
+    );
+    expect(afterRecalculation.rngState).toBe(beforeRecalculation.rngState);
+  });
+
+  test("accepts a structurally valid historical Power result without reinterpreting later Overclock settings", () => {
+    const original = createCore(createStartupBoundaryState());
+    original.step();
+    const historical = original.getStateForSave();
+    const sink = historical.facility.modules["sink"];
+    if (sink === undefined) throw new Error("Missing historical Overclock fixture.");
+    const changedSettings: GameState = {
+      ...historical,
+      facility: {
+        ...historical.facility,
+        modules: {
+          ...historical.facility.modules,
+          sink: {
+            ...sink,
+            overclock: {
+              profile: "boost" as const,
+              frequencyRatio: 1.25,
+              voltageRatio: 1.1,
+            },
+          },
+        },
+      },
+    };
+
+    expect(
+      () =>
+        new SimCore({
+          initialState: changedSettings,
+          tickSystems: createPowerTickSystems(content),
+        }),
+    ).not.toThrow();
+  });
+
+  test("rejects an internally contradictory stored shutdown Power result", () => {
+    const original = createCore(createStartupBoundaryState());
+    original.step();
+    const contradictory = original.getStateForSave();
+    const delivery = contradictory.facility.power.byModule["sink"];
+    if (delivery === undefined) throw new Error("Missing shutdown validation fixture.");
+    delivery.limitingReason = "shutdown";
+
+    expect(
+      () =>
+        new SimCore({
+          initialState: contradictory,
+          tickSystems: createPowerTickSystems(content),
+        }),
+    ).toThrow(/shutdown result must have zero demand and delivery/);
   });
 
   test("accepts a persisted startup-completion result across a cold lifecycle boundary", () => {

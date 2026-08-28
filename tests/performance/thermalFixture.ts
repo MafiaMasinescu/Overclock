@@ -215,3 +215,57 @@ export function createThermalPerformanceFixture(seed: string): GameState {
   }));
   return state;
 }
+
+/**
+ * Extends (without reducing) the audited Task 7 fixture with all approved Overclock profiles.
+ * This fixture is diagnostic-only; the canonical Task 7 fixture remains unchanged above.
+ */
+export function createTask8PerformanceFixture(seed: string): GameState {
+  const state = createThermalPerformanceFixture(seed);
+  const eligibleIds = Object.keys(state.facility.modules)
+    .toSorted()
+    .filter((moduleId) => {
+      const module = state.facility.modules[moduleId];
+      return (
+        module !== undefined &&
+        thermalPerformanceContent.modules[module.definitionId]?.overclockable
+      );
+    });
+  const eligibleDefinitionIds = new Set(
+    eligibleIds.map((moduleId) => state.facility.modules[moduleId]?.definitionId),
+  );
+  for (const definitionId of [
+    "module-vacuum-tube-logic",
+    "module-arithmetic-unit",
+    "module-control-unit",
+  ]) {
+    if (!eligibleDefinitionIds.has(definitionId)) {
+      throw new Error(`Task 8 performance fixture lacks ${definitionId}.`);
+    }
+  }
+  const manual = thermalPerformanceContent.balancing.overclock.manual;
+  const manualFrequencyRatio =
+    manual.frequencyRatioMin + (manual.frequencyRatioMax - manual.frequencyRatioMin) * 0.63;
+  const manualVoltageRatio =
+    manual.voltageRatioMin + (manual.voltageRatioMax - manual.voltageRatioMin) * 0.37;
+  state.facility.modules = Object.fromEntries(
+    Object.entries(state.facility.modules).map(([moduleId, module]) => {
+      const eligibleIndex = eligibleIds.indexOf(moduleId);
+      if (eligibleIndex < 0) return [moduleId, module];
+      const overclock =
+        eligibleIndex === 0
+          ? { profile: "eco" as const, frequencyRatio: 0.8, voltageRatio: 0.9 }
+          : eligibleIndex === 1
+            ? { profile: "boost" as const, frequencyRatio: 1.25, voltageRatio: 1.1 }
+            : eligibleIndex === 2
+              ? {
+                  profile: "manual" as const,
+                  frequencyRatio: manualFrequencyRatio,
+                  voltageRatio: manualVoltageRatio,
+                }
+              : { profile: "balanced" as const, frequencyRatio: 1, voltageRatio: 1 };
+      return [moduleId, { ...module, overclock }];
+    }),
+  );
+  return state;
+}

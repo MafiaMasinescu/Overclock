@@ -56,6 +56,7 @@ export const moduleDefinitionSchema = z.object({
   coolingWatts: finiteNonNegativeSchema,
   airflowUnits: finiteNonNegativeSchema,
   thermalBehavior: thermalBehaviorSchema,
+  overclockable: z.boolean(),
   stableFrequencyRatio: z.number().min(0.5).max(2),
   thermal: z.object({
     normalMaxC: z.number(),

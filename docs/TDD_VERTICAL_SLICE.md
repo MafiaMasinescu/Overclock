@@ -902,8 +902,42 @@ forțată din tick-ul următor au p95 `3.7369 ms` și `3.7034 ms`, măsurate sep
 Task 7 is complete and checkpointed by the commit containing this status text: ADR-0012, content
 validation, pure generation and update, production runtime, rollback, determinism, and audited
 performance diagnostics are present.
-Thermal throttling, Thermal Factor, shutdown/cooldown recovery, frequency/voltage overclock heat,
-snapshots, heatmap UI, workers, and saves remain deferred.
+Task 8 is fixed by ADR-0013. Only three explicitly content-eligible compute/control definitions may
+store Eco, Balanced, Boost, or exact Manual frequency/voltage ratios. Its later Power factor is
+`voltage² × frequency`; its heat formula applies that factor once; current-tick thermal update samples
+the maximum occupied-tile temperature; Thermal Factor and deterministic stability are later Useful
+Compute inputs only. Thermal shutdown is post-update, holds already-calculated Power/heat as history,
+and affects demand on the following tick; cooldown holds above warning, decrements once per real safe
+tick, then returns to offline/startup. Task 8 uses no RNG, health, degradation, failures, silicon
+lottery, or same-tick Power/thermal reinterpretation. `FacilityOverclockState` is authoritative with
+an exact dirty state, while runtime caches remain private. Task 8.1 adds foundations only; Task 8.2
+through 8.5 add formulas, lifecycle, transactional integration, and performance verification.
+
+Task 8.3 resolves the maximum current thermal-field temperature across each module's occupied topology
+tiles. Thermal Factor is exactly `1` through normal, linearly `1→0.96` to warning, `0.96→0.65` to
+critical, `0.65→0.10` below shutdown, and `0` at or above shutdown. Stability uses
+`F = clamp((stableFrequencyRatio × binStabilityRatio × voltageRatio) / frequencyRatio, 0, 1)` and
+temperature factor `T`: `1` through warning, `(shutdownC - temperatureC) / (shutdownC - warningMaxC)`
+strictly between warning and shutdown, then `0`. It stores deterministic rates
+`retryRate = clamp(1 - F, 0, 1)` and
+`invalidSampleRate = clamp((1 - retryRate) × (1 - T), 0, 1 - retryRate)`, then stores
+`Stability Factor = clamp(1 - retryRate - invalidSampleRate, 0, 1)` from those values. Rates are
+authoritative deterministic diagnostics only; Task 8 executes no retries or invalid samples and Task 9
+owns their gameplay consumption. A shutdown result overrides the factors/rates to `0, 0, 1, 0` with
+thermal reason until later safe cooldown recovery returns the module to offline/startup. Task 8.3 is
+pure only; Task 8.4 registers `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`, and the single
+post-thermal `apply-throttling-stability-and-shutdown` stage. Commands validate all targets before
+mutation, reject active Design Mode, consume no RNG, and dirty only the authoritative Overclock result
+when settings really change. The stage uses a per-`SimCore` ThermalTopology cache keyed by layout
+revision and dimensions, calculates every real tick, commits only module lifecycle and Overclock
+branches, and leaves same-tick Power/heat as history.
+
+Task 8.5 closes this boundary with private topology-bound calculation scratch only. It remains outside
+authoritative state and canonical serialization. `corepack pnpm performance:overclock` extends the
+audited dense Task 7 fixture and reports 500 warm pure-domain samples plus separate 200-sample warm,
+command, lifecycle, validation, and cold-replacement paths. Its hard i7-2600 gates are Task 8 pure p95
+below `0.25 ms` and warm complete production p95 below `4 ms`; Task 7's permanent thermal diagnostic
+continues to enforce its independent pure p95 below `0.5 ms` gate.
 
 ## 22. Task system
 

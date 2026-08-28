@@ -29,6 +29,9 @@
     "insufficient-cash": "Fonduri insuficiente.",
     "insufficient-inventory": "Inventar insuficient.",
     "invalid-payload": "Comanda conține date invalide.",
+    "overclock-target-invalid": "Ținta de overclock este invalidă.",
+    "overclock-unsupported": "Acest modul nu acceptă overclocking.",
+    "overclock-unavailable-in-design-mode": "Setările de overclock nu pot fi schimbate cât timp Design Mode este activ.",
     "research-required": "Cercetarea necesară nu este finalizată.",
     "stale-design-preview": "Previzualizarea Design Mode nu mai este actuală.",
     "stale-tick": "Comanda a fost creată pentru un alt tick al simulării."

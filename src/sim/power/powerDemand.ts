@@ -4,6 +4,10 @@ import type {
   ModuleDefinition,
 } from "../../content/schemas/contentSchemas.ts";
 import type { ModuleInstanceState } from "../core/types.ts";
+import {
+  calculateEffectiveLoadPowerWatts,
+  calculateModuleDynamicPowerFactor,
+} from "../overclock/overclockDomain.ts";
 
 export interface ModulePowerDemand {
   readonly moduleInstanceId: string;
@@ -61,7 +65,12 @@ function writeModulePowerDemand(
   }
 
   const basePowerWatts =
-    module.startupTicksRemaining > 0 ? definition.idlePowerWatts : definition.loadPowerWatts;
+    module.startupTicksRemaining > 0
+      ? definition.idlePowerWatts
+      : calculateEffectiveLoadPowerWatts(
+          definition,
+          calculateModuleDynamicPowerFactor(definition, module.overclock),
+        );
   const requestedPowerWatts = basePowerWatts / module.binEfficiencyRatio;
   const minimumPowerWatts = definition.idlePowerWatts / module.binEfficiencyRatio;
   assertFiniteNonnegative(requestedPowerWatts, "Requested power");

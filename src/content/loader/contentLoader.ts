@@ -227,6 +227,12 @@ export function validateContent(raw: RawContentPack): ContentBundle {
         message: "load power must be greater than or equal to idle power",
       });
     }
+    if (module.overclockable && module.baseComputeFlops <= 0) {
+      issues.push({
+        path: `modules.modules[${moduleIndex}].overclockable`,
+        message: "overclockable modules require positive base compute flops",
+      });
+    }
     switch (module.thermalBehavior.role) {
       case "none":
         if (module.coolingWatts !== 0) {
@@ -260,6 +266,54 @@ export function validateContent(raw: RawContentPack): ContentBundle {
         break;
     }
   });
+
+  const { eco, balanced, boost, manual } = balancingFile.overclock;
+  const ratios = [
+    eco.frequencyRatio,
+    eco.voltageRatio,
+    balanced.frequencyRatio,
+    balanced.voltageRatio,
+    boost.frequencyRatio,
+    boost.voltageRatio,
+    manual.frequencyRatioMin,
+    manual.frequencyRatioMax,
+    manual.voltageRatioMin,
+    manual.voltageRatioMax,
+  ];
+  if (ratios.some((ratio) => !Number.isFinite(ratio) || ratio <= 0)) {
+    issues.push({
+      path: "balancing.overclock",
+      message: "all overclock ratios and bounds must be finite and strictly positive",
+    });
+  }
+  if (
+    manual.frequencyRatioMin > manual.frequencyRatioMax ||
+    manual.voltageRatioMin > manual.voltageRatioMax
+  ) {
+    issues.push({
+      path: "balancing.overclock.manual",
+      message: "manual overclock bounds must be ordered inclusively",
+    });
+  }
+  if (balanced.frequencyRatio !== 1 || balanced.voltageRatio !== 1) {
+    issues.push({
+      path: "balancing.overclock.balanced",
+      message: "balanced overclock ratios must be exactly 1 and 1",
+    });
+  }
+  for (const [profile, settings] of Object.entries({ eco, balanced, boost })) {
+    if (
+      settings.frequencyRatio < manual.frequencyRatioMin ||
+      settings.frequencyRatio > manual.frequencyRatioMax ||
+      settings.voltageRatio < manual.voltageRatioMin ||
+      settings.voltageRatio > manual.voltageRatioMax
+    ) {
+      issues.push({
+        path: `balancing.overclock.${profile}`,
+        message: "preset overclock ratios must be inside the inclusive manual bounds",
+      });
+    }
+  }
 
   tasksFile.tasks.forEach((task, taskIndex) => {
     validateLocalization(locales, task.nameKey, issues);

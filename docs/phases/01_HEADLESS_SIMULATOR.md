@@ -268,6 +268,31 @@ hard performance gates. It does not implement throttling, shutdown/cooldown reco
 frequency/voltage overclock heat, Thermal Factor, snapshots, heatmap UI, workers, or saves. The next
 planned Phase 1 task is `Phase 1 Task 8: Deterministic overclock profiles and stability`.
 
+## Task 8: Deterministic overclock profiles and stability
+
+Task 8 is split deliberately to preserve ADR-0003/ADR-0011 transactional history and the Task 7
+thermal boundary.
+
+- Task 8.1: contracts and foundations — ADR-0013, explicit validated eligibility, profile/state
+  contracts, dirty-result initialization, structural stored-state validation, reserved rejection
+  localization, compatibility updates, and no production behavior.
+- Task 8.2: pure overclock, Power, and heat domain — approved dynamic Power factor and heat formulas
+  only, with exact inputs and generation validation.
+- Task 8.3: pure stability and thermal lifecycle — current-tick maximum-tile sampling, Thermal Factor,
+  deterministic stability, thermal shutdown, cooldown, recovery, and restart rules only.
+- Task 8.4: transactional SimCore integration — existing command envelopes, atomic target validation,
+  Design Apply result dirtying, and a post-thermal lifecycle stage through the current queue, receipt,
+  rollback, revision, and incremental-update path.
+- Task 8.5: performance, complete verification, and documentation — dense 24 by 16 diagnostics,
+  cold/warm/transition measurements, final regression coverage, and permanent status evidence.
+
+Task 8 excludes Useful Compute, workloads, task/research/economy/benchmark progression, RNG outcomes,
+health/degradation/damage/failures, silicon lottery, scaling of cooling/source/memory/route capacity,
+events, UI, snapshots, heatmaps, workers, saves, and Task 9.
+
+Task 8 is complete after Task 8.5 diagnostics and complete verification. The next planned Phase 1
+task is `Phase 1 Task 9: Useful Compute`.
+
 ## Nu implementa
 
 - React panels;

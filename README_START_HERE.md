@@ -109,6 +109,18 @@ thermal validation separately. Fixture setup and JIT warm-up are excluded; outpu
 p95, maximum, samples, and execution environment. Task 7 targets are p95 below `0.5 ms` for pure
 thermal work and below `4 ms` for the complete production tick on the i7-2600.
 
+## Overclock performance diagnostic
+
+For Task 8's extension of the same audited fixture, run:
+
+```powershell
+corepack pnpm performance:overclock
+```
+
+It reports 500 warm pure-domain samples and 200 samples for warm production, profile and Manual
+changes, Thermal Factor, shutdown/cooldown/recovery, forced validation, and cold replacement. The
+enforced i7-2600 gates are pure Task 8 p95 below `0.25 ms` and warm full production p95 below `4 ms`.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

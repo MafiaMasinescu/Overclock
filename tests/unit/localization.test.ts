@@ -55,6 +55,9 @@ describe("application localization", () => {
       "errors.invalid-route-path-endpoint-mismatch",
       "errors.invalid-route-non-orthogonal-segment",
       "errors.invalid-route-repeated-path-tile",
+      "errors.overclock-target-invalid",
+      "errors.overclock-unsupported",
+      "errors.overclock-unavailable-in-design-mode",
     ]) {
       expect(i18n.t(key)).not.toBe(key);
     }
@@ -74,5 +77,12 @@ describe("application localization", () => {
     expect(i18n.t("errors.invalid-system")).toBe("The system state is invalid.");
     expect(i18n.t("errors.out-of-bounds")).toBe("The module footprint is outside the facility.");
     expect(i18n.t("errors.tile-occupied")).toBe("The module footprint overlaps an occupied tile.");
+    expect(i18n.t("errors.overclock-target-invalid")).toBe("The overclock target is invalid.");
+    expect(i18n.t("errors.overclock-unsupported")).toBe(
+      "This module does not support overclocking.",
+    );
+    expect(i18n.t("errors.overclock-unavailable-in-design-mode")).toBe(
+      "Overclock settings cannot change while Design Mode is active.",
+    );
   });
 });

@@ -5,6 +5,10 @@ import {
 } from "../../grid/domain/footprintGeometry.ts";
 import { resolveModulePortGeometry, type PortSide } from "../../grid/domain/portGeometry.ts";
 import type { FacilityState, ModuleInstanceState, ThermalTileState } from "../core/types.ts";
+import {
+  calculateEffectiveFullLoadPowerWatts,
+  calculateModuleDynamicPowerFactor,
+} from "../overclock/overclockDomain.ts";
 import type {
   ThermalGeneration,
   ThermalGenerationScratch,
@@ -87,21 +91,10 @@ function activeForThermal(
   );
 }
 
-function powerRatio(
-  module: Readonly<ModuleInstanceState>,
-  loadPowerWatts: number,
-  deliveredPowerWatts: number,
-): number {
-  assertFinitePositive(module.binEfficiencyRatio, `Module ${module.id} binEfficiencyRatio`);
-  assertFinitePositive(module.binThermalRatio, `Module ${module.id} binThermalRatio`);
-  assertFiniteNonnegative(loadPowerWatts, `Module ${module.id} loadPowerWatts`);
-  assertFiniteNonnegative(deliveredPowerWatts, `Module ${module.id} deliveredPowerWatts`);
-  if (loadPowerWatts === 0) return deliveredPowerWatts === 0 ? 0 : 1;
-  const effectiveFullLoadPowerWatts = loadPowerWatts / module.binEfficiencyRatio;
-  assertFinitePositive(
-    effectiveFullLoadPowerWatts,
-    `Module ${module.id} effective full-load power`,
-  );
+function powerRatio(effectiveFullLoadPowerWatts: number, deliveredPowerWatts: number): number {
+  assertFiniteNonnegative(effectiveFullLoadPowerWatts, "effectiveFullLoadPowerWatts");
+  assertFiniteNonnegative(deliveredPowerWatts, "deliveredPowerWatts");
+  if (effectiveFullLoadPowerWatts === 0) return deliveredPowerWatts === 0 ? 0 : 1;
   return clamp(deliveredPowerWatts / effectiveFullLoadPowerWatts, 0, 1);
 }
 
@@ -308,12 +301,16 @@ export function calculateHeatGeneration(
     assertFiniteNonnegative(power.powerFactor, `Power Factor for ${module.id}`);
     assertFinitePositive(module.binEfficiencyRatio, `Module ${module.id} binEfficiencyRatio`);
     assertFinitePositive(module.binThermalRatio, `Module ${module.id} binThermalRatio`);
+    const dynamicPowerFactor = calculateModuleDynamicPowerFactor(definition, module.overclock);
+    const effectiveFullLoadPowerWatts = calculateEffectiveFullLoadPowerWatts(
+      definition,
+      module.binEfficiencyRatio,
+      dynamicPowerFactor,
+    );
     const isActive = activeForThermal(module, power.deliveredPowerWatts);
-    const ratio = isActive
-      ? powerRatio(module, definition.loadPowerWatts, power.deliveredPowerWatts)
-      : 0;
+    const ratio = isActive ? powerRatio(effectiveFullLoadPowerWatts, power.deliveredPowerWatts) : 0;
     const moduleHeatWatts = isActive
-      ? (definition.heatWattsAtLoad * ratio) / module.binThermalRatio
+      ? (definition.heatWattsAtLoad * dynamicPowerFactor * ratio) / module.binThermalRatio
       : 0;
     assertFiniteNonnegative(moduleHeatWatts, `Generated heat for ${module.id}`);
     const heatPerTile = moduleHeatWatts / topologyModule.occupiedTileIndexes.length;

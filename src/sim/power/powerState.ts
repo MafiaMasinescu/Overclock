@@ -182,6 +182,7 @@ export function validatePowerState(
   const expectedRouteKeys = Object.keys(facility.routes)
     .filter((routeId) => facility.routes[routeId]?.kind === "power")
     .toSorted();
+  const isFreshGeneration = calculationInputModules !== undefined;
   const hasSufficientSourcePower = (moduleId: string): boolean => {
     const source = facility.modules[moduleId];
     const definition = source === undefined ? undefined : content.modules[source.definitionId];
@@ -190,7 +191,7 @@ export function validatePowerState(
       source !== undefined &&
       definition?.category === "power" &&
       definition.ports.some((port) => port.kind === "power-out") &&
-      source.operationalState !== "shutdown" &&
+      (!isFreshGeneration || source.operationalState !== "shutdown") &&
       delivery !== undefined &&
       delivery.deliveredPowerWatts >= delivery.minimumPowerWatts
     );
@@ -269,6 +270,16 @@ export function validatePowerState(
       `facility.power.byModule.${moduleId}.limitingReason`,
       "must be a supported limiting reason",
     );
+    pushIf(
+      issues,
+      result.limitingReason === "shutdown" &&
+        (result.requestedPowerWatts !== 0 ||
+          result.minimumPowerWatts !== 0 ||
+          result.deliveredPowerWatts !== 0 ||
+          result.powerFactor !== 0),
+      `facility.power.byModule.${moduleId}`,
+      "shutdown result must have zero demand and delivery",
+    );
     if (module !== undefined) {
       pushIf(
         issues,
@@ -289,10 +300,12 @@ export function validatePowerState(
         "must be a nonnegative safe integer",
       );
       const expectedFactor =
-        module.operationalState === "shutdown"
+        isFreshGeneration && module.operationalState === "shutdown"
           ? 0
           : result.requestedPowerWatts === 0
-            ? 1
+            ? result.limitingReason === "shutdown"
+              ? 0
+              : 1
             : Math.min(1, Math.max(0, result.deliveredPowerWatts / result.requestedPowerWatts));
       pushIf(
         issues,
@@ -302,13 +315,17 @@ export function validatePowerState(
       );
       pushIf(
         issues,
-        module.operationalState === "shutdown" && result.limitingReason !== "shutdown",
+        isFreshGeneration &&
+          module.operationalState === "shutdown" &&
+          result.limitingReason !== "shutdown",
         `facility.power.byModule.${moduleId}.limitingReason`,
         "shutdown modules must use shutdown",
       );
       pushIf(
         issues,
-        module.operationalState !== "shutdown" &&
+        (isFreshGeneration
+          ? module.operationalState !== "shutdown"
+          : result.limitingReason !== "shutdown") &&
           result.deliveredPowerWatts === result.requestedPowerWatts &&
           result.limitingReason !== "none",
         `facility.power.byModule.${moduleId}.limitingReason`,
@@ -472,7 +489,8 @@ export function validatePowerState(
     if (
       module === undefined ||
       result === undefined ||
-      module.operationalState === "shutdown" ||
+      (!isFreshGeneration && result.limitingReason === "shutdown") ||
+      (isFreshGeneration && module.operationalState === "shutdown") ||
       result.deliveredPowerWatts >= result.requestedPowerWatts
     ) {
       continue;

@@ -30,6 +30,7 @@ import {
   isDesignApplyPreviewRejection,
 } from "./designApplyPreview.ts";
 import { createDirtyPowerState } from "../power/powerState.ts";
+import { createDirtyOverclockState } from "../overclock/overclockState.ts";
 import {
   addMicrodollars,
   isMicrodollarAlignedUsd,
@@ -1116,6 +1117,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
         state.facility.routes = finalRoutes;
         state.facility.liveLayoutRevision += 1;
         state.facility.power = createDirtyPowerState(state.facility.contractedPowerWatts);
+        state.facility.overclock = createDirtyOverclockState();
         state.economy.cashUsd = nextCashUsd;
         state.economy.totalExpenseUsd = nextTotalExpenseUsd;
         state.economy.totalIncomeUsd = nextTotalIncomeUsd;

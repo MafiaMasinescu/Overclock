@@ -29,6 +29,9 @@
     "insufficient-cash": "Insufficient cash.",
     "insufficient-inventory": "Insufficient inventory.",
     "invalid-payload": "The command payload is invalid.",
+    "overclock-target-invalid": "The overclock target is invalid.",
+    "overclock-unsupported": "This module does not support overclocking.",
+    "overclock-unavailable-in-design-mode": "Overclock settings cannot change while Design Mode is active.",
     "research-required": "The required research is not completed.",
     "stale-design-preview": "The Design Mode preview is no longer current.",
     "stale-tick": "The command was created for a different simulation tick."

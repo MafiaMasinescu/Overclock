@@ -20,6 +20,7 @@ import { createDesignModeCommandHandlers } from "../../src/sim/design/designMode
 import { calculateEnergyCostUsd } from "../../src/sim/economy/money.ts";
 import { createPowerTickSystems } from "../../src/sim/power/facilityPower.ts";
 import { createDirtyPowerState } from "../../src/sim/power/powerState.ts";
+import { createOverclockTickSystems } from "../../src/sim/overclock/facilityOverclock.ts";
 import { hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
 import { createSeededRngFromState } from "../../src/sim/rng/seededRng.ts";
 import { createThermalTickSystems } from "../../src/sim/thermal/facilityThermal.ts";
@@ -189,6 +190,57 @@ describe("thermal production stages", () => {
     expect(() => core.step()).toThrow(
       expect.objectContaining({ stage: "calculate-heat-generation", tick: 1 }),
     );
+  });
+
+  test("revalidates changed Overclock module inputs instead of using the warm cache", () => {
+    const validationEvents: string[] = [];
+    let workloadRuns = 0;
+    const state = basicState("thermal-overclock-cache");
+    const logic = module("logic", "module-vacuum-tube-logic");
+    state.facility.modules = { logic };
+    cleanPower(state, [delivery(logic.id, 0)]);
+    const core = thermalCore(
+      state,
+      { onPowerValidationCacheEvent: (event) => validationEvents.push(event) },
+      {
+        "calculate-workload-allocation": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state: candidate }: StructuralSharingTickSystemContext) {
+                workloadRuns += 1;
+                if (workloadRuns !== 2) return candidate;
+                const current = candidate.facility.modules["logic"];
+                if (current === undefined) throw new Error("Missing thermal Overclock fixture.");
+                return {
+                  ...candidate,
+                  facility: {
+                    ...candidate.facility,
+                    modules: {
+                      ...candidate.facility.modules,
+                      logic: {
+                        ...current,
+                        overclock: {
+                          profile: "boost" as const,
+                          frequencyRatio: 1.25,
+                          voltageRatio: 1.1,
+                        },
+                      },
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    );
+
+    core.step();
+    core.step();
+
+    expect(validationEvents).toEqual(["validated", "validated"]);
+    expect(core.getStateForSave().rngState).toBe(state.rngState);
   });
 
   test("uses current-tick Power without a workload stage", () => {
@@ -523,20 +575,31 @@ describe("thermal production stages", () => {
     expect(core.getStateForSave().facility.thermalTiles[0]?.temperatureC).toBe(22);
   });
 
-  test("keeps runtimes isolated and yields an exact 100-tick deterministic hash", () => {
+  test("keeps Task 7 thermal branches identical while Task 8 adds only its calculated result to the 100-tick hash", () => {
     const firstState = basicState("thermal-deterministic");
     firstState.facility.modules = { source: module("source", "module-power-distribution") };
     firstState.facility.extractionCapacityWatts = 1_000;
     cleanPower(firstState, [delivery("source", 240, 90)]);
     const secondState = structuredClone(firstState);
     const first = thermalCore(firstState);
-    const second = thermalCore(secondState);
+    const second = new SimCore({
+      initialState: secondState,
+      tickSystems: {
+        ...createThermalTickSystems(content),
+        ...createOverclockTickSystems(content),
+      },
+    });
 
     first.step(100);
     second.step(100);
 
-    const firstHash = hashCanonicalState(first.getStateForSave());
-    expect(firstHash).toBe(hashCanonicalState(second.getStateForSave()));
-    expect(firstHash).toBe("ee4c025fb31b509f");
+    const Task7State = first.getStateForSave();
+    const Task8State = second.getStateForSave();
+    expect(hashCanonicalState(Task7State)).toBe("3981c87f4603e9fd");
+    expect(Task8State.facility.modules).toEqual(Task7State.facility.modules);
+    expect(Task8State.facility.power).toEqual(Task7State.facility.power);
+    expect(Task8State.facility.thermalTiles).toEqual(Task7State.facility.thermalTiles);
+    expect(Task8State.facility.thermalRevision).toBe(Task7State.facility.thermalRevision);
+    expect(hashCanonicalState(Task8State)).toBe("6a3d11ce3e14ca83");
   });
 });

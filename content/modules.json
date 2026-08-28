@@ -27,6 +27,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": false,
       "stableFrequencyRatio": 1,
       "thermal": { "normalMaxC": 45, "warningMaxC": 55, "criticalMaxC": 68, "shutdownC": 78 },
       "suitability": { "serial": 0, "parallel": 0, "memory": 0, "bandwidth": 0, "latency": 0 }
@@ -58,6 +59,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": true,
       "stableFrequencyRatio": 1.18,
       "thermal": { "normalMaxC": 50, "warningMaxC": 62, "criticalMaxC": 76, "shutdownC": 88 },
       "suitability": { "serial": 0.9, "parallel": 0.8, "memory": 0.2, "bandwidth": 0.2, "latency": 0.6 }
@@ -89,6 +91,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": true,
       "stableFrequencyRatio": 1.15,
       "thermal": { "normalMaxC": 50, "warningMaxC": 61, "criticalMaxC": 74, "shutdownC": 86 },
       "suitability": { "serial": 1.1, "parallel": 1.15, "memory": 0.25, "bandwidth": 0.35, "latency": 0.75 }
@@ -120,6 +123,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": true,
       "stableFrequencyRatio": 1.2,
       "thermal": { "normalMaxC": 48, "warningMaxC": 60, "criticalMaxC": 73, "shutdownC": 84 },
       "suitability": { "serial": 1.35, "parallel": 0.6, "memory": 0.3, "bandwidth": 0.4, "latency": 1.1 }
@@ -151,6 +155,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": false,
       "stableFrequencyRatio": 1.25,
       "thermal": { "normalMaxC": 47, "warningMaxC": 59, "criticalMaxC": 72, "shutdownC": 84 },
       "suitability": { "serial": 0.3, "parallel": 0.2, "memory": 1.05, "bandwidth": 1.15, "latency": 1.3 }
@@ -182,6 +187,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": false,
       "stableFrequencyRatio": 1.1,
       "thermal": { "normalMaxC": 44, "warningMaxC": 54, "criticalMaxC": 66, "shutdownC": 76 },
       "suitability": { "serial": 0.3, "parallel": 0.3, "memory": 1.5, "bandwidth": 1.25, "latency": 0.75 }
@@ -212,6 +218,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": false,
       "stableFrequencyRatio": 1,
       "thermal": { "normalMaxC": 42, "warningMaxC": 52, "criticalMaxC": 65, "shutdownC": 75 },
       "suitability": { "serial": 0.1, "parallel": 0.1, "memory": 0.25, "bandwidth": 0.65, "latency": 0.45 }
@@ -242,6 +249,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": false,
       "stableFrequencyRatio": 1,
       "thermal": { "normalMaxC": 42, "warningMaxC": 52, "criticalMaxC": 64, "shutdownC": 74 },
       "suitability": { "serial": 0.1, "parallel": 0.1, "memory": 0.35, "bandwidth": 1.05, "latency": 0.8 }
@@ -272,6 +280,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": false,
       "stableFrequencyRatio": 1,
       "thermal": { "normalMaxC": 44, "warningMaxC": 54, "criticalMaxC": 66, "shutdownC": 76 },
       "suitability": { "serial": 0.1, "parallel": 0.1, "memory": 0.25, "bandwidth": 1.2, "latency": 0.6 }
@@ -303,6 +312,7 @@
       "coolingWatts": 0,
       "airflowUnits": 0,
       "thermalBehavior": { "role": "none" },
+      "overclockable": false,
       "stableFrequencyRatio": 1.1,
       "thermal": { "normalMaxC": 45, "warningMaxC": 56, "criticalMaxC": 68, "shutdownC": 78 },
       "suitability": { "serial": 0.1, "parallel": 0.1, "memory": 0.25, "bandwidth": 1.45, "latency": 1.15 }
@@ -333,6 +343,7 @@
       "coolingWatts": 720,
       "airflowUnits": 850,
       "thermalBehavior": { "role": "local-airflow", "rangeTiles": 4 },
+      "overclockable": false,
       "stableFrequencyRatio": 1,
       "thermal": { "normalMaxC": 45, "warningMaxC": 56, "criticalMaxC": 68, "shutdownC": 78 },
       "suitability": { "serial": 0, "parallel": 0, "memory": 0, "bandwidth": 0, "latency": 0 }
@@ -363,6 +374,7 @@
       "coolingWatts": 5200,
       "airflowUnits": 4200,
       "thermalBehavior": { "role": "extraction" },
+      "overclockable": false,
       "stableFrequencyRatio": 1,
       "thermal": { "normalMaxC": 43, "warningMaxC": 53, "criticalMaxC": 65, "shutdownC": 75 },
       "suitability": { "serial": 0, "parallel": 0, "memory": 0, "bandwidth": 0, "latency": 0 }

@@ -9,6 +9,7 @@ import {
   updateThermalState,
 } from "../../src/sim/thermal/thermalDomain.ts";
 import {
+  createTask8PerformanceFixture,
   createThermalPerformanceFixture,
   THERMAL_PERFORMANCE_HEIGHT,
   THERMAL_PERFORMANCE_WIDTH,
@@ -86,5 +87,25 @@ describe("thermal performance fixture", () => {
     );
     expect(generation.localCoolingWattsOnTile.some((watts) => watts > 0)).toBe(true);
     expect(update.temperatureChanged).toBe(true);
+  });
+
+  test("extends the audited dense fixture with every Task 8 profile and eligible definition", () => {
+    const state = createTask8PerformanceFixture("task-8-fixture-audit");
+    const occupancy = buildOccupancyIndex({
+      modules: state.facility.modules,
+      content: thermalPerformanceContent,
+    });
+    const eligibleModules = Object.values(state.facility.modules).filter(
+      (module) => thermalPerformanceContent.modules[module.definitionId]?.overclockable,
+    );
+
+    expect(occupancy.issues).toEqual([]);
+    expect(occupancy.tiles.length).toBeGreaterThanOrEqual(288);
+    expect(new Set(eligibleModules.map((module) => module.definitionId))).toEqual(
+      new Set(["module-vacuum-tube-logic", "module-arithmetic-unit", "module-control-unit"]),
+    );
+    expect(new Set(eligibleModules.map((module) => module.overclock.profile))).toEqual(
+      new Set(["eco", "balanced", "boost", "manual"]),
+    );
   });
 });

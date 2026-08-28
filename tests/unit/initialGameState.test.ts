@@ -90,6 +90,11 @@ describe("initial GameState", () => {
           byModule: {},
           byRoute: {},
         },
+        overclock: {
+          layoutRevision: null,
+          thermalRevision: null,
+          byModule: {},
+        },
       },
       tasks: {
         activeSlotCount: 2,
