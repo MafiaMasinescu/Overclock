@@ -12,14 +12,14 @@ Construiește simulatorul determinist fără gameplay UI.
 4. Tick pipeline de 100 ms.
 5. Inventory și economy de bază.
 6. Grid occupancy, footprint rotation și port graph.
-7. Power delivery.
-8. Thermal model cu double buffering.
-9. Overclock profiles și stability.
-10. Useful Compute și `ComputeBreakdown`.
-11. Task lifecycle și allocation.
-12. Research lifecycle.
-13. Benchmark runners.
-14. Blueprint save și instantiate la nivel de domeniu.
+6. Power delivery.
+7. Thermal model cu double buffering.
+8. Overclock profiles și stability.
+9. Useful Compute și `ComputeBreakdown`.
+10. Task lifecycle și allocation.
+11. Research lifecycle.
+12. Benchmark runners.
+13. Blueprint save și instantiate la nivel de domeniu.
 15. Replay log și determinism tests.
 16. Bot simplu pentru milestone timings.
 
@@ -292,6 +292,45 @@ events, UI, snapshots, heatmaps, workers, saves, and Task 9.
 
 Task 8 is complete after Task 8.5 diagnostics and complete verification. The next planned Phase 1
 task is `Phase 1 Task 9: Useful Compute`.
+
+## Task 9: Useful Compute
+
+Task 9 owns Theoretical Compute, module capacity, task-specific Useful Compute, `ComputeBreakdown`,
+bottleneck explanations, consumption of already-valid active `TaskAllocationState` records, and the
+authoritative `deliveredUsefulComputeFlops` output. It does not create task offers or lifecycle,
+normalise allocation shares, advance task/research/economy/benchmark progress, add commands, UI,
+workers, saves, random failure behavior, or Task 10 work.
+
+- Task 9.1: contracts and foundations — ADR-0014, serializable dirty `FacilityComputeState`,
+  structural historical-result validation, localization, balancing validation, compatibility vectors,
+  and no compute formula, graph algorithm, or tick integration.
+- Task 9.2: pure compute domain — deterministic module/cluster/task calculations and explainability
+  from explicit inputs only; no authoritative tick mutation or task progress.
+- Task 9.3: transactional production integration — the existing
+  `calculate-theoretical-and-useful-compute` stage consumes valid allocations, stores Compute results,
+  and writes delivered Useful Compute without owning task lifecycle.
+- Task 9.4: calculate-once validation, allocation/GC hardening, audited performance, complete
+  verification, permanent documentation, and the single Task 9 checkpoint boundary.
+
+Task 9 keeps calculated results historical: structural validation verifies their serialized shape and
+identities but never reinterprets a committed task record against later task status/phase, module
+lifecycle, Power, thermal, congestion, or allocation inputs. Fresh-generation validation in Task 9.3
+calculates once and uses a transaction-only immutable witness over every actual dependency and the
+exact candidate result. It never enters authoritative state, saves, replay, hashes, compatibility
+vectors, receipts, or public contracts. Private topology/path/provider/order and thermal scratch data
+are invalidated by their complete identities/revisions and cleared on state replacement. Compute uses
+no RNG and any failure rolls back the complete tick.
+
+The permanent diagnostic is `corepack pnpm performance:compute`. Its unchanged dense 24 by 16 fixture
+contains 110 modules, 112 routes, 60 stored route path points, two active allocations sharing one
+module, eight transition modules, and five inventory stacks. Three final clean i7-2600 processes pass:
+pure Task 9 p95 `0.1684/0.1858/0.1667 ms` and complete production p95
+`2.8424/3.1910/2.8493 ms`. A later independent run set was irregular because unrelated Opera and
+ChatGPT processes consumed several CPU cores and slowed unrelated diagnostic sections together; the
+project owner explicitly accepted that host-load exception for checkpointing. The permanent fixture,
+sample counts, warm-up rules, unfiltered results, and `<0.35 ms`/`<4 ms` gates remain unchanged. Task 9
+is complete at this boundary; Task 10 remains the next planned task, and no Task 10 lifecycle,
+allocation selection, progress, deadline, payout, or acceptance policy is implemented here.
 
 ## Nu implementa
 

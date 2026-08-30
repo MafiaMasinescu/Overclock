@@ -269,3 +269,113 @@ export function createTask8PerformanceFixture(seed: string): GameState {
   );
   return state;
 }
+
+function task9DataRoute(
+  id: string,
+  from: RouteState["from"],
+  to: RouteState["to"],
+  length: number,
+  capacityPerSecond: number,
+  congestionRatio: number,
+): RouteState {
+  return {
+    id,
+    kind: "data",
+    from,
+    to,
+    path: Array.from({ length }, (_, index) => ({ x: index % THERMAL_PERFORMANCE_WIDTH, y: 0 })),
+    capacityPerSecond,
+    congestionRatio,
+  };
+}
+
+/**
+ * Extends the audited Task 7/8 fixture with diagnostic-only Task 9 inputs. It seeds allocations but
+ * deliberately does not add task lifecycle or allocation production behavior.
+ */
+export function createTask9PerformanceFixture(seed: string): GameState {
+  const state = createTask8PerformanceFixture(seed);
+  const modules = state.facility.modules;
+  for (const moduleId of [
+    "thermal-002",
+    "thermal-003",
+    "thermal-004",
+    "thermal-005",
+    "thermal-007",
+    "thermal-008",
+    "thermal-009",
+  ]) {
+    if (modules[moduleId] === undefined) throw new Error(`Task 9 fixture lacks ${moduleId}.`);
+  }
+  state.facility.routes = {
+    ...state.facility.routes,
+    "data-vacuum-memory": task9DataRoute(
+      "data-vacuum-memory",
+      { moduleInstanceId: "thermal-003", portId: "data-east" },
+      { moduleInstanceId: "thermal-004", portId: "data-west" },
+      12,
+      16_000,
+      0.2,
+    ),
+    "data-control-memory": task9DataRoute(
+      "data-control-memory",
+      { moduleInstanceId: "thermal-008", portId: "data-east" },
+      { moduleInstanceId: "thermal-004", portId: "data-east" },
+      19,
+      14_000,
+      0.35,
+    ),
+    "data-relay-memory": task9DataRoute(
+      "data-relay-memory",
+      { moduleInstanceId: "thermal-007", portId: "data-east" },
+      { moduleInstanceId: "thermal-005", portId: "data-west" },
+      8,
+      24_000,
+      0.1,
+    ),
+    "data-arithmetic-printer": task9DataRoute(
+      "data-arithmetic-printer",
+      { moduleInstanceId: "thermal-002", portId: "data-out-east" },
+      { moduleInstanceId: "thermal-001", portId: "data-in-north" },
+      15,
+      22_000,
+      0.15,
+    ),
+    "data-io-arithmetic": task9DataRoute(
+      "data-io-arithmetic",
+      { moduleInstanceId: "thermal-009", portId: "data-out-east" },
+      { moduleInstanceId: "thermal-002", portId: "data-in-north" },
+      6,
+      8_000,
+      0.25,
+    ),
+  };
+  const clusterModuleIds = ["thermal-003"];
+  state.tasks.instances = {
+    "task-9-serial": {
+      id: "task-9-serial",
+      definitionId: "task-ballistic-table-verification",
+      status: "active",
+      acceptedAtTick: 0,
+      deadlineTick: null,
+      currentPhaseIndex: 0,
+      phaseCompletedOperations: 0,
+      totalCompletedOperations: 0,
+      allocation: { clusterModuleIds, requestedShare: 0.5, deliveredUsefulComputeFlops: 0 },
+      accruedPayoutUsd: 0,
+    },
+    "task-9-bandwidth": {
+      id: "task-9-bandwidth",
+      definitionId: "task-census-tabulation-service",
+      status: "active",
+      acceptedAtTick: 0,
+      deadlineTick: null,
+      currentPhaseIndex: 0,
+      phaseCompletedOperations: 0,
+      totalCompletedOperations: 0,
+      allocation: { clusterModuleIds, requestedShare: 0.5, deliveredUsefulComputeFlops: 0 },
+      accruedPayoutUsd: 0,
+    },
+  };
+  return state;
+}

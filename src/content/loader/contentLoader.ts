@@ -233,6 +233,38 @@ export function validateContent(raw: RawContentPack): ContentBundle {
         message: "overclockable modules require positive base compute flops",
       });
     }
+    const computeRelevant =
+      module.baseComputeFlops > 0 ||
+      module.memoryCapacityBytes > 0 ||
+      module.memoryBandwidthBytesPerSecond > 0 ||
+      module.ports.some(
+        (port) =>
+          port.kind === "data-in" ||
+          port.kind === "data-out" ||
+          port.kind === "data-bidirectional",
+      );
+    if (computeRelevant) {
+      if (!module.overclockable && module.loadPowerWatts <= module.idlePowerWatts) {
+        issues.push({
+          path: `modules.modules[${moduleIndex}].loadPowerWatts`,
+          message: "compute-relevant non-overclockable modules require load power strictly above idle power",
+        });
+      }
+      if (module.overclockable) {
+        const { frequencyRatioMin, voltageRatioMin } = balancingFile.overclock.manual;
+        const effectiveLoadPowerWatts = Math.max(
+          module.idlePowerWatts,
+          module.loadPowerWatts * voltageRatioMin ** 2 * frequencyRatioMin,
+        );
+        if (effectiveLoadPowerWatts <= module.idlePowerWatts) {
+          issues.push({
+            path: `modules.modules[${moduleIndex}].loadPowerWatts`,
+            message:
+              "compute-relevant overclockable modules require minimum-manual effective load power strictly above idle power",
+          });
+        }
+      }
+    }
     switch (module.thermalBehavior.role) {
       case "none":
         if (module.coolingWatts !== 0) {

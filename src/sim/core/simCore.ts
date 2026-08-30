@@ -6,6 +6,7 @@ import type { CommandReceipt, CommandResult, SimCommand } from "../commands/cont
 import { assertCanonicalSerializable } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
+import { assertValidStoredComputeState } from "../compute/computeState.ts";
 import { assertValidDesignModeState } from "../design/designModeState.ts";
 import { AuthoritativeState } from "./authoritativeState.ts";
 import {
@@ -141,6 +142,7 @@ export class SimCore {
 
   constructor({ initialState, commandHandlers, tickSystems = {} }: SimCoreOptions) {
     assertValidClockAndTick(initialState);
+    assertValidStoredComputeState(initialState);
     assertValidDesignModeState(initialState);
     assertCanonicalSerializable(initialState);
 
@@ -232,6 +234,7 @@ export class SimCore {
   getStateForSave(): GameState {
     const snapshot = this.authoritativeState.snapshot();
     assertValidClockAndTick(snapshot);
+    assertValidStoredComputeState(snapshot);
     assertCanonicalSerializable(snapshot);
     return snapshot;
   }
@@ -241,6 +244,7 @@ export class SimCore {
       throw new Error("Cannot replace simulator state while commands are pending.");
     }
     assertValidClockAndTick(state);
+    assertValidStoredComputeState(state);
     assertValidInventoryEconomyState(state);
     assertValidDesignModeState(state);
     assertCanonicalSerializable(state);
@@ -264,8 +268,13 @@ export class SimCore {
     let candidate = this.runsMutableTickSystems ? structuredClone(current) : current;
     const candidateRng = createSeededRngFromState(candidate.rngState);
     let lastExecutedStage: TickSystemStage | undefined;
+    let validatedCompute = current.facility.compute;
+    let validatedTaskInstances = current.tasks.instances;
 
-    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
+    // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in every production tick.
+    for (let stageIndex = 0; stageIndex < TICK_SYSTEM_STAGE_ORDER.length; stageIndex += 1) {
+      const stage = TICK_SYSTEM_STAGE_ORDER[stageIndex];
+      if (stage === undefined) throw new Error("Tick stage coverage is incomplete.");
       const system = this.tickSystems[stage];
       if (system === undefined) {
         continue;
@@ -284,6 +293,19 @@ export class SimCore {
         }
         this.assertSystemControlledFields(candidate, current);
         assertValidRngState(candidate.rngState);
+        // Stored Compute is historical state. Structural-sharing stages cannot mutate its frozen
+        // branch in place, so revalidating it after an unrelated Power/Thermal stage adds no
+        // coverage. Revalidate immediately when either relevant branch changes; mutable-clone
+        // pipelines remain conservatively checked after every stage.
+        if (
+          this.runsMutableTickSystems ||
+          candidate.facility.compute !== validatedCompute ||
+          candidate.tasks.instances !== validatedTaskInstances
+        ) {
+          assertValidStoredComputeState(candidate);
+          validatedCompute = candidate.facility.compute;
+          validatedTaskInstances = candidate.tasks.instances;
+        }
         if (this.runsMutableTickSystems) {
           assertValidInventoryEconomyState(candidate);
           assertValidDesignModeState(
@@ -303,13 +325,16 @@ export class SimCore {
     }
 
     try {
-      this.authoritativeState.commitOwned(this.completeTick(candidate));
+      // The loop validated the final Compute and task branches after the last stage that changed
+      // either identity. Completing a tick changes only host-owned tick/clock fields, so repeating
+      // the allocation-heavy structural Compute validation here adds no corruption coverage.
+      this.authoritativeState.commitOwned(this.completeTick(candidate, true));
     } catch (cause: unknown) {
       throw new TickSystemInvariantError(current.tick, lastExecutedStage, cause);
     }
   }
 
-  private completeTick(candidate: GameState): GameState {
+  private completeTick(candidate: GameState, computeAlreadyValidated = false): GameState {
     const tick = candidate.tick + 1;
     const completed = {
       ...candidate,
@@ -320,6 +345,7 @@ export class SimCore {
       },
     };
     assertValidClockAndTick(completed);
+    if (!computeAlreadyValidated) assertValidStoredComputeState(completed);
     return completed;
   }
 

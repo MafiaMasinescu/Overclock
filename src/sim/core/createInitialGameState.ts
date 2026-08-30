@@ -1,5 +1,6 @@
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
 import { quantizeUsd } from "../economy/money.ts";
+import { createDirtyComputeState } from "../compute/computeState.ts";
 import { createDirtyPowerState } from "../power/powerState.ts";
 import { createDirtyOverclockState } from "../overclock/overclockState.ts";
 import { seedToUint32 } from "../rng/seededRng.ts";
@@ -122,6 +123,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
       designDraft: null,
       power: createDirtyPowerState(content.era.startingPowerCapacityWatts),
       overclock: createDirtyOverclockState(),
+      compute: createDirtyComputeState(),
     },
     inventory: { stacks: inventoryStacks },
     tasks: {

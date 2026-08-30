@@ -7,11 +7,10 @@ import type {
 } from "../core/tickSystems.ts";
 import { assertValidStoredPowerState } from "../power/powerState.ts";
 import {
-  assertValidThermalUpdateOutput,
+  assertValidThermalUpdateOutputFromValidatedGeneration,
   buildThermalTopology,
-  calculateHeatGeneration,
-  updateThermalState,
-  validateThermalGeneration,
+  calculateHeatGenerationInScratch,
+  updateThermalStateFromValidatedInputs,
 } from "./thermalDomain.ts";
 import type {
   ThermalGeneration,
@@ -65,10 +64,25 @@ interface ThermalRuntimeInternal {
   topologyCache: ThermalTopologyCache | undefined;
   pending: PendingThermalGeneration | undefined;
   validatedPowerInputs: ValidatedPowerInputs | undefined;
+  validatedThermalState: ValidatedThermalState | undefined;
+}
+
+interface ValidatedThermalState {
+  modules: FacilityState["modules"];
+  thermalTiles: readonly ThermalTileState[];
+  thermalRevision: number;
+  facilityWidth: number;
+  facilityHeight: number;
+  ambientTemperatureC: number;
 }
 
 function createRuntime(): ThermalRuntimeInternal {
-  return { topologyCache: undefined, pending: undefined, validatedPowerInputs: undefined };
+  return {
+    topologyCache: undefined,
+    pending: undefined,
+    validatedPowerInputs: undefined,
+    validatedThermalState: undefined,
+  };
 }
 
 function createGenerationScratch(tileCount: number): ThermalGenerationScratch {
@@ -86,6 +100,51 @@ function clearRuntime(runtime: ThermalRuntimeInternal): void {
   runtime.pending = undefined;
   runtime.topologyCache = undefined;
   runtime.validatedPowerInputs = undefined;
+  runtime.validatedThermalState = undefined;
+}
+
+function rememberValidatedThermalState(
+  runtime: ThermalRuntimeInternal,
+  facility: Readonly<FacilityState>,
+): void {
+  const validated = runtime.validatedThermalState;
+  if (validated === undefined) {
+    runtime.validatedThermalState = {
+      modules: facility.modules,
+      thermalTiles: facility.thermalTiles,
+      thermalRevision: facility.thermalRevision,
+      facilityWidth: facility.size.width,
+      facilityHeight: facility.size.height,
+      ambientTemperatureC: facility.ambientTemperatureC,
+    };
+    return;
+  }
+  validated.modules = facility.modules;
+  validated.thermalTiles = facility.thermalTiles;
+  validated.thermalRevision = facility.thermalRevision;
+  validated.facilityWidth = facility.size.width;
+  validated.facilityHeight = facility.size.height;
+  validated.ambientTemperatureC = facility.ambientTemperatureC;
+}
+
+function assertCurrentThermalState(
+  runtime: ThermalRuntimeInternal,
+  facility: Readonly<FacilityState>,
+  content: ContentBundle,
+): void {
+  const validated = runtime.validatedThermalState;
+  if (
+    validated?.modules === facility.modules &&
+    validated.thermalTiles === facility.thermalTiles &&
+    validated.thermalRevision === facility.thermalRevision &&
+    validated.facilityWidth === facility.size.width &&
+    validated.facilityHeight === facility.size.height &&
+    validated.ambientTemperatureC === facility.ambientTemperatureC
+  ) {
+    return;
+  }
+  assertValidThermalState(facility, content.balancing.thermal);
+  rememberValidatedThermalState(runtime, facility);
 }
 
 function hasValidatedPowerInputs(
@@ -187,22 +246,6 @@ function assertSafeThermalRevisionIncrement(revision: number): void {
   }
 }
 
-function reuseUnchangedThermalTiles(
-  previous: readonly ThermalTileState[],
-  next: readonly ThermalTileState[],
-): ThermalTileState[] {
-  if (previous.length !== next.length) {
-    throw new Error("Thermal update must preserve complete tile coverage.");
-  }
-  return next.map((nextTile, index) => {
-    const previousTile = previous[index];
-    if (previousTile === undefined) throw new Error("Thermal tile coverage is incomplete.");
-    return previousTile.temperatureC === nextTile.temperatureC
-      ? previousTile
-      : { position: previousTile.position, temperatureC: nextTile.temperatureC };
-  });
-}
-
 function stageOneRuntime(
   runtime: ThermalRuntimeInternal,
   content: ContentBundle,
@@ -212,6 +255,7 @@ function stageOneRuntime(
     executionMode: "structural-sharing",
     validateLifecycleState(state) {
       assertValidThermalState(state.facility, content.balancing.thermal);
+      rememberValidatedThermalState(runtime, state.facility);
       buildThermalTopology(state.facility, content);
     },
     clearDerivedState() {
@@ -221,23 +265,15 @@ function stageOneRuntime(
     run({ state }: StructuralSharingTickSystemContext): GameState {
       runtime.pending = undefined;
       try {
-        assertValidThermalState(state.facility, content.balancing.thermal);
+        assertCurrentThermalState(runtime, state.facility, content);
         assertCurrentCalculatedPower(runtime, state, content, options);
         const cache = resolveTopology(runtime, state.facility, content, options);
-        const generation = calculateHeatGeneration(
+        const generation = calculateHeatGenerationInScratch(
           state.facility,
           content,
           cache.topology,
           cache.generationScratch,
         );
-        const issues = validateThermalGeneration(generation, cache.topology.tileCount);
-        if (issues.length > 0) {
-          throw new Error(
-            `Invalid generated thermal fields:\n${issues
-              .map((issue) => `${issue.path}: ${issue.message}`)
-              .join("\n")}`,
-          );
-        }
         runtime.pending = {
           tick: state.tick,
           layoutRevision: state.facility.liveLayoutRevision,
@@ -271,14 +307,14 @@ function stageTwoRuntime(
         const pending = assertPendingMatches(runtime, state);
         const cache = runtime.topologyCache;
         if (cache === undefined) throw new Error("Thermal topology cache is missing.");
-        const update = updateThermalState(
+        const update = updateThermalStateFromValidatedInputs(
           state.facility,
           pending.generation,
           content.balancing.thermal,
           content.balancing.tickMilliseconds / 1_000,
           cache.updateScratch,
         );
-        assertValidThermalUpdateOutput(
+        assertValidThermalUpdateOutputFromValidatedGeneration(
           state.facility,
           pending.generation,
           update,
@@ -287,17 +323,16 @@ function stageTwoRuntime(
         options.onStageEvent?.("update-thermal-state");
         if (!update.temperatureChanged) return state;
         assertSafeThermalRevisionIncrement(state.facility.thermalRevision);
-        return {
+        const candidate: GameState = {
           ...state,
           facility: {
             ...state.facility,
-            thermalTiles: reuseUnchangedThermalTiles(
-              state.facility.thermalTiles,
-              update.thermalTiles,
-            ),
+            thermalTiles: update.thermalTiles as ThermalTileState[],
             thermalRevision: state.facility.thermalRevision + 1,
           },
         };
+        rememberValidatedThermalState(runtime, candidate.facility);
+        return candidate;
       } finally {
         runtime.pending = undefined;
       }

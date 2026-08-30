@@ -66,6 +66,53 @@ export interface FacilityOverclockState {
   byModule: Record<ModuleInstanceId, ModuleOverclockResultState>;
 }
 
+export type ComputeBlockingReason =
+  "no-active-compute" | "insufficient-memory-capacity" | "data-disconnected";
+export type ComputeWarning = "stability-below-minimum";
+
+export interface ModuleComputeResultState {
+  moduleInstanceId: ModuleInstanceId;
+  requestedFrequencyRatio: number;
+  operationalRatio: number;
+  theoreticalComputeFlops: number;
+  powerFactor: number;
+  thermalFactor: number;
+  retryRate: number;
+  invalidSampleRate: number;
+  stabilityFactor: number;
+  availableComputeFlops: number;
+}
+
+export interface TaskComputeResultState {
+  taskInstanceId: TaskInstanceId;
+  taskDefinitionId: TaskDefinitionId;
+  phaseIndex: number;
+  phaseId: string;
+  clusterModuleIds: ModuleInstanceId[];
+  requestedShare: number;
+  availableMemoryCapacityBytes: number;
+  availableMemoryBandwidthBytesPerSecond: number;
+  deliveredRouteBandwidthBytesPerSecond: number;
+  extraLatencyMicroseconds: number;
+  retryRate: number;
+  invalidSampleRate: number;
+  meetsStabilityMinimum: boolean;
+  runnable: boolean;
+  blockingReasons: ComputeBlockingReason[];
+  warnings: ComputeWarning[];
+  breakdown: ComputeBreakdown;
+}
+
+export interface FacilityComputeState {
+  layoutRevision: number | null;
+  thermalRevision: number | null;
+  byModule: Record<ModuleInstanceId, ModuleComputeResultState>;
+  byTask: Record<TaskInstanceId, TaskComputeResultState>;
+  totalTheoreticalComputeFlops: number;
+  totalAvailableComputeFlops: number;
+  totalAllocatedUsefulComputeFlops: number;
+}
+
 export interface SimulationClockState {
   paused: boolean;
   speed: SimulationSpeed;
@@ -184,6 +231,7 @@ export interface FacilityState {
   designDraft: DesignDraftState | null;
   power: FacilityPowerState;
   overclock: FacilityOverclockState;
+  compute: FacilityComputeState;
 }
 
 export interface InventoryStack {

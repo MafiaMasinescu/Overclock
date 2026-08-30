@@ -527,11 +527,18 @@ Useful Compute = Theoretical Compute
 ### 16.1 Theoretical Compute
 
 ```text
-module compute = base compute × frequency ratio × operational ratio
-cluster theoretical compute = sum of powered compute modules
+module theoretical compute = base compute
+                            × bin compute ratio
+                            × requested frequency ratio
+                            × operational ratio
+task theoretical compute = requested share
+                         × stable sum of selected module theoretical compute
 ```
 
-Un modul aflat în shutdown are operational ratio `0`. Un modul în startup poate avea ramp-up definit în conținut.
+Operational ratio is exactly one only when the post-Power module is online, delivered Power reaches
+minimum, and the current Power generation represents load (`requestedPowerWatts > minimumPowerWatts`).
+It is zero for startup, brownout, shutdown, and idle-only generation. The tick that completes startup
+still produces zero; the following full-load tick may produce compute.
 
 ### 16.2 Power Factor
 
@@ -553,45 +560,73 @@ criticalMaxC .. shutdownC       factor = lerp(0.65, 0.10)
 temperature >= shutdownC        factor = 0.00 și shutdown
 ```
 
-Pentru cluster folosim media ponderată cu base compute a modulelor active. UI afișează și temperatura maximă separat.
+Aggregate Power is weighted by allocated theoretical compute. Aggregate Thermal is weighted by the
+post-Power contribution. Aggregate retry and invalid-sample rates are weighted by post-Power,
+post-Thermal compute.
 
 ### 16.4 Memory Factor
 
-Task-ul nu pornește dacă memory capacity se află sub cerința minimă. După validare:
+Memory capacity remains a fixed working-set requirement and is not share-scaled. Required bandwidth
+is scaled by requested share. Insufficient minimum capacity adds `insufficient-memory-capacity` and
+makes Memory Factor zero.
 
 ```text
-capacity factor = min(1, available capacity / recommended capacity)
-bandwidth factor = clamp(available bandwidth / required bandwidth, 0.25, 1)
+capacity factor = 0, when available capacity < minimum capacity
+capacity factor = 1, when recommended capacity = 0
+capacity factor = min(1, available capacity / recommended capacity), otherwise
+bandwidth factor = 1, when share-scaled required bandwidth = 0
+bandwidth factor = clamp(available bandwidth / share-scaled required bandwidth, 0.25, 1), otherwise
 Memory Factor = min(capacity factor, bandwidth factor)
 ```
 
 ### 16.5 Interconnect Factor
 
-În vertical slice, interconnect-ul folosește conectivitate, hop count și congestion.
+Topology uses only explicit authoritative data routes in stable ID order; it never constructs an
+adjacent-port graph. Canonical route direction is preserved, except data-bidirectional endpoints work
+in both directions. For every route:
 
 ```text
-latency penalty = clamp(extra latency / task latency tolerance, 0, 0.35)
-congestion penalty = clamp(1 - delivered route bandwidth / requested bandwidth, 0, 0.45)
+grid steps = max(1, route path points - 1)
+route latency = grid steps × data-route latency per grid step
+effective route capacity = capacity per second × (1 - congestion ratio)
+```
+
+Every contributing compute module must have directed read and write access to a common powered memory
+provider set; local memory is a zero-route path. Shortest directed paths determine latency, widest
+directed paths determine delivered bandwidth. Each module selects its best eligible provider, then
+cluster latency is the worst selected latency and cluster bandwidth is the minimum selected
+bidirectional bandwidth. Disconnection adds `data-disconnected` and produces exactly zero.
+
+```text
+extra latency = max(0, cluster latency - data-route latency per grid step)
+latency penalty = clamp(extra latency / phase latency tolerance, 0, 0.35)
+congestion penalty = 0, when share-scaled requested bandwidth = 0
+congestion penalty = clamp(1 - delivered route bandwidth / share-scaled requested bandwidth, 0, 0.45), otherwise
 Interconnect Factor = clamp(1 - latency penalty - congestion penalty, 0.20, 1)
 ```
 
 ### 16.6 Suitability
 
-Suitability compară capabilitățile clusterului cu tag-urile task-ului. Vertical slice-ul folosește un scor data-driven. Exemple:
-
-- control și accumulator modules cresc SERIAL;
-- mai multe arithmetic modules cresc PARALLEL până la limita I/O;
-- delay-line memory ajută MEMORY-HEAVY;
-- buffered I/O ajută BANDWIDTH;
-- Boost ajută BURST, dar nu schimbă singur suitability.
+Only current-phase tags map directly: `serial` to serial, `parallel` and `vector` to parallel,
+`memory-heavy` to memory, `bandwidth` to bandwidth, and `latency` to latency. For every mapped axis,
+the score is the maximum content suitability among powered usable cluster modules in the task's
+bidirectionally usable data component, including usable non-compute members, clamped to
+`[0.70, 1.25]`. Suitability is the arithmetic mean
+of required axis scores clamped to the same range; with no mapped axis it is exactly one. Boost affects
+theoretical compute through frequency and has no second suitability bonus.
 
 ### 16.7 Stability Factor
 
 ```text
-Stability Factor = clamp(1 - retry rate - invalid sample rate, 0, 1)
+Stability Factor = 1 - retry rate - invalid sample rate
 ```
 
-Campania validează rezultatele. Erorile reduc compute-ul prin retry-uri. Nu livrează rezultate corupte.
+Task 9 exposes whether the phase stability minimum is met. Falling below it adds
+`stability-below-minimum` as a warning but adds no multiplier or Task 9 progress/acceptance decision.
+
+`ComputeBreakdown` multiplies the stored factors in fixed order. For every factor below one,
+`lostComputeFlops` is the value before the factor minus the value after it. Suitability above one is a
+boost, not a bottleneck. Bottlenecks sort by descending loss with fixed factor order as tie-breaker.
 
 ## 17. Overclock
 
@@ -938,6 +973,83 @@ audited dense Task 7 fixture and reports 500 warm pure-domain samples plus separ
 command, lifecycle, validation, and cold-replacement paths. Its hard i7-2600 gates are Task 8 pure p95
 below `0.25 ms` and warm complete production p95 below `4 ms`; Task 7's permanent thermal diagnostic
 continues to enforce its independent pure p95 below `0.5 ms` gate.
+
+## 21. Task 9 Useful Compute contract
+
+Task 9 is split into foundations (9.1), pure domain calculations (9.2), transactional production
+integration at `calculate-theoretical-and-useful-compute` (9.3), then performance, complete
+verification, documentation, and one final checkpoint (9.4). Task 9.1 adds authoritative serializable
+`FacilityComputeState`: dirty results have both revisions null, empty stable-ID records, and exact zero
+totals; calculated results retain stable module/task records plus theoretical, available, and allocated
+Useful Compute totals. It introduces no compute formula, graph algorithm, production stage, progress,
+task command, or allocation normalization.
+
+`ModuleComputeResultState` retains the requested frequency, operational, Power, thermal, retry,
+invalid-sample, stability, theoretical, and available compute values. `TaskComputeResultState` retains
+the exact task/phase identifiers, copied sorted cluster IDs, allocation share, memory/route/latency
+inputs, rates, stability/runnable flags, ordered approved blocking reasons (`no-active-compute`,
+`insufficient-memory-capacity`, `data-disconnected`), the approved warning
+`stability-below-minimum`, and `ComputeBreakdown`. Structural validation checks only serialized shape,
+stable ordering/coverage, finite bounds, rate and formula identities, and totals. It must never
+reinterpret a stored task result using later task status/phase, module lifecycle, Power, thermal,
+congestion, or allocation input; Task 9.3 validates fresh output against its exact generation inputs.
+
+Task 9.2 replaces the older cluster-average ambiguity: aggregate Power is weighted by allocated
+Theoretical Compute, aggregate Thermal and retry/invalid rates by post-Power/post-Thermal compute,
+and aggregate Stability is stored exactly as `1 - retryRate - invalidSampleRate`. Useful Compute
+applies the fixed order Power, Thermal, Memory, Interconnect, Suitability, Stability; no rounding,
+RNG, wall-clock input, adjacent-port graph, or production-stage mutation is permitted.
+
+Validated balancing adds `compute.dataRouteLatencyMicrosecondsPerGridStep = 25`, finite and strictly
+positive. Every compute-relevant module (positive compute, memory capacity/bandwidth, or data port)
+must distinguish full load from idle: non-overclockable definitions have load Power above idle, while
+overclockable definitions resolve effective load above idle under minimum Manual frequency and voltage.
+This preserves the historical Power result boundary without changing that state.
+
+Module Theoretical Compute is exactly
+`baseComputeFlops × binComputeRatio × requestedFrequencyRatio × operationalRatio`. Operational ratio
+is one only when the post-Power module is online, delivered Power reaches minimum, and requested Power
+is strictly above minimum. Startup completion, brownout, shutdown, and idle-only generation therefore
+produce zero; the next full-load tick may compute. Available Compute applies current Power, Thermal,
+and Stability factors exactly once, with no rounding.
+
+Task Theoretical Compute is requested share times the stable sum of selected module Theoretical
+Compute. Memory capacity stays a fixed working-set requirement; bandwidth scales with share. Capacity
+is hard-zero below minimum, one for zero recommendation, otherwise capped at available/recommended.
+Bandwidth is one for zero requirement, otherwise `clamp(available/required, 0.25, 1)`. Explicit
+authoritative data routes alone provide directed shortest-latency and widest-bandwidth paths; only two
+bidirectional endpoints reverse direction. Every contributing compute module needs read/write access
+to the common powered-provider set, while local memory is a zero-route path. Disconnected tasks have
+Interconnect Factor zero; connected tasks apply the approved latency and congestion penalties with a
+`0.20` floor.
+
+Suitability maps only serial, parallel/vector, memory-heavy, bandwidth, and latency tags. Each mapped
+axis uses the best powered usable cluster-module value in the bidirectionally usable component,
+including usable non-compute members, clamped to `[0.70, 1.25]`; their arithmetic mean is clamped
+identically, and no mapped axis is exactly one. Boost appears only through requested frequency.
+Values below phase stability minimum produce a warning and never an extra multiplier or Task 9
+progress decision.
+
+Production calculates the complete facility result once and validates it with a transaction-only
+immutable witness over the exact content, module, Power, Overclock, route, task, revision, dimension,
+and private topology identities used. The witness stays outside authoritative state, saves, replay,
+hashes, compatibility vectors, receipts, and public contracts. Stored results remain historical and
+structural. Private topology/path/provider/order and thermal scratch data are per-`SimCore`,
+identity/revision invalidated, and cleared on replacement. Identity-only route copies retain path
+metrics only when route structure and effective capacities remain exact; immutable task projections
+and exactly equal frozen module-result records may be structurally shared. Failures roll back the
+whole tick and Compute consumes no RNG.
+
+`corepack pnpm performance:compute` measures 200 cold topology samples, 500 warm pure samples, and
+200 samples each for production, changed congestion/allocation, transitions, calculate-once witness
+construction, and exact witness validation after 100 excluded warm-ups. Three final i7-2600 processes
+measured pure p95 `0.1684`, `0.1858`, and `0.1667 ms`; production p95 was `2.8424`, `3.1910`, and
+`2.8493 ms`. A later independent review recorded production p95 failures while live process sampling
+showed unrelated Opera and ChatGPT workloads consuming several CPU cores and cold, dynamic,
+transition, and production timings inflated together. The project owner accepted this as a
+checkpoint irregularity, not a new threshold: the fixture, samples, warm-up, unfiltered measurements,
+`<0.35 ms` pure gate, and `<4 ms` production gate remain unchanged. Task 9 changes no Task 10
+allocation, acceptance, progress, deadline, or reward policy.
 
 ## 22. Task system
 

@@ -95,6 +95,15 @@ describe("initial GameState", () => {
           thermalRevision: null,
           byModule: {},
         },
+        compute: {
+          layoutRevision: null,
+          thermalRevision: null,
+          byModule: {},
+          byTask: {},
+          totalTheoreticalComputeFlops: 0,
+          totalAvailableComputeFlops: 0,
+          totalAllocatedUsefulComputeFlops: 0,
+        },
       },
       tasks: {
         activeSlotCount: 2,

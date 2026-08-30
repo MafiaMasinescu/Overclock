@@ -9,6 +9,7 @@ import {
   updateThermalState,
 } from "../../src/sim/thermal/thermalDomain.ts";
 import {
+  createTask9PerformanceFixture,
   createTask8PerformanceFixture,
   createThermalPerformanceFixture,
   THERMAL_PERFORMANCE_HEIGHT,
@@ -107,5 +108,27 @@ describe("thermal performance fixture", () => {
     expect(new Set(eligibleModules.map((module) => module.overclock.profile))).toEqual(
       new Set(["eco", "balanced", "boost", "manual"]),
     );
+  });
+
+  test("extends the audited fixture with diagnostic Task 9 data routes and valid shared allocations", () => {
+    const state = createTask9PerformanceFixture("task-9-fixture-audit");
+    const occupancy = buildOccupancyIndex({
+      modules: state.facility.modules,
+      content: thermalPerformanceContent,
+    });
+    const activeAllocations = Object.values(state.tasks.instances).filter(
+      (task) => task.status === "active" && task.allocation !== null,
+    );
+
+    expect(occupancy.issues).toEqual([]);
+    expect(occupancy.tiles.length).toBeGreaterThanOrEqual(288);
+    expect(
+      Object.values(state.facility.routes).filter((route) => route.kind === "data"),
+    ).toHaveLength(5);
+    expect(activeAllocations).toHaveLength(2);
+    expect(activeAllocations.flatMap((task) => task.allocation?.clusterModuleIds ?? [])).toContain(
+      "thermal-003",
+    );
+    expect(activeAllocations.every((task) => task.allocation?.requestedShare === 0.5)).toBe(true);
   });
 });

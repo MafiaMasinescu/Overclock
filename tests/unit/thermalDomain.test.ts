@@ -380,6 +380,15 @@ describe("pure double-buffered thermal update", () => {
       updateThermalState(facility(1, 1), generation(1), content.balancing.thermal, 0.1),
     ).toEqual({ thermalTiles: thermalTiles(1, 1), temperatureChanged: false });
 
+    const unchanged = facility(1, 1);
+    const unchangedUpdate = updateThermalState(
+      unchanged,
+      generation(1),
+      content.balancing.thermal,
+      0.1,
+    );
+    expect(unchangedUpdate.thermalTiles[0]).toBe(unchanged.thermalTiles[0]);
+
     const corner = facility(2, 2);
     corner.thermalTiles = thermalTiles(2, 2).map((tile, index) => ({
       ...tile,

@@ -21,6 +21,9 @@
       "voltageRatioMax": 1.2
     }
   },
+  "compute": {
+    "dataRouteLatencyMicrosecondsPerGridStep": 25
+  },
   "economy": {
     "laborCostPerMovedModuleUsd": 85,
     "defaultEnergyPriceUsdPerKwh": 0.042,

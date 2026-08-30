@@ -302,7 +302,10 @@ function samplePreparedModuleMaximumTemperature(
   trustedThermalTiles: boolean,
 ): number {
   let maximumTemperatureC = Number.NEGATIVE_INFINITY;
-  for (const tileIndex of tileIndexes) {
+  // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in the audited tick path.
+  for (let index = 0; index < tileIndexes.length; index += 1) {
+    const tileIndex = tileIndexes[index];
+    if (tileIndex === undefined) throw new Error("Thermal topology tile coverage is incomplete.");
     const temperatureC = facility.thermalTiles[tileIndex]?.temperatureC;
     if (temperatureC === undefined) throw new Error("Thermal tile coverage is incomplete.");
     if (trustedThermalTiles) {
@@ -341,7 +344,11 @@ function prepareFacilityModules(
     throw new RangeError("Overclock calculation scratch must match topology module coverage.");
   }
   const prepared: PreparedFacilityModule[] = reusable ?? [];
-  for (const [index, topologyModule] of topology.modules.entries()) {
+  for (let index = 0; index < topology.modules.length; index += 1) {
+    const topologyModule = topology.modules[index];
+    if (topologyModule === undefined) {
+      throw new Error("Thermal topology module coverage is incomplete.");
+    }
     const module = facility.modules[topologyModule.moduleId];
     const definition = content.modules[topologyModule.definitionId];
     const reusableModule = reusable?.[index];
@@ -435,7 +442,10 @@ function applyPreparedThermalLifecycleTransitions(
   prepared: readonly PreparedFacilityModule[],
 ): Record<string, ModuleInstanceState> {
   let nextModules: Record<string, ModuleInstanceState> | undefined;
-  for (const item of prepared) {
+  // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in the audited tick path.
+  for (let index = 0; index < prepared.length; index += 1) {
+    const item = prepared[index];
+    if (item === undefined) throw new Error("Prepared module coverage is incomplete.");
     const module = modules[item.moduleId];
     if (module?.id !== item.moduleId || module.definitionId !== item.definition.id) {
       throw new Error("Lifecycle module coverage is incompatible with the thermal topology.");
@@ -480,7 +490,10 @@ export function calculateFacilityOverclockResult(
   const prepared = prepareFacilityModules(facility, content, topology, scratch);
   const modules = applyPreparedThermalLifecycleTransitions(facility.modules, prepared);
   const byModule: Record<string, ModuleOverclockResultState> = {};
-  for (const item of prepared) {
+  // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in the audited tick path.
+  for (let index = 0; index < prepared.length; index += 1) {
+    const item = prepared[index];
+    if (item === undefined) throw new Error("Prepared module coverage is incomplete.");
     const module = modules[item.moduleId];
     if (module?.id !== item.moduleId)
       throw new Error("Overclock lifecycle result coverage is incomplete.");
@@ -581,11 +594,27 @@ function resultMatchesGeneratedModule(
       actual.shutdownReason === "thermal"
     );
   }
-  const stability = calculateModuleStabilityBreakdownUnchecked(
-    module,
-    prepared.definition,
-    prepared.sampledTemperatureC,
+  const supportedFrequencyRatio =
+    prepared.definition.stableFrequencyRatio *
+    module.binStabilityRatio *
+    module.overclock.voltageRatio;
+  const frequencyStabilityFactor = normalizeZero(
+    clamp(supportedFrequencyRatio / module.overclock.frequencyRatio, 0, 1),
   );
+  const temperatureStabilityFactor = normalizeZero(
+    prepared.sampledTemperatureC <= prepared.definition.thermal.warningMaxC
+      ? 1
+      : prepared.sampledTemperatureC < prepared.definition.thermal.shutdownC
+        ? (prepared.definition.thermal.shutdownC - prepared.sampledTemperatureC) /
+          (prepared.definition.thermal.shutdownC - prepared.definition.thermal.warningMaxC)
+        : 0,
+  );
+  const retryRate = normalizeZero(clamp(1 - frequencyStabilityFactor, 0, 1));
+  const remainingAfterRetries = normalizeZero(1 - retryRate);
+  const invalidSampleRate = normalizeZero(
+    clamp(remainingAfterRetries * (1 - temperatureStabilityFactor), 0, remainingAfterRetries),
+  );
+  const stabilityFactor = normalizeZero(clamp(1 - retryRate - invalidSampleRate, 0, 1));
   return (
     valueEqual(
       actual.thermalFactor,
@@ -594,11 +623,23 @@ function resultMatchesGeneratedModule(
         prepared.definition.thermal,
       ),
     ) &&
-    valueEqual(actual.retryRate, stability.retryRate) &&
-    valueEqual(actual.invalidSampleRate, stability.invalidSampleRate) &&
-    valueEqual(actual.stabilityFactor, stability.stabilityFactor) &&
+    valueEqual(actual.retryRate, retryRate) &&
+    valueEqual(actual.invalidSampleRate, invalidSampleRate) &&
+    valueEqual(actual.stabilityFactor, stabilityFactor) &&
     actual.shutdownReason === null
   );
+}
+
+function hasExactStableKeyCoverage(
+  record: Readonly<Record<string, unknown>>,
+  expectedIds: readonly string[],
+): boolean {
+  let index = 0;
+  for (const key in record) {
+    if (!Object.hasOwn(record, key) || key !== expectedIds[index]) return false;
+    index += 1;
+  }
+  return index === expectedIds.length;
 }
 
 export function validateOverclockTickResult(
@@ -686,7 +727,7 @@ export function validateGeneratedOverclockTickResult(
     return issues;
   }
   const expectedModules = applyPreparedThermalLifecycleTransitions(facility.modules, prepared);
-  if (Object.keys(result.modules).join("\u0000") !== topology.moduleIds.join("\u0000")) {
+  if (!hasExactStableKeyCoverage(result.modules, topology.moduleIds)) {
     issues.push({ path: "modules", message: "must cover live modules in stable ID order" });
   }
   if (
@@ -695,13 +736,16 @@ export function validateGeneratedOverclockTickResult(
   ) {
     issues.push({ path: "overclock", message: "must use current layout and thermal revisions" });
   }
-  if (Object.keys(result.overclock.byModule).join("\u0000") !== topology.moduleIds.join("\u0000")) {
+  if (!hasExactStableKeyCoverage(result.overclock.byModule, topology.moduleIds)) {
     issues.push({
       path: "overclock.byModule",
       message: "must cover live modules in stable ID order",
     });
   }
-  for (const item of prepared) {
+  // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in the audited tick path.
+  for (let index = 0; index < prepared.length; index += 1) {
+    const item = prepared[index];
+    if (item === undefined) throw new Error("Prepared module coverage is incomplete.");
     const actualModule = result.modules[item.moduleId];
     const expectedModule = expectedModules[item.moduleId];
     if (

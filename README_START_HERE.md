@@ -121,6 +121,27 @@ It reports 500 warm pure-domain samples and 200 samples for warm production, pro
 changes, Thermal Factor, shutdown/cooldown/recovery, forced validation, and cold replacement. The
 enforced i7-2600 gates are pure Task 8 p95 below `0.25 ms` and warm full production p95 below `4 ms`.
 
+## Useful Compute performance diagnostic
+
+For Task 9's extension of the unchanged audited 24 by 16 fixture, run:
+
+```powershell
+corepack pnpm performance:compute
+```
+
+The command reports 200 cold topology samples, 500 warm pure samples, and 200 samples each for the
+complete production tick, changed congestion/allocation, startup/shutdown transitions, calculate-once
+result/witness construction, and exact witness validation. It excludes fixture construction and 100
+JIT warm-ups, then reports median, p95, maximum, sample count, fixture inventory, CPU, OS, Node version,
+and build mode. The enforced i7-2600 gates are pure Task 9 p95 below `0.35 ms` and complete production
+p95 below `4 ms`; p95 below `3.7 ms` is the preferred production-headroom target.
+
+Run the checkpoint comparison with unrelated builds, test runners, browsers, antivirus scans, and
+other heavy workloads inactive. Task 9's independent checkpoint review documented an explicitly
+accepted host-load irregularity when Opera and ChatGPT processes consumed several CPU cores and
+inflated unrelated sections together. The diagnostic still reports every sample and fails the same
+hard thresholds; do not compensate with sample filtering, process priority, affinity, or V8 flags.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

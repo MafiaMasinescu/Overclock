@@ -214,6 +214,9 @@ export const balancingFileSchema = z.object({
       voltageRatioMax: z.number(),
     }),
   }),
+  compute: z.object({
+    dataRouteLatencyMicrosecondsPerGridStep: z.number().positive(),
+  }),
   economy: z.object({
     laborCostPerMovedModuleUsd: finiteNonNegativeSchema,
     defaultEnergyPriceUsdPerKwh: finiteNonNegativeSchema,
@@ -236,6 +239,7 @@ export interface LocalizationBranch {
 
 export interface LocalizationDictionary extends LocalizationBranch {
   readonly common: LocalizationBranch;
+  readonly compute: LocalizationBranch;
   readonly errors: Readonly<Record<string, string>>;
   readonly modules: Readonly<Record<string, LocalizationBranch>>;
   readonly tasks: Readonly<Record<string, LocalizationBranch>>;
@@ -249,6 +253,7 @@ const localizationValueSchema: z.ZodType<LocalizationValue> = z.lazy(() =>
 
 export const localizationFileSchema: z.ZodType<LocalizationDictionary> = z.object({
   common: z.record(z.string(), localizationValueSchema),
+  compute: z.record(z.string(), localizationValueSchema),
   errors: z.record(z.string(), z.string()),
   modules: z.record(z.string(), z.record(z.string(), localizationValueSchema)),
   tasks: z.record(z.string(), z.record(z.string(), localizationValueSchema)),

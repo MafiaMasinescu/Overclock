@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-08-28
+Updated: 2026-08-30
 
 ## Current phase
 
@@ -27,15 +27,21 @@ Updated: 2026-08-28
   and performance hardening, is complete and checkpointed by the commit containing this status
   update.
 - Phase 1 Task 8, deterministic Overclock and Stability foundations, pure formulas, lifecycle,
-  transactional commands, production integration, and performance hardening, is complete. The next
-  planned task is Phase 1 Task 9: Useful Compute.
+  transactional commands, production integration, and performance hardening, is complete.
+- Phase 1 Task 9, deterministic Useful Compute contracts, pure domain, directed data topology,
+  transactional production integration, calculate-once exact validation, and performance hardening,
+  is complete and checkpointed by the commit containing this status update. The checkpoint records
+  the explicitly accepted host-load performance irregularity below without weakening the permanent
+  diagnostic or its thresholds. The next planned task is Phase 1 Task 10; no Task 10 work is included
+  here.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
   `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN`,
   `SET_OVERCLOCK_PROFILE`, and `SET_MANUAL_OVERCLOCK`. Production
-  gameplay tick systems are Task 6's `calculate-power-demand-and-delivery` plus Task 7's
-  `calculate-heat-generation`, `update-thermal-state`, and
-  `apply-throttling-stability-and-shutdown` stages.
+  gameplay tick systems are Task 6's `calculate-power-demand-and-delivery`, Task 7's
+  `calculate-heat-generation` and `update-thermal-state`, Task 8's
+  `apply-throttling-stability-and-shutdown`, and Task 9's
+  `calculate-theoretical-and-useful-compute` stages.
 
 ## Implemented deterministic foundation
 
@@ -463,7 +469,80 @@ warm-up iterations.
   future apply command must revalidate inventory before consumption because independent inventory
   commands may run while a draft exists.
 
+## Phase 1 Task 9 implementation
+
+- `FacilityState.compute` is authoritative, serializable historical state. Dirty results use null
+  revisions and empty stable records; calculated results store module/task breakdowns and exact
+  theoretical, available, and allocated totals. Historical validation checks structure and internal
+  identities without reinterpreting a prior result against later lifecycle or allocation inputs.
+- Module theoretical compute is exactly base compute times bin compute ratio times requested
+  frequency ratio times the operational ratio. Startup completion, brownout, shutdown, and idle-only
+  Power generation are zero; the following full-load tick may calculate compute. Available compute
+  then applies current Power, Thermal, and Stability factors once, with no rounding or RNG.
+- Task Useful Compute applies Theoretical, Power, Thermal, Memory, Interconnect, Suitability, and
+  Stability in that fixed order. Memory uses the fixed working-set minimum/recommended capacity and
+  share-scaled bandwidth rules. Stability is exactly `1 - retryRate - invalidSampleRate`; falling
+  below a phase minimum is a warning, not Task 9 acceptance or progress policy.
+- Data topology is built only from stable authoritative RouteState records. Canonical direction is
+  preserved, only bidirectional-to-bidirectional routes work both ways, and cached topology stores
+  stable indexes, endpoint direction, path length, latency, and capacity inputs. Shortest directed
+  read/write paths determine latency, widest paths determine bandwidth, and local memory has a
+  zero-route path. No adjacent-port graph is built or scanned on the warm Compute path.
+- Suitability maps only serial, parallel/vector, memory-heavy, bandwidth, and latency phase tags.
+  Each required axis takes the best powered usable cluster-module value in the bidirectionally usable
+  component, including usable non-compute members, clamped to `[0.70, 1.25]`; the clamped arithmetic
+  mean is used, while no mapped axis is exactly one. Boost has no second suitability bonus.
+- The production stage calculates the complete facility result exactly once and returns a detached,
+  deeply frozen result plus a transaction-only exact witness. The witness covers content, module,
+  Power, Overclock, route, task/allocation, revision, dimension, and private-topology identities and
+  rejects stale dependencies or any candidate other than the calculated result. It never enters
+  authoritative state, saves, replay, hashes, compatibility vectors, receipts, or public contracts.
+- Per-SimCore topology, path/provider/order, validation, and thermal scratch caches are derived-only.
+  Their complete identities/revisions invalidate them on replacement or relevant input changes.
+  Identity-only route copies retain path metrics only when structure and effective capacities match;
+  immutable task projections and exactly equal frozen module-result records may be reused.
+  Commit still recursively freezes every newly owned object, while previously verified immutable
+  branches are structurally shared. Any failure rolls back state, tick, clock, RNG, IDs, receipts,
+  allocations, and results.
+- Test additions are limited to distinct failure classes and reuse shared fixtures/table rows. Task 10
+  exclusively owns allocation selection/lifecycle, acceptance, progress, deadlines, rewards, research,
+  and benchmark policy.
+- Compatibility projections remain `3981c87f4603e9fd` for Task 7 and `6a3d11ce3e14ca83` for Task 8.
+  Full-state vectors with the Task 9 Compute foundation are `b3b11ef7f77ca577` and
+  `4f51593129881319`, respectively.
+
 ## Verification
+
+- Focused Task 9 state, pure-domain, production, witness, and compatibility coverage: PASS, 6 files
+  and 87 tests. The coverage includes exactly one full facility calculation, immutable result/evidence,
+  every result-family tamper, every actual dependency family, directed and bidirectional routes,
+  shared allocations, contention/congestion, transition timing, historical validation, zero RNG,
+  rollback, serialization, and exact 100-run determinism.
+- Complete Task 9-era unit suite: PASS, 36 files and 570 tests. Standalone determinism: PASS, 8 files
+  and 10 tests. Task 9's dense production fixture now repeats results, state, tick, IDs, hash, and RNG
+  identically across exactly 100 independent runs. `corepack pnpm test` passed twice in separate clean
+  processes with the same counts.
+- The unchanged dense 24 by 16 fixture contains 110 modules, 112 routes, 60 route path points, two
+  active allocations sharing one module, eight transition modules, and five inventory stacks. Three
+  clean i7-2600 processes measured pure Task 9 p95 `0.1684/0.1858/0.1667 ms` and complete production
+  p95 `2.8424/3.1910/2.8493 ms`, passing the hard `<0.35 ms` and `<4 ms` gates, plus the preferred
+  `<3.7 ms` production target, in every run. Fixture construction and 100 JIT warm-ups were excluded.
+- In those runs, fresh calculate-once result/witness p95 was `0.1763/0.1856/0.1933 ms`; exact witness
+  validation p95 was `0.0024/0.0024/0.0021 ms`. The earlier production path calculated the full
+  facility twice; the final path calculates it once and validates the exact frozen result and exhaustive
+  dependency evidence without serialization or a lossy-hash shortcut.
+- The independent checkpoint review retained the unchanged diagnostic and confirmed host-load-sensitive
+  production variance after its correctness corrections. A prior three-process sequence measured pure
+  p95 `0.2106/0.1715/0.2325 ms` and production p95 `3.9602/3.2206/5.5204 ms`. Later probes across
+  successive semantics-preserving allocation reductions recorded production p95 `4.5879`, `4.4575`,
+  and `6.7941 ms`; their corresponding pure Task 9 p95 values remained below the hard gate. These later
+  probes were not a clean acceptance set: live process-rate sampling showed Opera consuming about
+  `2.66` CPU cores and ChatGPT processes about `1.29` CPU cores, and cold topology, dynamic,
+  transition, and production timings inflated together while exact witness validation remained near
+  `0.003 ms`. The project owner explicitly accepted this as a target-PC process-contention irregularity
+  for the checkpoint on 30 August 2026. The permanent `<0.35 ms` pure and `<4 ms` production gates,
+  sample counts, warm-up, fixture, and failure behavior remain unchanged; future comparisons must run
+  with unrelated heavy processes inactive and must not filter samples or alter priority/affinity.
 
 - Focused Task 6 and Task 6.1 coverage: PASS, 4 files and 79 tests, including historical startup
   generation acceptance, strict same-generation contradiction rejection, topology/result-cache
@@ -554,6 +633,9 @@ warm-up iterations.
   proves every new result against its exact tick-start inputs before commit.
 - Wall-time diagnostics remain sensitive to host scheduling. Performance acceptance uses a
   controlled warmed diagnostic; normal tests contain no unstable timing assertion.
+- Compute's calculate-once witness and private topology/order/provider caches enumerate every current
+  dependency. Any future Compute formula or input branch must extend that evidence and its stale-input
+  regression coverage before the optimized fresh-validation path may consume it.
 - The dense adjacent-port graph diagnostic intentionally rebuilds derived data and currently uses a
   pairwise node comparison. It is not on the tick path; Task 5.2 or connectivity work should profile
   mutation-time rebuild frequency before deciding whether a spatial candidate index is warranted.
@@ -571,14 +653,16 @@ warm-up iterations.
   in English and Romanian.
 - Apply revalidates current inventory and all structural invariants, commits completely or not at all,
   preserves sequences/RNG/thermal/tick/unrelated state, and never builds the adjacent-port graph.
-- Current preview intentionally defers functional compute, power, thermal, airflow, and task-risk
-  effects until authoritative systems exist.
+- Design preview intentionally remains structural/economic and does not estimate functional Power,
+  thermal, Overclock, Useful Compute, or task-risk effects.
 
 ## Task boundary
 
 Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc` on local `main` and
-`origin/main`. Task 7.1 through 7.4 are complete and checkpointed by the commit containing this
-status update. Task 8 is complete; its next planned task is `Phase 1 Task 9: Useful Compute`.
+`origin/main`. Task 7.1 through 7.4 and Task 8 are complete. Task 9.1 through Task 9.4 are complete and
+checkpointed by the commit containing this status update, with the explicitly accepted host-load
+performance irregularity recorded above. The exact next planned boundary is Phase 1 Task 10, which
+is not implemented by this work.
 
 ## Phase 1 Task 6 implementation
 
@@ -636,7 +720,7 @@ status update. Task 8 is complete; its next planned task is `Phase 1 Task 9: Use
 - Automatic energy deductions, power capacity purchases, labor and relocation costs, task rewards,
   research costs/progression, maintenance, inflation, market events, scarcity, financing, interest,
   insolvency, bailout, bankruptcy, and financial game over.
-- Installed-module sales, auto-connect, auto-route, pathfinding, rerouting, route preview, thermal
-  simulation, and overclock behavior.
-- Useful Compute, benchmarks, blueprints, replay execution, and balancing bot.
+- Installed-module sales, auto-connect, auto-route, pathfinding, rerouting, and route preview.
+- Task allocation selection/lifecycle, task acceptance/progress/deadlines/rewards, research progression,
+  benchmarks, blueprints, replay execution, and balancing bot.
 - React/Pixi integration, IndexedDB, save/load, migrations, export, and import.

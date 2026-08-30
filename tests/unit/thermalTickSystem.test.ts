@@ -27,6 +27,13 @@ import { createThermalTickSystems } from "../../src/sim/thermal/facilityThermal.
 
 const content = loadContentBundle();
 
+function withoutCompute(state: GameState): object {
+  const facility = Object.fromEntries(
+    Object.entries(state.facility).filter(([key]) => key !== "compute"),
+  );
+  return { ...state, facility };
+}
+
 function module(
   id: string,
   definitionId = "module-data-relay",
@@ -575,7 +582,7 @@ describe("thermal production stages", () => {
     expect(core.getStateForSave().facility.thermalTiles[0]?.temperatureC).toBe(22);
   });
 
-  test("keeps Task 7 thermal branches identical while Task 8 adds only its calculated result to the 100-tick hash", () => {
+  test("preserves Task 7/8 projections and records the Task 9 full-state compatibility vector", () => {
     const firstState = basicState("thermal-deterministic");
     firstState.facility.modules = { source: module("source", "module-power-distribution") };
     firstState.facility.extractionCapacityWatts = 1_000;
@@ -595,11 +602,13 @@ describe("thermal production stages", () => {
 
     const Task7State = first.getStateForSave();
     const Task8State = second.getStateForSave();
-    expect(hashCanonicalState(Task7State)).toBe("3981c87f4603e9fd");
+    expect(hashCanonicalState(withoutCompute(Task7State))).toBe("3981c87f4603e9fd");
     expect(Task8State.facility.modules).toEqual(Task7State.facility.modules);
     expect(Task8State.facility.power).toEqual(Task7State.facility.power);
     expect(Task8State.facility.thermalTiles).toEqual(Task7State.facility.thermalTiles);
     expect(Task8State.facility.thermalRevision).toBe(Task7State.facility.thermalRevision);
-    expect(hashCanonicalState(Task8State)).toBe("6a3d11ce3e14ca83");
+    expect(hashCanonicalState(withoutCompute(Task8State))).toBe("6a3d11ce3e14ca83");
+    expect(hashCanonicalState(Task7State)).toBe("b3b11ef7f77ca577");
+    expect(hashCanonicalState(Task8State)).toBe("4f51593129881319");
   });
 });

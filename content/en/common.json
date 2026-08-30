@@ -8,6 +8,24 @@
       "sustained-stability": "Sustained Stability"
     }
   },
+  "compute": {
+    "bottlenecks": {
+      "power": "Power delivery limits compute.",
+      "thermal": "Temperature limits compute.",
+      "memory": "Memory capacity or bandwidth limits compute.",
+      "interconnect": "Data routing limits compute.",
+      "suitability": "The active workload is not ideally suited to this cluster.",
+      "stability": "Retries and invalid samples limit delivered compute."
+    },
+    "blocking": {
+      "no-active-compute": "No active compute capacity is available.",
+      "insufficient-memory-capacity": "The cluster does not have enough memory capacity.",
+      "data-disconnected": "The cluster is disconnected from required data routing."
+    },
+    "warnings": {
+      "stability-below-minimum": "Stability is below this task phase's minimum."
+    }
+  },
   "errors": {
     "already-in-design-mode": "Design Mode is already active.",
     "invalid-system": "The system state is invalid.",

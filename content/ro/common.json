@@ -8,6 +8,24 @@
       "sustained-stability": "Sustained Stability"
     }
   },
+  "compute": {
+    "bottlenecks": {
+      "power": "Livrarea de putere limiteaza compute-ul.",
+      "thermal": "Temperatura limiteaza compute-ul.",
+      "memory": "Capacitatea sau bandwidth-ul memoriei limiteaza compute-ul.",
+      "interconnect": "Rutarea de date limiteaza compute-ul.",
+      "suitability": "Workload-ul activ nu se potriveste ideal acestui cluster.",
+      "stability": "Retry-urile si esantioanele invalide limiteaza compute-ul livrat."
+    },
+    "blocking": {
+      "no-active-compute": "Nu exista capacitate de compute activa.",
+      "insufficient-memory-capacity": "Clusterul nu are suficienta capacitate de memorie.",
+      "data-disconnected": "Clusterul este deconectat de la rutarea de date necesara."
+    },
+    "warnings": {
+      "stability-below-minimum": "Stabilitatea este sub minimul acestei faze de task."
+    }
+  },
   "errors": {
     "already-in-design-mode": "Design Mode este deja activ.",
     "invalid-system": "Starea sistemului este invalidă.",

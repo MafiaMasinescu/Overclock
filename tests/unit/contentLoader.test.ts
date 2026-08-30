@@ -62,6 +62,43 @@ describe("content loading", () => {
     });
   });
 
+  test("loads the approved strictly positive Task 9 data-route latency balance", () => {
+    const bundle = loadContentBundle();
+
+    expect(bundle.balancing.compute.dataRouteLatencyMicrosecondsPerGridStep).toBe(25);
+  });
+
+  test("rejects nonpositive Task 9 data-route latency", () => {
+    const pack = clonePack();
+    pack.balancing.compute.dataRouteLatencyMicrosecondsPerGridStep = 0;
+
+    const error = captureValidationError(pack);
+
+    expect(error.message).toContain("balancing.compute.dataRouteLatencyMicrosecondsPerGridStep");
+  });
+
+  test.each([
+    { moduleId: "module-accumulator-register", overclockable: false },
+    { moduleId: "module-vacuum-tube-logic", overclockable: true },
+  ])(
+    "requires compute-relevant $moduleId to have distinguishable minimum-load power",
+    ({ moduleId, overclockable }) => {
+      const pack = clonePack();
+      const module = pack.modules.modules.find(({ id }) => id === moduleId);
+      if (module === undefined) throw new Error("Missing compute-relevant module fixture.");
+      module.loadPowerWatts = module.idlePowerWatts;
+
+      const error = captureValidationError(pack);
+
+      expect(error.issues).toContainEqual({
+        path: `modules.modules[${pack.modules.modules.indexOf(module)}].loadPowerWatts`,
+        message: overclockable
+          ? "compute-relevant overclockable modules require minimum-manual effective load power strictly above idle power"
+          : "compute-relevant non-overclockable modules require load power strictly above idle power",
+      });
+    },
+  );
+
   test("reports the exact path for an unknown research prerequisite", () => {
     const pack = clonePack();
     firstItem(pack.research.nodes).prerequisites = ["research-does-not-exist"];

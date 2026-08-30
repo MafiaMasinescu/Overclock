@@ -39,9 +39,23 @@ function assertFiniteNonnegative(value: number, label: string): void {
   }
 }
 
-function assertFinitePositive(value: number, label: string): void {
+function assertModuleFiniteNonnegative(
+  value: number,
+  label: "Power delivery" | "Power Factor" | "Generated heat" | "Effective cooling",
+  moduleId: string,
+): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`${label} for ${moduleId} must be finite and nonnegative.`);
+  }
+}
+
+function assertModuleFinitePositive(
+  value: number,
+  moduleId: string,
+  field: "binEfficiencyRatio" | "binThermalRatio",
+): void {
   if (!Number.isFinite(value) || value <= 0) {
-    throw new RangeError(`${label} must be finite and positive.`);
+    throw new RangeError(`Module ${moduleId} ${field} must be finite and positive.`);
   }
 }
 
@@ -49,15 +63,6 @@ function almostEqual(left: number, right: number): boolean {
   return (
     Math.abs(left - right) <= Number.EPSILON * 64 * Math.max(1, Math.abs(left), Math.abs(right))
   );
-}
-
-function stableSum(values: readonly number[]): number {
-  let total = 0;
-  for (const value of values) {
-    total += value;
-    if (!Number.isFinite(total)) throw new RangeError("Thermal total must remain finite.");
-  }
-  return total === 0 ? 0 : total;
 }
 
 function assertTopologyCompatibility(
@@ -211,17 +216,41 @@ export function validateThermalGeneration(
     issues.push({ path: "tileCount", message: "must be a positive safe integer" });
     return issues;
   }
-  for (const [path, values] of [
-    ["generation.heatWattsOnTile", generation.heatWattsOnTile],
-    ["generation.localCoolingWattsOnTile", generation.localCoolingWattsOnTile],
-  ] as const) {
-    if (values.length !== tileCount) {
-      issues.push({ path, message: "must cover every thermal tile" });
+  const heatWattsOnTile = generation.heatWattsOnTile;
+  let validDistributedHeat = heatWattsOnTile.length === tileCount;
+  let distributedHeatWatts = 0;
+  if (!validDistributedHeat) {
+    issues.push({
+      path: "generation.heatWattsOnTile",
+      message: "must cover every thermal tile",
+    });
+  }
+  for (let index = 0; index < heatWattsOnTile.length; index += 1) {
+    const value = heatWattsOnTile[index];
+    if (value === undefined || !Number.isFinite(value) || value < 0) {
+      validDistributedHeat = false;
+      issues.push({
+        path: `generation.heatWattsOnTile[${index}]`,
+        message: "must be finite and nonnegative",
+      });
+    } else {
+      distributedHeatWatts += value;
     }
-    for (const [index, value] of values.entries()) {
-      if (!Number.isFinite(value) || value < 0) {
-        issues.push({ path: `${path}[${index}]`, message: "must be finite and nonnegative" });
-      }
+  }
+  const localCoolingWattsOnTile = generation.localCoolingWattsOnTile;
+  if (localCoolingWattsOnTile.length !== tileCount) {
+    issues.push({
+      path: "generation.localCoolingWattsOnTile",
+      message: "must cover every thermal tile",
+    });
+  }
+  for (let index = 0; index < localCoolingWattsOnTile.length; index += 1) {
+    const value = localCoolingWattsOnTile[index];
+    if (value === undefined || !Number.isFinite(value) || value < 0) {
+      issues.push({
+        path: `generation.localCoolingWattsOnTile[${index}]`,
+        message: "must be finite and nonnegative",
+      });
     }
   }
   if (
@@ -233,9 +262,8 @@ export function validateThermalGeneration(
       message: "must be finite and nonnegative",
     });
   } else if (
-    generation.heatWattsOnTile.length === tileCount &&
-    generation.heatWattsOnTile.every((value) => Number.isFinite(value) && value >= 0) &&
-    !almostEqual(stableSum(generation.heatWattsOnTile), generation.totalGeneratedHeatWatts)
+    validDistributedHeat &&
+    !almostEqual(distributedHeatWatts, generation.totalGeneratedHeatWatts)
   ) {
     issues.push({
       path: "generation.totalGeneratedHeatWatts",
@@ -263,11 +291,12 @@ function assertValidGeneration(generation: Readonly<ThermalGeneration>, tileCoun
   }
 }
 
-export function calculateHeatGeneration(
+function calculateHeatGenerationResult(
   facility: Readonly<FacilityState>,
   content: ContentBundle,
   topology: Readonly<ThermalTopology>,
-  scratch?: ThermalGenerationScratch,
+  scratch: ThermalGenerationScratch | undefined,
+  retainScratch: boolean,
 ): ThermalGeneration {
   assertTopologyCompatibility(facility, topology);
   const heatWattsOnTile = scratch?.heatWattsOnTile ?? new Float64Array(topology.tileCount);
@@ -285,7 +314,11 @@ export function calculateHeatGeneration(
   let totalGeneratedHeatWatts = 0;
   let effectiveExtractionCapacityWatts = facility.extractionCapacityWatts;
   assertFiniteNonnegative(effectiveExtractionCapacityWatts, "Facility extraction capacity");
-  for (const [moduleIndex, topologyModule] of topology.modules.entries()) {
+  for (let moduleIndex = 0; moduleIndex < topology.modules.length; moduleIndex += 1) {
+    const topologyModule = topology.modules[moduleIndex];
+    if (topologyModule === undefined) {
+      throw new Error("Thermal topology module coverage is incomplete.");
+    }
     const module = facility.modules[topologyModule.moduleId];
     const definition = content.modules[topologyModule.definitionId];
     const power = facility.power.byModule[topologyModule.moduleId];
@@ -297,10 +330,10 @@ export function calculateHeatGeneration(
     if (module.id !== topologyModule.moduleId || definition.id !== topologyModule.definitionId) {
       throw new Error("Thermal topology no longer matches module or content identity.");
     }
-    assertFiniteNonnegative(power.deliveredPowerWatts, `Power delivery for ${module.id}`);
-    assertFiniteNonnegative(power.powerFactor, `Power Factor for ${module.id}`);
-    assertFinitePositive(module.binEfficiencyRatio, `Module ${module.id} binEfficiencyRatio`);
-    assertFinitePositive(module.binThermalRatio, `Module ${module.id} binThermalRatio`);
+    assertModuleFiniteNonnegative(power.deliveredPowerWatts, "Power delivery", module.id);
+    assertModuleFiniteNonnegative(power.powerFactor, "Power Factor", module.id);
+    assertModuleFinitePositive(module.binEfficiencyRatio, module.id, "binEfficiencyRatio");
+    assertModuleFinitePositive(module.binThermalRatio, module.id, "binThermalRatio");
     const dynamicPowerFactor = calculateModuleDynamicPowerFactor(definition, module.overclock);
     const effectiveFullLoadPowerWatts = calculateEffectiveFullLoadPowerWatts(
       definition,
@@ -312,9 +345,16 @@ export function calculateHeatGeneration(
     const moduleHeatWatts = isActive
       ? (definition.heatWattsAtLoad * dynamicPowerFactor * ratio) / module.binThermalRatio
       : 0;
-    assertFiniteNonnegative(moduleHeatWatts, `Generated heat for ${module.id}`);
+    assertModuleFiniteNonnegative(moduleHeatWatts, "Generated heat", module.id);
     const heatPerTile = moduleHeatWatts / topologyModule.occupiedTileIndexes.length;
-    for (const tileIndex of topologyModule.occupiedTileIndexes) {
+    // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in the audited tick path.
+    for (
+      let tileOffset = 0;
+      tileOffset < topologyModule.occupiedTileIndexes.length;
+      tileOffset += 1
+    ) {
+      const tileIndex = topologyModule.occupiedTileIndexes[tileOffset];
+      if (tileIndex === undefined) throw new Error("Thermal topology tile coverage is incomplete.");
       const previousTileHeat = heatWattsOnTile[tileIndex];
       if (previousTileHeat === undefined)
         throw new Error("Thermal heat scratch coverage is incomplete.");
@@ -327,7 +367,7 @@ export function calculateHeatGeneration(
     const effectiveCoolingWatts = isActive
       ? definition.coolingWatts * clamp(power.powerFactor, 0, 1)
       : 0;
-    assertFiniteNonnegative(effectiveCoolingWatts, `Effective cooling for ${module.id}`);
+    assertModuleFiniteNonnegative(effectiveCoolingWatts, "Effective cooling", module.id);
     if (topologyModule.behaviorRole === "local-airflow") {
       const coolingPerPort = effectiveCoolingWatts / topologyModule.airflowRays.length;
       const rangeTiles =
@@ -336,8 +376,16 @@ export function calculateHeatGeneration(
           : 0;
       if (rangeTiles <= 0) throw new Error("Local airflow topology has no nominal range.");
       const coolingPerNominalTile = coolingPerPort / rangeTiles;
-      for (const ray of topologyModule.airflowRays) {
-        for (const tileIndex of ray.tileIndexes) {
+      // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in the audited tick path.
+      for (let rayIndex = 0; rayIndex < topologyModule.airflowRays.length; rayIndex += 1) {
+        const ray = topologyModule.airflowRays[rayIndex];
+        if (ray === undefined) throw new Error("Thermal airflow ray coverage is incomplete.");
+        // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in the audited tick path.
+        for (let tileOffset = 0; tileOffset < ray.tileIndexes.length; tileOffset += 1) {
+          const tileIndex = ray.tileIndexes[tileOffset];
+          if (tileIndex === undefined) {
+            throw new Error("Thermal airflow tile coverage is incomplete.");
+          }
           const previousTileCooling = localCoolingWattsOnTile[tileIndex];
           if (previousTileCooling === undefined) {
             throw new Error("Thermal cooling scratch coverage is incomplete.");
@@ -361,13 +409,36 @@ export function calculateHeatGeneration(
   }
 
   const result: ThermalGeneration = {
-    heatWattsOnTile: Array.from(heatWattsOnTile),
-    localCoolingWattsOnTile: Array.from(localCoolingWattsOnTile),
+    heatWattsOnTile: retainScratch
+      ? (heatWattsOnTile as unknown as readonly number[])
+      : Array.from(heatWattsOnTile),
+    localCoolingWattsOnTile: retainScratch
+      ? (localCoolingWattsOnTile as unknown as readonly number[])
+      : Array.from(localCoolingWattsOnTile),
     totalGeneratedHeatWatts,
     effectiveExtractionCapacityWatts,
   };
   assertValidGeneration(result, topology.tileCount);
   return result;
+}
+
+export function calculateHeatGeneration(
+  facility: Readonly<FacilityState>,
+  content: ContentBundle,
+  topology: Readonly<ThermalTopology>,
+  scratch?: ThermalGenerationScratch,
+): ThermalGeneration {
+  return calculateHeatGenerationResult(facility, content, topology, scratch, false);
+}
+
+/** Private same-tick runtime handoff. The result expires before these scratch arrays are reused. */
+export function calculateHeatGenerationInScratch(
+  facility: Readonly<FacilityState>,
+  content: ContentBundle,
+  topology: Readonly<ThermalTopology>,
+  scratch: ThermalGenerationScratch,
+): ThermalGeneration {
+  return calculateHeatGenerationResult(facility, content, topology, scratch, true);
 }
 
 function validateUpdateInput(
@@ -383,6 +454,13 @@ function validateUpdateInput(
     );
   }
   assertValidGeneration(generation, facility.thermalTiles.length);
+  validateUpdateParameters(balancing, dtSeconds);
+}
+
+function validateUpdateParameters(
+  balancing: Readonly<ThermalUpdateBalancingContract>,
+  dtSeconds: number,
+): void {
   assertFiniteNonnegative(dtSeconds, "Thermal dtSeconds");
   for (const [label, value] of [
     ["heatToTemperatureCoefficient", balancing.heatToTemperatureCoefficient],
@@ -400,14 +478,16 @@ function temperatureAt(tiles: readonly ThermalTileState[], index: number): numbe
   return tile.temperatureC;
 }
 
-export function updateThermalState(
+function updateThermalStateResult(
   facility: Readonly<FacilityState>,
   generation: Readonly<ThermalGeneration>,
   balancing: Readonly<ThermalUpdateBalancingContract>,
   dtSeconds: number,
-  scratch?: ThermalUpdateScratch,
+  scratch: ThermalUpdateScratch | undefined,
+  inputsAlreadyValidated: boolean,
 ): ThermalUpdate {
-  validateUpdateInput(facility, generation, balancing, dtSeconds);
+  if (inputsAlreadyValidated) validateUpdateParameters(balancing, dtSeconds);
+  else validateUpdateInput(facility, generation, balancing, dtSeconds);
   const tileCount = facility.thermalTiles.length;
   const nextTemperatureC = scratch?.nextTemperatureC ?? new Float64Array(tileCount);
   assertScratchLength(nextTemperatureC.length, tileCount, "Thermal-update scratch");
@@ -466,10 +546,32 @@ export function updateThermalState(
     const temperatureC = nextTemperatureC[index];
     if (temperatureC === undefined)
       throw new Error("Thermal update scratch coverage is incomplete.");
-    if (temperatureC !== previous.temperatureC) temperatureChanged = true;
-    return { position: { x: previous.position.x, y: previous.position.y }, temperatureC };
+    if (temperatureC === previous.temperatureC) return previous;
+    temperatureChanged = true;
+    return { position: previous.position, temperatureC };
   });
   return { thermalTiles, temperatureChanged };
+}
+
+export function updateThermalState(
+  facility: Readonly<FacilityState>,
+  generation: Readonly<ThermalGeneration>,
+  balancing: Readonly<ThermalUpdateBalancingContract>,
+  dtSeconds: number,
+  scratch?: ThermalUpdateScratch,
+): ThermalUpdate {
+  return updateThermalStateResult(facility, generation, balancing, dtSeconds, scratch, false);
+}
+
+/** Private same-transaction path after stage-one facility and generation validation. */
+export function updateThermalStateFromValidatedInputs(
+  facility: Readonly<FacilityState>,
+  generation: Readonly<ThermalGeneration>,
+  balancing: Readonly<ThermalUpdateBalancingContract>,
+  dtSeconds: number,
+  scratch: ThermalUpdateScratch,
+): ThermalUpdate {
+  return updateThermalStateResult(facility, generation, balancing, dtSeconds, scratch, true);
 }
 
 export function assertValidThermalTickResult(
@@ -494,13 +596,16 @@ export function assertValidThermalTickResult(
  * validated its read-generation input. SimCore uses this targeted check to avoid revalidating
  * immutable module and prior-tile branches in the same production stage.
  */
-export function assertValidThermalUpdateOutput(
+function assertValidThermalUpdateOutputResult(
   previousFacility: Readonly<FacilityState>,
   generation: Readonly<ThermalGeneration>,
   update: Readonly<ThermalUpdate>,
   balancing: Readonly<ThermalUpdateBalancingContract>,
+  generationAlreadyValidated: boolean,
 ): asserts update is ThermalUpdate {
-  assertValidGeneration(generation, previousFacility.thermalTiles.length);
+  if (!generationAlreadyValidated) {
+    assertValidGeneration(generation, previousFacility.thermalTiles.length);
+  }
   if (update.thermalTiles.length !== previousFacility.thermalTiles.length) {
     throw new Error("Thermal tick result must preserve tile coverage.");
   }
@@ -539,6 +644,25 @@ export function assertValidThermalUpdateOutput(
   if (temperatureChanged !== update.temperatureChanged) {
     throw new Error("Thermal tick result must report exact authoritative temperature changes.");
   }
+}
+
+export function assertValidThermalUpdateOutput(
+  previousFacility: Readonly<FacilityState>,
+  generation: Readonly<ThermalGeneration>,
+  update: Readonly<ThermalUpdate>,
+  balancing: Readonly<ThermalUpdateBalancingContract>,
+): asserts update is ThermalUpdate {
+  assertValidThermalUpdateOutputResult(previousFacility, generation, update, balancing, false);
+}
+
+/** Private same-transaction output check after stage-one generation validation. */
+export function assertValidThermalUpdateOutputFromValidatedGeneration(
+  previousFacility: Readonly<FacilityState>,
+  generation: Readonly<ThermalGeneration>,
+  update: Readonly<ThermalUpdate>,
+  balancing: Readonly<ThermalUpdateBalancingContract>,
+): asserts update is ThermalUpdate {
+  assertValidThermalUpdateOutputResult(previousFacility, generation, update, balancing, true);
 }
 
 export function assertValidThermalTickResultObject(
