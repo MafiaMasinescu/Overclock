@@ -45,6 +45,14 @@ function isUnitRate(value: number): boolean {
   return isFiniteNonnegative(value) && value <= 1;
 }
 
+function isFinitePositive(value: number): boolean {
+  return Number.isFinite(value) && value > 0 && !Object.is(value, -0);
+}
+
+function isOperationalRatio(value: number): boolean {
+  return !Object.is(value, -0) && (value === 0 || value === 1);
+}
+
 function hasStableOrder(values: readonly string[]): boolean {
   for (let index = 1; index < values.length; index += 1) {
     const previous = values[index - 1];
@@ -114,15 +122,15 @@ function validateModuleResult(
   );
   pushIf(
     issues,
-    !isFiniteNonnegative(result.requestedFrequencyRatio),
+    !isFinitePositive(result.requestedFrequencyRatio),
     `${path}.requestedFrequencyRatio`,
-    "must be finite and nonnegative",
+    "must be finite and strictly positive",
   );
   pushIf(
     issues,
-    !isFiniteNonnegative(result.operationalRatio),
+    !isOperationalRatio(result.operationalRatio),
     `${path}.operationalRatio`,
-    "must be finite and nonnegative",
+    "must be exactly 0 or 1",
   );
   pushIf(
     issues,
@@ -135,12 +143,6 @@ function validateModuleResult(
     !isFiniteNonnegative(result.availableComputeFlops),
     `${path}.availableComputeFlops`,
     "must be finite and nonnegative",
-  );
-  pushIf(
-    issues,
-    !isUnitRate(result.operationalRatio),
-    `${path}.operationalRatio`,
-    "must be in [0, 1]",
   );
   pushIf(issues, !isUnitRate(result.powerFactor), `${path}.powerFactor`, "must be in [0, 1]");
   pushIf(issues, !isUnitRate(result.thermalFactor), `${path}.thermalFactor`, "must be in [0, 1]");

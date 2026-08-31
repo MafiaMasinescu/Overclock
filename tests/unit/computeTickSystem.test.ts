@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
+import type { SimCommand } from "../../src/sim/commands/contracts.ts";
 import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
 import { SimCore } from "../../src/sim/core/simCore.ts";
 import type { GameState, ModuleInstanceState } from "../../src/sim/core/types.ts";
@@ -9,6 +10,15 @@ import { createComputeTickSystems } from "../../src/sim/compute/facilityCompute.
 import { canonicalSerialize } from "../../src/sim/replay/canonicalState.ts";
 
 const content = loadContentBundle();
+
+function guidanceCommand(): Extract<SimCommand, { kind: "SET_GUIDANCE_MODE" }> {
+  return {
+    commandId: "95000000-0000-4000-8000-000000000001",
+    source: "debug",
+    kind: "SET_GUIDANCE_MODE",
+    mode: "engineering",
+  };
+}
 
 function module(id: string, definitionId: string): ModuleInstanceState {
   return {
@@ -162,6 +172,184 @@ describe("production Useful Compute tick system", () => {
       after.facility.compute.byTask["task"]?.breakdown.usefulComputeFlops,
     );
     expect(after.rngState).toBe(before.rngState);
+  });
+
+  test("rejects later-stage delivery tampering and rolls back the complete tick and RNG", () => {
+    const core = new SimCore({
+      initialState: readyState(),
+      tickSystems: {
+        ...createComputeTickSystems(content),
+        "advance-tasks-and-benchmarks": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state, rng }: StructuralSharingTickSystemContext) {
+                rng.nextUint32();
+                const task = state.tasks.instances["task"];
+                if (!task?.allocation) throw new Error("Missing task allocation fixture.");
+                return {
+                  ...state,
+                  tasks: {
+                    ...state.tasks,
+                    instances: {
+                      ...state.tasks.instances,
+                      task: {
+                        ...task,
+                        allocation: {
+                          ...task.allocation,
+                          deliveredUsefulComputeFlops:
+                            task.allocation.deliveredUsefulComputeFlops + 1,
+                        },
+                      },
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    });
+    const before = core.getStateForSave();
+
+    expect(() => core.step()).toThrow(/advance-tasks-and-benchmarks/);
+    expect(core.getStateForSave()).toEqual(before);
+    expect(core.getStateForSave().rngState).toBe(before.rngState);
+  });
+
+  test("recalculates after a command-only allocation output change", () => {
+    let calculations = 0;
+    const core = new SimCore({
+      initialState: readyState(),
+      commandHandlers: {
+        SET_GUIDANCE_MODE({ state }) {
+          const allocation = state.tasks.instances["task"]?.allocation;
+          if (allocation === null || allocation === undefined) {
+            throw new Error("Missing command delivery fixture.");
+          }
+          allocation.deliveredUsefulComputeFlops = 0;
+        },
+      },
+      tickSystems: createComputeTickSystems(content, {
+        onFacilityCalculation() {
+          calculations += 1;
+        },
+      }),
+    });
+    core.step();
+    const calculatedDelivery =
+      core.getStateForSave().tasks.instances["task"]?.allocation?.deliveredUsefulComputeFlops;
+    if (calculatedDelivery === undefined || calculatedDelivery === 0) {
+      throw new Error("Missing calculated delivery fixture.");
+    }
+
+    core.enqueue(guidanceCommand());
+    expect(core.processPendingCommands()).toHaveLength(1);
+    expect(
+      core.getStateForSave().tasks.instances["task"]?.allocation?.deliveredUsefulComputeFlops,
+    ).toBe(0);
+    expect(calculations).toBe(1);
+
+    core.step();
+    expect(calculations).toBe(2);
+    expect(
+      core.getStateForSave().tasks.instances["task"]?.allocation?.deliveredUsefulComputeFlops,
+    ).toBe(calculatedDelivery);
+  });
+
+  test("recalculates when an earlier stage changes only the owned delivery output", () => {
+    const cacheEvents: string[] = [];
+    let allocationRuns = 0;
+    const core = new SimCore({
+      initialState: readyState(),
+      tickSystems: {
+        "calculate-workload-allocation": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                allocationRuns += 1;
+                if (allocationRuns !== 2) return state;
+                const task = state.tasks.instances["task"];
+                if (!task?.allocation) throw new Error("Missing allocation-stage fixture.");
+                return {
+                  ...state,
+                  tasks: {
+                    ...state.tasks,
+                    instances: {
+                      ...state.tasks.instances,
+                      task: {
+                        ...task,
+                        allocation: { ...task.allocation, deliveredUsefulComputeFlops: 0 },
+                      },
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+        ...createComputeTickSystems(content, {
+          onComputeResultCacheEvent(event) {
+            cacheEvents.push(event);
+          },
+        }),
+      },
+    });
+
+    core.step();
+    const expectedDelivery =
+      core.getStateForSave().tasks.instances["task"]?.allocation?.deliveredUsefulComputeFlops;
+    core.step();
+
+    expect(cacheEvents).toEqual(["calculated", "calculated"]);
+    expect(
+      core.getStateForSave().tasks.instances["task"]?.allocation?.deliveredUsefulComputeFlops,
+    ).toBe(expectedDelivery);
+  });
+
+  test("reuses cached Compute after progress-only task changes preserve delivery", () => {
+    const cacheEvents: string[] = [];
+    const core = new SimCore({
+      initialState: readyState(),
+      tickSystems: {
+        ...createComputeTickSystems(content, {
+          onComputeResultCacheEvent(event) {
+            cacheEvents.push(event);
+          },
+        }),
+        "advance-tasks-and-benchmarks": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                const task = state.tasks.instances["task"];
+                if (task === undefined) throw new Error("Missing progress fixture.");
+                return {
+                  ...state,
+                  tasks: {
+                    ...state.tasks,
+                    instances: {
+                      ...state.tasks.instances,
+                      task: {
+                        ...task,
+                        phaseCompletedOperations: task.phaseCompletedOperations + 1,
+                        totalCompletedOperations: task.totalCompletedOperations + 1,
+                        accruedPayoutUsd: task.accruedPayoutUsd + 1,
+                      },
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    });
+
+    core.step(2);
+
+    expect(cacheEvents).toEqual(["calculated", "reused"]);
   });
 
   test("rejects overcommitted allocations atomically", () => {

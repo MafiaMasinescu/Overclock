@@ -56,6 +56,7 @@ export interface ModuleComputeCapacity {
  */
 export interface ComputeCalculationWitness {
   readonly expected: Readonly<FacilityComputeState>;
+  readonly expectedTaskDeliveries: Readonly<Record<string, number>>;
   readonly content: ContentBundle;
   readonly modules: GameState["facility"]["modules"];
   readonly power: GameState["facility"]["power"];
@@ -71,6 +72,7 @@ export interface ComputeCalculationWitness {
 
 export interface FacilityComputeCalculation {
   readonly compute: FacilityComputeState;
+  readonly taskDeliveries: Readonly<Record<string, number>>;
   readonly witness: ComputeCalculationWitness;
 }
 
@@ -387,6 +389,23 @@ interface PathMetric {
   readonly bandwidth: number;
 }
 
+function isPreferredMemoryProvider(
+  providerId: string,
+  latency: number,
+  bandwidth: number,
+  selectedProviderId: string | undefined,
+  selectedLatency: number,
+  selectedBandwidth: number,
+): boolean {
+  return (
+    selectedProviderId === undefined ||
+    latency < selectedLatency ||
+    (latency === selectedLatency &&
+      (bandwidth > selectedBandwidth ||
+        (bandwidth === selectedBandwidth && providerId.localeCompare(selectedProviderId) < 0)))
+  );
+}
+
 export type ComputePathCache = Map<string, ReadonlyMap<string, PathMetric>>;
 
 function bestPath(
@@ -581,11 +600,14 @@ export function calculateTaskComputeResult(
       const bandwidth = Math.min(read.bandwidth, write.bandwidth, providerBandwidth);
       const latency = Math.max(read.latency, write.latency);
       if (
-        bestProvider === undefined ||
-        latency < bestLatency ||
-        (latency === bestLatency &&
-          (bandwidth > bestBandwidth ||
-            (bandwidth === bestBandwidth && provider.localeCompare(bestProvider) < 0)))
+        isPreferredMemoryProvider(
+          provider,
+          latency,
+          bandwidth,
+          bestProvider,
+          bestLatency,
+          bestBandwidth,
+        )
       ) {
         bestProvider = provider;
         bestRead = read;
@@ -823,10 +845,24 @@ export function calculateFacilityComputeWithWitness(
     cachedMemoryProviders,
   );
   const expected = deepFreeze(compute);
+  const taskDeliveries: Record<string, number> = {};
+  for (const taskId of Object.keys(state.tasks.instances).toSorted()) {
+    const task = state.tasks.instances[taskId];
+    if (task?.allocation === null || task?.allocation === undefined) continue;
+    const deliveredUsefulComputeFlops =
+      task.status === "active" ? compute.byTask[taskId]?.breakdown.usefulComputeFlops : 0;
+    if (deliveredUsefulComputeFlops === undefined) {
+      throw new Error(`Compute result is missing active allocated task ${taskId}.`);
+    }
+    taskDeliveries[taskId] = deliveredUsefulComputeFlops;
+  }
+  deepFreeze(taskDeliveries);
   return {
     compute,
+    taskDeliveries,
     witness: Object.freeze({
       expected,
+      expectedTaskDeliveries: taskDeliveries,
       content,
       modules: state.facility.modules,
       power: state.facility.power,
@@ -840,6 +876,26 @@ export function calculateFacilityComputeWithWitness(
       topology,
     }),
   };
+}
+
+function hasExactTaskDeliveries(
+  taskInstances: Readonly<GameState["tasks"]["instances"]>,
+  expected: Readonly<Record<string, number>>,
+): boolean {
+  let allocationCount = 0;
+  for (const taskId in taskInstances) {
+    if (!Object.hasOwn(taskInstances, taskId)) continue;
+    const allocation = taskInstances[taskId]?.allocation;
+    if (allocation === null || allocation === undefined) continue;
+    allocationCount += 1;
+    if (
+      !Object.hasOwn(expected, taskId) ||
+      !Object.is(expected[taskId], allocation.deliveredUsefulComputeFlops)
+    ) {
+      return false;
+    }
+  }
+  return allocationCount === Object.keys(expected).length;
 }
 
 function hasCurrentWitnessDependencies(
@@ -873,6 +929,7 @@ export function validateFreshComputeWitness(
   state: Readonly<GameState>,
   content: ContentBundle,
   candidate: Readonly<FacilityComputeState>,
+  candidateTaskInstances: Readonly<GameState["tasks"]["instances"]>,
   witness: ComputeCalculationWitness,
   topology?: ComputeTopology,
 ): string[] {
@@ -880,9 +937,12 @@ export function validateFreshComputeWitness(
     if (!hasCurrentWitnessDependencies(state, content, witness, topology)) {
       return ["Compute calculation inputs changed before candidate-state validation."];
     }
-    return candidate === witness.expected
+    if (candidate !== witness.expected) {
+      return ["Compute candidate does not match its detached exact calculation evidence."];
+    }
+    return hasExactTaskDeliveries(candidateTaskInstances, witness.expectedTaskDeliveries)
       ? []
-      : ["Compute candidate does not match its detached exact calculation evidence."];
+      : ["Compute candidate task deliveries do not match exact calculation evidence."];
   } catch (error: unknown) {
     return [error instanceof Error ? error.message : "Compute calculation validation failed."];
   }

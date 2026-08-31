@@ -328,9 +328,22 @@ pure Task 9 p95 `0.1684/0.1858/0.1667 ms` and complete production p95
 `2.8424/3.1910/2.8493 ms`. A later independent run set was irregular because unrelated Opera and
 ChatGPT processes consumed several CPU cores and slowed unrelated diagnostic sections together; the
 project owner explicitly accepted that host-load exception for checkpointing. The permanent fixture,
-sample counts, warm-up rules, unfiltered results, and `<0.35 ms`/`<4 ms` gates remain unchanged. Task 9
-is complete at this boundary; Task 10 remains the next planned task, and no Task 10 lifecycle,
+sample counts, warm-up rules, unfiltered results, and `<0.35 ms`/`<4 ms` gates remain unchanged. Task
+9.1 through Task 9.4 are checkpointed at `05dde712a81d2d8b5eae60a4116b80b3c23eff92`; Task 9.5 is the
+current correction boundary. Task 10 remains the next planned task, and no Task 10 lifecycle,
 allocation selection, progress, deadline, payout, or acceptance policy is implemented here.
+
+### Task 9.5: Output ownership and structural validation correction
+
+ADR-0015 makes task delivery a Compute-owned output from the Compute stage through tick commit. Fresh
+evidence covers the exact frozen facility result and detached task-ID/delivery values; a private
+post-Compute guard rejects later-stage delivery replacement atomically. The result cache includes the
+delivery scalar and stores the post-calculation projection, while progress-only Task changes remain
+reusable. Stored requested frequency is finite and strictly positive, and stored operational ratio is
+exactly zero or one; historical validation otherwise remains independent of later inputs. Provider
+selection is explicitly lower worst read/write latency, then higher minimum bandwidth, then lexical
+provider ID. This correction changes no formula, balancing, topology direction, fixture, sample count,
+threshold, or Task 10 policy.
 
 ## Nu implementa
 

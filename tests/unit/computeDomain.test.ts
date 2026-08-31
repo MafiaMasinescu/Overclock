@@ -540,12 +540,24 @@ describe("Task 9.2 pure Useful Compute domain", () => {
     const state = activeTaskState();
     const topology = computeDomain.buildComputeTopology(state.facility, content);
     const transaction = computeDomain.calculateFacilityComputeWithWitness(state, content, topology);
+    const candidateTasks = structuredClone(state.tasks.instances);
+    const candidateAllocation = candidateTasks["task"]?.allocation;
+    const expectedDelivery = transaction.compute.byTask["task"]?.breakdown.usefulComputeFlops;
+    if (
+      candidateAllocation === null ||
+      candidateAllocation === undefined ||
+      expectedDelivery === undefined
+    ) {
+      throw new Error("Missing fresh delivery evidence fixture.");
+    }
+    candidateAllocation.deliveredUsefulComputeFlops = expectedDelivery;
 
     expect(
       computeDomain.validateFreshComputeWitness(
         state,
         content,
         transaction.compute,
+        candidateTasks,
         transaction.witness,
         topology,
       ),
@@ -554,6 +566,8 @@ describe("Task 9.2 pure Useful Compute domain", () => {
     expect(Object.isFrozen(transaction.compute)).toBe(true);
     expect(Object.isFrozen(transaction.compute.byTask)).toBe(true);
     expect(Object.isFrozen(transaction.compute.byTask["task"]?.breakdown.bottlenecks)).toBe(true);
+    expect(Object.isFrozen(transaction.witness.expectedTaskDeliveries)).toBe(true);
+    expect(transaction.witness.expectedTaskDeliveries).not.toBe(candidateTasks);
 
     const tampered = structuredClone(transaction.compute);
     const tamperedModule = tampered.byModule["compute"];
@@ -572,6 +586,7 @@ describe("Task 9.2 pure Useful Compute domain", () => {
         state,
         content,
         tampered,
+        candidateTasks,
         transaction.witness,
         topology,
       ),
@@ -579,6 +594,19 @@ describe("Task 9.2 pure Useful Compute domain", () => {
     expect(transaction.witness.expected.totalAllocatedUsefulComputeFlops).toBe(
       transaction.compute.totalAllocatedUsefulComputeFlops,
     );
+
+    candidateAllocation.deliveredUsefulComputeFlops += 1;
+    expect(transaction.witness.expectedTaskDeliveries["task"]).toBe(expectedDelivery);
+    expect(
+      computeDomain.validateFreshComputeWitness(
+        state,
+        content,
+        transaction.compute,
+        candidateTasks,
+        transaction.witness,
+        topology,
+      ),
+    ).toEqual(["Compute candidate task deliveries do not match exact calculation evidence."]);
   });
 
   test("invalidates a fresh witness when an actual Compute input branch changes", () => {
@@ -603,6 +631,7 @@ describe("Task 9.2 pure Useful Compute domain", () => {
         changedState,
         content,
         transaction.compute,
+        changedState.tasks.instances,
         transaction.witness,
         topology,
       ),

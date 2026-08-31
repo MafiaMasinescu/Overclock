@@ -104,6 +104,46 @@ function parseClockCommand(command: ClockCommand): ClockCommand {
 
 type TickSystemRuntimeRegistry = Readonly<Partial<Record<TickSystemStage, TickSystemRuntime>>>;
 
+interface ComputeOwnedDeliveryProjection {
+  readonly byTask: Readonly<Record<string, number>>;
+  readonly allocationCount: number;
+}
+
+function captureComputeOwnedDeliveries(
+  instances: Readonly<GameState["tasks"]["instances"]>,
+): ComputeOwnedDeliveryProjection {
+  const byTask: Record<string, number> = {};
+  let allocationCount = 0;
+  for (const taskId in instances) {
+    if (!Object.hasOwn(instances, taskId)) continue;
+    const allocation = instances[taskId]?.allocation;
+    if (allocation === null || allocation === undefined) continue;
+    byTask[taskId] = allocation.deliveredUsefulComputeFlops;
+    allocationCount += 1;
+  }
+  return Object.freeze({ byTask: Object.freeze(byTask), allocationCount });
+}
+
+function preservesComputeOwnedDeliveries(
+  instances: Readonly<GameState["tasks"]["instances"]>,
+  expected: ComputeOwnedDeliveryProjection,
+): boolean {
+  let allocationCount = 0;
+  for (const taskId in instances) {
+    if (!Object.hasOwn(instances, taskId)) continue;
+    const allocation = instances[taskId]?.allocation;
+    if (allocation === null || allocation === undefined) continue;
+    allocationCount += 1;
+    if (
+      !Object.hasOwn(expected.byTask, taskId) ||
+      !Object.is(expected.byTask[taskId], allocation.deliveredUsefulComputeFlops)
+    ) {
+      return false;
+    }
+  }
+  return allocationCount === expected.allocationCount;
+}
+
 function hasRegisteredSystem(tickSystems: TickSystemRuntimeRegistry): boolean {
   return TICK_SYSTEM_STAGE_ORDER.some((stage) => tickSystems[stage] !== undefined);
 }
@@ -270,6 +310,7 @@ export class SimCore {
     let lastExecutedStage: TickSystemStage | undefined;
     let validatedCompute = current.facility.compute;
     let validatedTaskInstances = current.tasks.instances;
+    let computeOwnedDeliveries: ComputeOwnedDeliveryProjection | undefined;
 
     // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in every production tick.
     for (let stageIndex = 0; stageIndex < TICK_SYSTEM_STAGE_ORDER.length; stageIndex += 1) {
@@ -290,6 +331,14 @@ export class SimCore {
         const nextRngState = candidateRng.getState();
         if (candidate.rngState !== nextRngState) {
           candidate = { ...candidate, rngState: nextRngState };
+        }
+        if (stage === "calculate-theoretical-and-useful-compute") {
+          computeOwnedDeliveries = captureComputeOwnedDeliveries(candidate.tasks.instances);
+        } else if (
+          computeOwnedDeliveries !== undefined &&
+          !preservesComputeOwnedDeliveries(candidate.tasks.instances, computeOwnedDeliveries)
+        ) {
+          throw new Error("Later tick stages must preserve Compute-owned task delivery outputs.");
         }
         this.assertSystemControlledFields(candidate, current);
         assertValidRngState(candidate.rngState);

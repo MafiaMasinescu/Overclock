@@ -213,6 +213,7 @@ function measureFreshCalculationAndValidation(): {
         state,
         thermalPerformanceContent,
         calculation.compute,
+        state.tasks.instances,
         calculation.witness,
         topology,
       ).length
@@ -236,6 +237,7 @@ function measureFreshCalculationAndValidation(): {
         state,
         thermalPerformanceContent,
         calculation.compute,
+        state.tasks.instances,
         calculation.witness,
         topology,
       ).length

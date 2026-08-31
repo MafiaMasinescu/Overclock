@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-08-30
+Updated: 2026-08-31
 
 ## Current phase
 
@@ -28,12 +28,11 @@ Updated: 2026-08-30
   update.
 - Phase 1 Task 8, deterministic Overclock and Stability foundations, pure formulas, lifecycle,
   transactional commands, production integration, and performance hardening, is complete.
-- Phase 1 Task 9, deterministic Useful Compute contracts, pure domain, directed data topology,
-  transactional production integration, calculate-once exact validation, and performance hardening,
-  is complete and checkpointed by the commit containing this status update. The checkpoint records
-  the explicitly accepted host-load performance irregularity below without weakening the permanent
-  diagnostic or its thresholds. The next planned task is Phase 1 Task 10; no Task 10 work is included
-  here.
+- Phase 1 Task 9.1 through Task 9.4, deterministic Useful Compute contracts, pure domain, directed data
+  topology, transactional production integration, calculate-once exact validation, and performance
+  hardening, are checkpointed at `05dde712a81d2d8b5eae60a4116b80b3c23eff92`. Task 9.5 is the current
+  output-ownership and structural-validation correction boundary under ADR-0015. Phase 1 Task 10 has
+  not begun.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
   `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN`,
@@ -504,6 +503,13 @@ warm-up iterations.
   Commit still recursively freezes every newly owned object, while previously verified immutable
   branches are structurally shared. Any failure rolls back state, tick, clock, RNG, IDs, receipts,
   allocations, and results.
+- ADR-0015 corrects delivery ownership and stored ratio structure without changing gameplay. The
+  private task projection includes `deliveredUsefulComputeFlops` and stores its post-calculation value;
+  fresh evidence covers both the exact frozen facility result and detached expected task deliveries.
+  A private post-Compute guard makes later-stage delivery replacement fatal and rolls back state and
+  RNG, while progress/payout-only changes remain cache-compatible. Stored requested frequency is
+  strictly positive and operational ratio is exactly zero or one. Provider selection is explicitly
+  lower worst read/write latency, then higher minimum bandwidth, then lexical provider ID.
 - Test additions are limited to distinct failure classes and reuse shared fixtures/table rows. Task 10
   exclusively owns allocation selection/lifecycle, acceptance, progress, deadlines, rewards, research,
   and benchmark policy.
@@ -513,6 +519,20 @@ warm-up iterations.
 
 ## Verification
 
+- Task 9.5 focused state/domain/cache/SimCore/compatibility/exact-100 verification: PASS, 7 files and
+  98 tests. Standalone unit verification: PASS, 36 files and 580 tests. Standalone determinism: PASS,
+  8 files and 10 tests. Two separate clean `pnpm test` processes passed those same unit and
+  determinism suites. Aggregate validation passed formatting, ESLint, strict TypeScript, content
+  validation, and a production build of 846 modules. The standalone production build, diff check,
+  simulator forbidden API/import scan, adjacent-port-graph scan, and balancing/GDD/Word drift checks
+  also pass.
+- The unchanged Task 9 diagnostic on 31 August 2026 measured pure median/p95/max
+  `0.0678/0.1468/1.4512 ms` (500 samples) and complete production
+  `1.8632/3.1380/13.8847 ms` (200 samples), passing the permanent `<0.35 ms` and `<4 ms` p95 gates.
+  Cold topology was `0.1965/0.4404/1.9985 ms`; changed congestion and allocation
+  `0.0804/0.1229/1.2449 ms`; transitions `0.0814/0.1113/2.5101 ms`; fresh result/witness
+  `0.1258/0.1854/0.6129 ms`; exact witness validation `0.0030/0.0048/0.0419 ms`. Fixture, warm-up,
+  samples, formulas, balancing, and thresholds remain unchanged.
 - Focused Task 9 state, pure-domain, production, witness, and compatibility coverage: PASS, 6 files
   and 87 tests. The coverage includes exactly one full facility calculation, immutable result/evidence,
   every result-family tamper, every actual dependency family, directed and bidirectional routes,
@@ -659,10 +679,9 @@ warm-up iterations.
 ## Task boundary
 
 Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc` on local `main` and
-`origin/main`. Task 7.1 through 7.4 and Task 8 are complete. Task 9.1 through Task 9.4 are complete and
-checkpointed by the commit containing this status update, with the explicitly accepted host-load
-performance irregularity recorded above. The exact next planned boundary is Phase 1 Task 10, which
-is not implemented by this work.
+`origin/main`. Task 7.1 through 7.4 and Task 8 are complete. Task 9.1 through Task 9.4 are checkpointed
+at `05dde712a81d2d8b5eae60a4116b80b3c23eff92`; Task 9.5 is the current correction boundary under
+ADR-0015. The exact next planned boundary is Phase 1 Task 10, which is not implemented by this work.
 
 ## Phase 1 Task 6 implementation
 

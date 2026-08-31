@@ -219,4 +219,48 @@ describe("Task 9.1 Useful Compute foundations", () => {
 
     expect(validate(state)).toEqual([]);
   });
+
+  test.each([
+    ["requested frequency zero", "requestedFrequencyRatio", 0],
+    ["requested frequency negative zero", "requestedFrequencyRatio", -0],
+    ["fractional operational ratio", "operationalRatio", 0.5],
+    ["operational negative zero", "operationalRatio", -0],
+  ] as const)("rejects %s in a stored module result", (_name, field, value) => {
+    const state = calculatedState();
+    const result = state.facility.compute.byModule["module-compute-a"];
+    if (result === undefined) throw new Error("Missing module compute fixture.");
+    result[field] = value;
+    if (field === "operationalRatio") {
+      result.theoreticalComputeFlops = value * 100;
+      result.availableComputeFlops = value * 100;
+      state.facility.compute.totalTheoreticalComputeFlops = value * 100;
+      state.facility.compute.totalAvailableComputeFlops = value * 100;
+      const task = state.facility.compute.byTask["task-instance-a"];
+      if (task === undefined) throw new Error("Missing task compute fixture.");
+      task.breakdown.theoreticalComputeFlops = value * 100;
+      task.breakdown.usefulComputeFlops = value * 100;
+      state.facility.compute.totalAllocatedUsefulComputeFlops = value * 100;
+    }
+
+    expect(validate(state).map((issue) => issue.path)).toContain(
+      `facility.compute.byModule.module-compute-a.${field}`,
+    );
+  });
+
+  test.each([0, 1] as const)("accepts operational ratio %s", (operationalRatio) => {
+    const state = calculatedState();
+    const result = state.facility.compute.byModule["module-compute-a"];
+    if (result === undefined) throw new Error("Missing module compute fixture.");
+    result.operationalRatio = operationalRatio;
+    result.theoreticalComputeFlops = operationalRatio * 100;
+    result.availableComputeFlops = operationalRatio * 100;
+    state.facility.compute.totalTheoreticalComputeFlops = operationalRatio * 100;
+    state.facility.compute.totalAvailableComputeFlops = operationalRatio * 100;
+    if (operationalRatio === 0) {
+      state.facility.compute.byTask = {};
+      state.facility.compute.totalAllocatedUsefulComputeFlops = 0;
+    }
+
+    expect(validate(state)).toEqual([]);
+  });
 });

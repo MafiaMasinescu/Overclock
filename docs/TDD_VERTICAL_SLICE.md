@@ -1040,6 +1040,20 @@ metrics only when route structure and effective capacities remain exact; immutab
 and exactly equal frozen module-result records may be structurally shared. Failures roll back the
 whole tick and Compute consumes no RNG.
 
+ADR-0015 fixes Compute output ownership without changing formulas. The fresh witness also retains a
+detached frozen task-ID/delivery record, and fresh validation requires both the exact frozen facility
+result and exact candidate allocation deliveries. The result cache projects
+`deliveredUsefulComputeFlops` and stores the post-calculation projection. Progress, payout, and other
+unrelated Task changes can therefore retain a cache hit when Compute inputs and delivery are unchanged,
+while status and phase changes preserve the current tick's delivery but remain inputs for the following
+tick. A command or earlier-stage output change forces calculation on the next real tick.
+After Compute runs, a private transaction-only guard rejects any later stage that changes an allocated
+task's delivery and rolls back state and RNG. Stored results remain historical. A stored requested
+frequency is finite and strictly positive; operational ratio is exactly zero or one; negative zero is
+invalid. Memory-provider choice remains lower worst read/write latency, then higher minimum
+read/write/provider bandwidth, then lexical provider ID. None of this evidence enters authoritative
+state, saves, replay, hashes, compatibility vectors, receipts, or public APIs.
+
 `corepack pnpm performance:compute` measures 200 cold topology samples, 500 warm pure samples, and
 200 samples each for production, changed congestion/allocation, transitions, calculate-once witness
 construction, and exact witness validation after 100 excluded warm-ups. Three final i7-2600 processes

@@ -54,6 +54,7 @@ interface TaskCalculationInput {
   readonly phaseIndex: number;
   readonly clusterModuleIds: readonly string[] | null;
   readonly requestedShare: number | null;
+  readonly deliveredUsefulComputeFlops: number | null;
 }
 
 function resolveTopology(
@@ -110,6 +111,7 @@ function taskInputs(state: Readonly<GameState>): readonly TaskCalculationInput[]
         phaseIndex: task.currentPhaseIndex,
         clusterModuleIds: task.allocation?.clusterModuleIds ?? null,
         requestedShare: task.allocation?.requestedShare ?? null,
+        deliveredUsefulComputeFlops: task.allocation?.deliveredUsefulComputeFlops ?? null,
       };
     });
 }
@@ -127,6 +129,7 @@ function sameTaskInputs(
       input.status !== candidate.status ||
       input.phaseIndex !== candidate.phaseIndex ||
       input.requestedShare !== candidate.requestedShare ||
+      !Object.is(input.deliveredUsefulComputeFlops, candidate.deliveredUsefulComputeFlops) ||
       input.clusterModuleIds?.length !== candidate.clusterModuleIds?.length
     )
       return false;
@@ -181,14 +184,13 @@ function assertCurrentComputeInputs(
 
 function withDeliveredUsefulCompute(
   state: Readonly<GameState>,
-  compute: GameState["facility"]["compute"],
+  taskDeliveries: Readonly<Record<string, number>>,
 ): GameState["tasks"] {
   let instances = state.tasks.instances;
   for (const taskId of Object.keys(state.tasks.instances).toSorted()) {
     const task = state.tasks.instances[taskId];
     if (!task?.allocation) continue;
-    const deliveredUsefulComputeFlops =
-      task.status === "active" ? compute.byTask[taskId]?.breakdown.usefulComputeFlops : 0;
+    const deliveredUsefulComputeFlops = taskDeliveries[taskId];
     if (deliveredUsefulComputeFlops === undefined) {
       throw new Error(`Compute result is missing active allocated task ${taskId}.`);
     }
@@ -276,7 +278,7 @@ export function createComputeTickSystems(
             );
             options.onFacilityCalculation?.();
             const compute = calculation.compute;
-            const tasks = withDeliveredUsefulCompute(state, compute);
+            const tasks = withDeliveredUsefulCompute(state, calculation.taskDeliveries);
             const candidate: GameState = {
               ...state,
               facility: { ...state.facility, compute },
@@ -286,24 +288,28 @@ export function createComputeTickSystems(
               state,
               content,
               candidate.facility.compute,
+              candidate.tasks.instances,
               calculation.witness,
               topologyCache.topology,
             );
             if (issues.length > 0) {
               throw new Error(`Invalid Compute tick result:\n${issues.join("\n")}`);
             }
+            const candidateTaskInputs = taskInputs(candidate);
             lastCalculation = {
               modules: state.facility.modules,
               power: state.facility.power,
               overclock: state.facility.overclock,
               routes: state.facility.routes,
-              taskInputs: currentTaskInputs,
+              taskInputs: candidateTaskInputs,
               liveLayoutRevision: state.facility.liveLayoutRevision,
               thermalRevision: state.facility.thermalRevision,
               facilityWidth: state.facility.size.width,
               facilityHeight: state.facility.size.height,
               compute,
             };
+            taskInputInstances = candidate.tasks.instances;
+            cachedTaskInputs = candidateTaskInputs;
             options.onComputeResultCacheEvent?.("calculated");
             return candidate;
           },
