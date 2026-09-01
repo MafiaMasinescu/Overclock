@@ -1086,6 +1086,30 @@ offered -> accepted -> active <-> hold -> completed
 
 Acceptarea verifică cerințele minime și un slot liber. Jucătorul poate accepta un task cu performanță insuficientă dacă cerințele hard sunt îndeplinite. UI afișează riscul de deadline înainte de confirmare.
 
+### 22.1.1 Contract autoritativ Task 10
+
+`tasks.activeSlotCount` este capacitatea de sloturi, nu numÄƒrul ocupat. `nextTaskInstanceSequence`
+porneÈ™te la `1`, nu se reutilizeazÄƒ È™i formeazÄƒ `task-instance-00000001` cu minimum opt cifre.
+`campaign.reputation` porneÈ™te la `0`. O instanÈ›Äƒ Service nonterminalÄƒ pÄƒstreazÄƒ boolean-ul
+`serviceWindowCompliant`; câmpul este `null` pentru non-Service È™i Service terminale. Offer-urile sunt
+doar definition IDs; nu au instanÈ›e, sunt distincte de instanÈ›e È™i rÄƒmân ordonate stabil din content.
+Accepted/active/hold ocupÄƒ slot; accepted nu are allocation, active are allocation, hold o reÈ›ine, iar
+terminalele pÄƒstreazÄƒ istoricul final. Contractul complet de validare, deadline, rewards È™i SLA este
+ADR-0016; Task 10.1 nu proceseazÄƒ lifecycle, progress, deadline sau bani.
+
+The completed Task 10 contract is deterministic. `activeSlotCount` is slot capacity;
+`nextTaskInstanceSequence` starts at `1`, never reuses a value, and generates
+`task-instance-00000001`. `campaign.reputation` starts at `0`; a nonterminal service owns boolean
+`serviceWindowCompliant`, which is null for non-services and terminal services. Offers are stable content
+IDs, never instances, and are disjoint from instances. Accepted, active, and hold consume a slot;
+accepted has no allocation, active requires one, hold retains one, and terminal instances retain history.
+
+`ACCEPT_TASK`, `ALLOCATE_TASK`, `SET_TASK_HOLD`, and `ABANDON_TASK` use the existing queued command
+processor. Allocation is lexical, distinct, nonempty, includes a positive-base-compute live module, and
+uses a share in `(0, 1]`; active shares total at most one per module while hold reserves none. Dynamic
+Power, thermal, routing, memory, lifecycle, or disconnection conditions are Task 9 delivery concerns,
+not allocation rejection reasons. Abandonment applies its exact contractual microdollar penalty.
+
 ### 22.2 Progres
 
 ```text
@@ -1094,9 +1118,30 @@ operations completed this tick = allocated Useful Compute × dt seconds
 
 Pentru task-uri multi-phase, următoarea fază poate schimba tag-urile și cerințele. Progress-ul total și progress-ul fazei se păstrează separat.
 
+Task advancement runs after Compute on every real tick. An active allocated task progresses only when its
+current Task 9 result matches its ID, definition, and phase and is runnable and stable enough:
+`operations = deliveredUsefulComputeFlops * 0.1`. Blocked or below-minimum stability gives exactly zero
+progress. A phase clamps exactly, discards surplus, and starts its successor on the following tick. At
+the start of advancement, `tick >= deadlineTick` fails an unfinished accepted, active, or hold task
+before progress; `deadlineTick - 1` is the final progress tick. Completion is terminal and applies cash,
+total income, accrued payout, reputation, Research Data, and lexically unique Evidence rewards once.
+
 ### 22.3 Hold și abandon
 
 Hold oprește alocarea de compute, dar deadline-ul continuă. Abandonul cere confirmare și aplică penalizarea definită. Task-urile tutorial pot avea reguli speciale explicite în conținut, fără hardcoding după ID în sistemul generic.
+
+Service compliance begins at acceptance. Every tick in a periodic window must be active, runnable,
+above the phase stability minimum, and deliver positive Useful Compute. At the exact interval boundary,
+a wholly compliant window pays its full periodic amount; otherwise it pays zero. Windows do not prorate
+or catch up, reset only while nonterminal, and may settle alongside final completion. Offer reconciliation
+preserves eligible offers, excludes instantiated definitions, admits current-year/completed-prerequisite
+definitions in content order, and observes Research completed later in the same tick on the next tick.
+
+Task calculation uses detached, private same-transaction evidence over content, Tasks, Task 9 output,
+campaign, Research, economy, and tick. The `SimCore` runtime applies only changed Task/campaign/Research/
+economy branches, preserves Compute-owned delivery, and rolls back the whole tick and RNG on a failure.
+Stored Task 9 output is historical and is not reinterpreted after a Task lifecycle change. Task
+advancement consumes no RNG.
 
 ### 22.4 Tag-uri predictive
 

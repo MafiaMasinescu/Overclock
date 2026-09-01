@@ -8,6 +8,7 @@ import { createSeededRngFromState } from "../rng/seededRng.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import { assertValidStoredComputeState } from "../compute/computeState.ts";
 import { assertValidDesignModeState } from "../design/designModeState.ts";
+import { assertValidStoredTaskState } from "../tasks/taskState.ts";
 import { AuthoritativeState } from "./authoritativeState.ts";
 import {
   TICK_SYSTEM_STAGE_ORDER,
@@ -184,6 +185,7 @@ export class SimCore {
     assertValidClockAndTick(initialState);
     assertValidStoredComputeState(initialState);
     assertValidDesignModeState(initialState);
+    assertValidStoredTaskState(initialState);
     assertCanonicalSerializable(initialState);
 
     this.authoritativeState = new AuthoritativeState(initialState);
@@ -275,6 +277,7 @@ export class SimCore {
     const snapshot = this.authoritativeState.snapshot();
     assertValidClockAndTick(snapshot);
     assertValidStoredComputeState(snapshot);
+    assertValidStoredTaskState(snapshot);
     assertCanonicalSerializable(snapshot);
     return snapshot;
   }
@@ -287,6 +290,7 @@ export class SimCore {
     assertValidStoredComputeState(state);
     assertValidInventoryEconomyState(state);
     assertValidDesignModeState(state);
+    assertValidStoredTaskState(state);
     assertCanonicalSerializable(state);
     for (const stage of TICK_SYSTEM_STAGE_ORDER) {
       this.tickSystems[stage]?.validateLifecycleState?.(state);
@@ -309,7 +313,9 @@ export class SimCore {
     const candidateRng = createSeededRngFromState(candidate.rngState);
     let lastExecutedStage: TickSystemStage | undefined;
     let validatedCompute = current.facility.compute;
-    let validatedTaskInstances = current.tasks.instances;
+    let validatedTasks = current.tasks;
+    let validatedCampaign = current.campaign;
+    let validatedResearch = current.research;
     let computeOwnedDeliveries: ComputeOwnedDeliveryProjection | undefined;
 
     // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in every production tick.
@@ -343,17 +349,23 @@ export class SimCore {
         this.assertSystemControlledFields(candidate, current);
         assertValidRngState(candidate.rngState);
         // Stored Compute is historical state. Structural-sharing stages cannot mutate its frozen
-        // branch in place, so revalidating it after an unrelated Power/Thermal stage adds no
-        // coverage. Revalidate immediately when either relevant branch changes; mutable-clone
-        // pipelines remain conservatively checked after every stage.
-        if (
-          this.runsMutableTickSystems ||
-          candidate.facility.compute !== validatedCompute ||
-          candidate.tasks.instances !== validatedTaskInstances
-        ) {
+        // branch in place, and later Task lifecycle changes must not reinterpret a current Compute
+        // result. Revalidate immediately when the Compute branch changes; mutable-clone pipelines
+        // remain conservatively checked after every stage.
+        if (this.runsMutableTickSystems || candidate.facility.compute !== validatedCompute) {
           assertValidStoredComputeState(candidate);
           validatedCompute = candidate.facility.compute;
-          validatedTaskInstances = candidate.tasks.instances;
+        }
+        if (
+          this.runsMutableTickSystems ||
+          candidate.tasks !== validatedTasks ||
+          candidate.campaign !== validatedCampaign ||
+          candidate.research !== validatedResearch
+        ) {
+          assertValidStoredTaskState(candidate);
+          validatedTasks = candidate.tasks;
+          validatedCampaign = candidate.campaign;
+          validatedResearch = candidate.research;
         }
         if (this.runsMutableTickSystems) {
           assertValidInventoryEconomyState(candidate);
@@ -395,6 +407,7 @@ export class SimCore {
     };
     assertValidClockAndTick(completed);
     if (!computeAlreadyValidated) assertValidStoredComputeState(completed);
+    assertValidStoredTaskState(completed);
     return completed;
   }
 

@@ -363,6 +363,7 @@ export function createTask9PerformanceFixture(seed: string): GameState {
       totalCompletedOperations: 0,
       allocation: { clusterModuleIds, requestedShare: 0.5, deliveredUsefulComputeFlops: 0 },
       accruedPayoutUsd: 0,
+      serviceWindowCompliant: null,
     },
     "task-9-bandwidth": {
       id: "task-9-bandwidth",
@@ -375,7 +376,9 @@ export function createTask9PerformanceFixture(seed: string): GameState {
       totalCompletedOperations: 0,
       allocation: { clusterModuleIds, requestedShare: 0.5, deliveredUsefulComputeFlops: 0 },
       accruedPayoutUsd: 0,
+      serviceWindowCompliant: null,
     },
   };
+  state.tasks.offers = [];
   return state;
 }

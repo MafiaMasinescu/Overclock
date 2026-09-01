@@ -12,6 +12,7 @@ import {
 } from "../schemas/contentSchemas.ts";
 import { deepFreeze } from "./deepFreeze.ts";
 import { createRawContentPack, type RawContentPack } from "./rawContentPack.ts";
+import { secondsToTaskTicks } from "../../sim/tasks/taskState.ts";
 
 export interface ContentIssue {
   readonly path: string;
@@ -358,8 +359,47 @@ export function validateContent(raw: RawContentPack): ContentBundle {
         });
       }
     });
+    if (task.type === "service") {
+      if (task.periodicPayoutUsd <= 0 || task.periodicPayoutSeconds === null) {
+        issues.push({
+          path: `tasks.tasks[${taskIndex}]`,
+          message: "service tasks require positive periodic payout and periodic payout seconds",
+        });
+      }
+    } else if (task.periodicPayoutUsd !== 0 || task.periodicPayoutSeconds !== null) {
+      issues.push({
+        path: `tasks.tasks[${taskIndex}]`,
+        message: "non-service tasks require zero periodic payout and null periodic payout seconds",
+      });
+    }
+    for (const [field, seconds] of [
+      ["deadlineSeconds", task.deadlineSeconds],
+      ["periodicPayoutSeconds", task.periodicPayoutSeconds],
+    ] as const) {
+      if (seconds === null) continue;
+      try {
+        secondsToTaskTicks(seconds, `tasks.tasks[${taskIndex}].${field}`);
+      } catch {
+        issues.push({
+          path: `tasks.tasks[${taskIndex}].${field}`,
+          message: "must convert exactly to a positive safe integer 100 ms tick count",
+        });
+      }
+    }
+    if (new Set(task.evidenceTagRewards).size !== task.evidenceTagRewards.length) {
+      issues.push({
+        path: `tasks.tasks[${taskIndex}].evidenceTagRewards`,
+        message: "must contain unique evidence reward IDs",
+      });
+    }
     task.phases.forEach((phase, phaseIndex) => {
       validateLocalization(locales, phase.nameKey, issues);
+      if (!Number.isFinite(phase.operations) || phase.operations <= 0) {
+        issues.push({
+          path: `tasks.tasks[${taskIndex}].phases[${phaseIndex}].operations`,
+          message: "must be finite and strictly positive",
+        });
+      }
       if (phase.memoryCapacityRecommendedBytes < phase.memoryCapacityMinBytes) {
         issues.push({
           path: `tasks.tasks[${taskIndex}].phases[${phaseIndex}].memoryCapacityRecommendedBytes`,

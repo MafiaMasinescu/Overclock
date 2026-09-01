@@ -92,6 +92,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
       objectiveKey: "ui.objective",
       transistorRevealed: false,
       verticalSliceCompleted: false,
+      reputation: 0,
     },
     economy: {
       cashUsd: quantizeUsd(content.era.startingCashUsd),
@@ -128,6 +129,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
     inventory: { stacks: inventoryStacks },
     tasks: {
       activeSlotCount: content.era.activeTaskSlots,
+      nextTaskInstanceSequence: 1,
       offers: initialTaskOffers,
       instances: {},
     },

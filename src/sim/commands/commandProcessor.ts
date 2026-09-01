@@ -2,6 +2,7 @@ import type { GameState } from "../core/types.ts";
 import { AuthoritativeState } from "../core/authoritativeState.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import { assertValidDesignModeState } from "../design/designModeState.ts";
+import { assertValidStoredTaskState } from "../tasks/taskState.ts";
 import { assertCanonicalSerializable } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "./contracts.ts";
@@ -53,6 +54,7 @@ function validateCandidateState(
   }
   assertValidInventoryEconomyState(candidate);
   assertValidDesignModeState(candidate, minimumModuleInstanceSequence, minimumRouteSequence);
+  assertValidStoredTaskState(candidate);
 }
 
 function createRejectedResult(
@@ -91,6 +93,7 @@ export class CommandProcessor {
   ) {
     assertValidInventoryEconomyState(initialState);
     assertValidDesignModeState(initialState);
+    assertValidStoredTaskState(initialState);
     this.state = dependencies.state ?? new AuthoritativeState(initialState);
     this.queue = dependencies.queue ?? new CommandQueue();
     this.handlers = handlers;

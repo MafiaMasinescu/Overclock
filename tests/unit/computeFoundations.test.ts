@@ -214,6 +214,7 @@ describe("Task 9.1 Useful Compute foundations", () => {
           deliveredUsefulComputeFlops: 100,
         },
         accruedPayoutUsd: 0,
+        serviceWindowCompliant: null,
       },
     };
 

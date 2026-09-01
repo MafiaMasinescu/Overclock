@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-08-31
+Updated: 2026-09-01
 
 ## Current phase
 
@@ -28,19 +28,18 @@ Updated: 2026-08-31
   update.
 - Phase 1 Task 8, deterministic Overclock and Stability foundations, pure formulas, lifecycle,
   transactional commands, production integration, and performance hardening, is complete.
-- Phase 1 Task 9.1 through Task 9.4, deterministic Useful Compute contracts, pure domain, directed data
-  topology, transactional production integration, calculate-once exact validation, and performance
-  hardening, are checkpointed at `05dde712a81d2d8b5eae60a4116b80b3c23eff92`. Task 9.5 is the current
-  output-ownership and structural-validation correction boundary under ADR-0015. Phase 1 Task 10 has
-  not begun.
+- Phase 1 Task 9.1 through Task 9.5, deterministic Useful Compute and output ownership, are
+  checkpointed at `d5dcab86c016f75bdc43d5db37258dcc54bc28c9`. Phase 1 Task 10, deterministic Task
+  lifecycle and allocation under ADR-0016, is complete at its single final checkpoint boundary.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
   `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN`,
-  `SET_OVERCLOCK_PROFILE`, and `SET_MANUAL_OVERCLOCK`. Production
+  `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`, `ACCEPT_TASK`, `ALLOCATE_TASK`, `SET_TASK_HOLD`,
+  and `ABANDON_TASK`. Production
   gameplay tick systems are Task 6's `calculate-power-demand-and-delivery`, Task 7's
   `calculate-heat-generation` and `update-thermal-state`, Task 8's
-  `apply-throttling-stability-and-shutdown`, and Task 9's
-  `calculate-theoretical-and-useful-compute` stages.
+  `apply-throttling-stability-and-shutdown`, Task 9's `calculate-theoretical-and-useful-compute`, and
+  Task 10's Task-only `advance-tasks-and-benchmarks` stage.
 
 ## Implemented deterministic foundation
 
@@ -514,11 +513,45 @@ warm-up iterations.
   exclusively owns allocation selection/lifecycle, acceptance, progress, deadlines, rewards, research,
   and benchmark policy.
 - Compatibility projections remain `3981c87f4603e9fd` for Task 7 and `6a3d11ce3e14ca83` for Task 8.
-  Full-state vectors with the Task 9 Compute foundation are `b3b11ef7f77ca577` and
-  `4f51593129881319`, respectively.
+  Full-state vectors with the Task 9 Compute foundation were `b3b11ef7f77ca577` and
+  `4f51593129881319`. Task 10.1 intentionally adds serialized state fields, producing
+  `955cb3249436db4b` and `755cf754a5bd531b` while preserving the Task 7/8 behavioral projections.
+
+## Phase 1 Task 10 implementation
+
+- ADR-0016 defines the authoritative sequence, reputation, and service-window fields; capacity slots;
+  offer/instance ownership; allocation shares; command rejection; exact deadline and SLA ordering;
+  microdollar rewards and abandonment; validation; compatibility; and deferred scope.
+- The content-injected Task handlers accept, allocate, hold/resume, and abandon through the existing
+  queue. They are atomic, consume no RNG, preserve command-only tick/progress/SLA state, canonicalize
+  allocation IDs, reserve shares only while active, and retain terminal allocation/progress history.
+- Real ticks run Task advancement after current Task 9 Compute. They reconcile eligible offers, fail
+  deadlines before progress, apply only runnable/stable delivery, clamp phases and discard surplus,
+  settle whole service windows, and apply completion rewards once. Current Compute-owned delivery is
+  preserved through commit, while phase/status changes affect Compute on the following tick.
+- Private Task witness evidence is per-`SimCore`, calculation-local, and cleared on replacement and on
+  every exit. Structural sharing replaces only changed Task/campaign/Research/economy branches. A Task
+  or delivery-ownership failure rolls back the whole tick, clock, economy, state, and RNG.
+- Content-independent validation runs at construction, command candidates, saves, replacement, and
+  changed final branches; content-aware validation checks content relationships without adding a generic
+  content dependency to `SimCore`. Content validation enforces exact tick conversion, service shape,
+  phase work, evidence uniqueness, prerequisites, and unchanged supplied numeric values.
+- Task 7/8 behavior projections remain `3981c87f4603e9fd` and `6a3d11ce3e14ca83`; Task 10's
+  serialized-state vectors are `955cb3249436db4b` and `755cf754a5bd531b`. The fixed 100-tick Task
+  lifecycle integration hash is `1fc91ca07fa5a046`.
+- `corepack pnpm performance:tasks` is permanent. Its final audited i7-2600 run measured warm pure Task
+  median/p95/max `0.0186/0.0578/1.1083 ms` (1,000 samples) and full production
+  `1.3456/2.2562/9.3940 ms` (200 samples), passing `<0.20 ms`, `<4 ms`, and preferred `<3.7 ms` p95
+  gates. The diagnostic retains every sample and reports transition, payout, command, and witness paths.
+- Exact next Phase 1 task: Task 11, Research lifecycle. It remains outside the Task 10 boundary.
 
 ## Verification
 
+- Task 10 focused lifecycle/command/Task 9 ownership regression coverage: PASS, 15 files and 324 tests.
+  Complete unit verification: PASS, 40 files and 665 tests. Standalone determinism: PASS, 8 files and
+  10 tests. Two separate clean `pnpm test` processes passed those same unit and determinism suites.
+  Exact-100 Task lifecycle and final-hash verification, aggregate validation, standalone production
+  build, compatibility vectors, static scans, and content/document drift checks pass.
 - Task 9.5 focused state/domain/cache/SimCore/compatibility/exact-100 verification: PASS, 7 files and
   98 tests. Standalone unit verification: PASS, 36 files and 580 tests. Standalone determinism: PASS,
   8 files and 10 tests. Two separate clean `pnpm test` processes passed those same unit and
@@ -678,10 +711,9 @@ warm-up iterations.
 
 ## Task boundary
 
-Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc` on local `main` and
-`origin/main`. Task 7.1 through 7.4 and Task 8 are complete. Task 9.1 through Task 9.4 are checkpointed
-at `05dde712a81d2d8b5eae60a4116b80b3c23eff92`; Task 9.5 is the current correction boundary under
-ADR-0015. The exact next planned boundary is Phase 1 Task 10, which is not implemented by this work.
+Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc`; Task 7, Task 8, and Task 9.1
+through Task 9.5 are complete. Task 10 is complete under ADR-0016 at its single final checkpoint
+boundary. The exact next planned Phase 1 task is Task 11, Research lifecycle.
 
 ## Phase 1 Task 6 implementation
 
@@ -734,12 +766,13 @@ ADR-0015. The exact next planned boundary is Phase 1 Task 10, which is not imple
 - Real-time tick scheduling, timers, catch-up, pause/speed host scheduling, and worker integration.
 - Every production gameplay command handler except `BUY_MODULE`, `SELL_INVENTORY_ITEM`,
   `ENTER_DESIGN_MODE`, `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`,
-  `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, and
-  `CANCEL_DESIGN`.
-- Automatic energy deductions, power capacity purchases, labor and relocation costs, task rewards,
-  research costs/progression, maintenance, inflation, market events, scarcity, financing, interest,
-  insolvency, bailout, bankruptcy, and financial game over.
+  `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`,
+  `CANCEL_DESIGN`, `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`, `ACCEPT_TASK`,
+  `ALLOCATE_TASK`, `SET_TASK_HOLD`, and `ABANDON_TASK`.
+- Automatic energy deductions, power capacity purchases, labor and relocation costs, research
+  costs/progression, maintenance, inflation, market events, scarcity, financing, interest, insolvency,
+  bailout, bankruptcy, and financial game over.
 - Installed-module sales, auto-connect, auto-route, pathfinding, rerouting, and route preview.
-- Task allocation selection/lifecycle, task acceptance/progress/deadlines/rewards, research progression,
-  benchmarks, blueprints, replay execution, and balancing bot.
+- Research lifecycle and Compute reservation, benchmarks, blueprints, replay execution, and balancing
+  bot.
 - React/Pixi integration, IndexedDB, save/load, migrations, export, and import.

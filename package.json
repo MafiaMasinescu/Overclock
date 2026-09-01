@@ -29,6 +29,7 @@
     "performance:overclock": "node tests/performance/overclockDomain.performance.ts",
     "performance:compute": "node tests/performance/computeDomain.performance.ts",
     "performance:thermal": "node tests/performance/thermalDomain.performance.ts",
+    "performance:tasks": "node tests/performance/taskLifecycle.performance.ts",
     "test:e2e": "playwright test",
     "validate": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm content:validate && corepack pnpm test:unit && corepack pnpm build"
   },

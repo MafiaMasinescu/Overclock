@@ -22,6 +22,12 @@ function firstItem<Item>(items: readonly Item[]): Item {
   return item;
 }
 
+function itemAt<Item>(items: readonly Item[], index: number): Item {
+  const item = items[index];
+  if (item === undefined) throw new Error(`Expected fixture item at index ${index}.`);
+  return item;
+}
+
 function captureValidationError(pack: RawContentPack): ContentValidationError {
   try {
     validateContent(pack);
@@ -34,6 +40,57 @@ function captureValidationError(pack: RawContentPack): ContentValidationError {
 }
 
 describe("content loading", () => {
+  test("preserves the approved Task numeric content", () => {
+    const bundle = loadContentBundle();
+
+    expect(bundle.tasks["task-ballistic-table-verification"]).toMatchObject({
+      deadlineSeconds: 210,
+      payoutUsd: 6_200,
+      periodicPayoutUsd: 0,
+      periodicPayoutSeconds: null,
+      abandonPenaltyUsd: 900,
+    });
+    expect(bundle.tasks["task-census-tabulation-service"]).toMatchObject({
+      deadlineSeconds: null,
+      payoutUsd: 0,
+      periodicPayoutUsd: 520,
+      periodicPayoutSeconds: 60,
+      abandonPenaltyUsd: 300,
+    });
+  });
+
+  test.each([
+    {
+      name: "service without a periodic payout",
+      mutate: (pack: RawContentPack) => {
+        itemAt(pack.tasks.tasks, 1).periodicPayoutUsd = 0;
+      },
+      path: "tasks.tasks[1]",
+    },
+    {
+      name: "non-service with a periodic interval",
+      mutate: (pack: RawContentPack) => {
+        itemAt(pack.tasks.tasks, 0).periodicPayoutSeconds = 60;
+      },
+      path: "tasks.tasks[0]",
+    },
+    {
+      name: "duplicate evidence reward",
+      mutate: (pack: RawContentPack) => {
+        itemAt(pack.tasks.tasks, 0).evidenceTagRewards = [
+          "evidence-tube-failure-log",
+          "evidence-tube-failure-log",
+        ];
+      },
+      path: "tasks.tasks[0].evidenceTagRewards",
+    },
+  ])("rejects Task 10.1 $name", ({ mutate, path }) => {
+    const pack = clonePack();
+    mutate(pack);
+
+    expect(captureValidationError(pack).issues.some((issue) => issue.path === path)).toBe(true);
+  });
+
   test("loads the complete supplied pack into a deeply immutable bundle", () => {
     const bundle = loadContentBundle();
 

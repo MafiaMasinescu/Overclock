@@ -127,6 +127,7 @@ function activeTaskState(): GameState {
         deliveredUsefulComputeFlops: 0,
       },
       accruedPayoutUsd: 0,
+      serviceWindowCompliant: null,
     },
   };
   return state;

@@ -31,7 +31,13 @@ function withoutCompute(state: GameState): object {
   const facility = Object.fromEntries(
     Object.entries(state.facility).filter(([key]) => key !== "compute"),
   );
-  return { ...state, facility };
+  const campaign = Object.fromEntries(
+    Object.entries(state.campaign).filter(([key]) => key !== "reputation"),
+  );
+  const tasks = Object.fromEntries(
+    Object.entries(state.tasks).filter(([key]) => key !== "nextTaskInstanceSequence"),
+  );
+  return { ...state, campaign, tasks, facility };
 }
 
 function module(
@@ -582,7 +588,7 @@ describe("thermal production stages", () => {
     expect(core.getStateForSave().facility.thermalTiles[0]?.temperatureC).toBe(22);
   });
 
-  test("preserves Task 7/8 projections and records the Task 9 full-state compatibility vector", () => {
+  test("preserves Task 7/8 projections and records the Task 10.1 full-state compatibility vector", () => {
     const firstState = basicState("thermal-deterministic");
     firstState.facility.modules = { source: module("source", "module-power-distribution") };
     firstState.facility.extractionCapacityWatts = 1_000;
@@ -608,7 +614,7 @@ describe("thermal production stages", () => {
     expect(Task8State.facility.thermalTiles).toEqual(Task7State.facility.thermalTiles);
     expect(Task8State.facility.thermalRevision).toBe(Task7State.facility.thermalRevision);
     expect(hashCanonicalState(withoutCompute(Task8State))).toBe("6a3d11ce3e14ca83");
-    expect(hashCanonicalState(Task7State)).toBe("b3b11ef7f77ca577");
-    expect(hashCanonicalState(Task8State)).toBe("4f51593129881319");
+    expect(hashCanonicalState(Task7State)).toBe("955cb3249436db4b");
+    expect(hashCanonicalState(Task8State)).toBe("755cf754a5bd531b");
   });
 });

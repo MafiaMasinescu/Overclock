@@ -130,8 +130,10 @@ function readyState(): GameState {
         deliveredUsefulComputeFlops: 0,
       },
       accruedPayoutUsd: 0,
+      serviceWindowCompliant: null,
     },
   };
+  state.tasks.offers = [];
   return state;
 }
 
@@ -358,16 +360,20 @@ describe("production Useful Compute tick system", () => {
     if (!task?.allocation) throw new Error("Missing task fixture.");
     state.tasks.instances = {
       first: { ...task, id: "first", allocation: { ...task.allocation, requestedShare: 0.75 } },
-      second: { ...task, id: "second", allocation: { ...task.allocation, requestedShare: 0.75 } },
+      second: {
+        ...task,
+        id: "second",
+        definitionId: "task-wiring-layout-study",
+        allocation: { ...task.allocation, requestedShare: 0.75 },
+      },
     };
-    const core = new SimCore({
-      initialState: state,
-      tickSystems: createComputeTickSystems(content),
-    });
-    const before = canonicalSerialize(core.getStateForSave());
-
-    expect(() => core.step()).toThrow(/calculate-theoretical-and-useful-compute/);
-    expect(canonicalSerialize(core.getStateForSave())).toBe(before);
+    expect(
+      () =>
+        new SimCore({
+          initialState: state,
+          tickSystems: createComputeTickSystems(content),
+        }),
+    ).toThrow(/active requested shares/);
   });
 
   test("recalculates dynamic congestion without reconstructing the cached route topology", () => {
@@ -543,7 +549,12 @@ describe("production Useful Compute tick system", () => {
     if (!task?.allocation) throw new Error("Missing task fixture.");
     state.tasks.instances = {
       first: { ...task, id: "first", allocation: { ...task.allocation, requestedShare: 0.5 } },
-      second: { ...task, id: "second", allocation: { ...task.allocation, requestedShare: 0.5 } },
+      second: {
+        ...task,
+        id: "second",
+        definitionId: "task-wiring-layout-study",
+        allocation: { ...task.allocation, requestedShare: 0.5 },
+      },
     };
     const core = new SimCore({
       initialState: state,

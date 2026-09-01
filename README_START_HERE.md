@@ -142,6 +142,23 @@ accepted host-load irregularity when Opera and ChatGPT processes consumed severa
 inflated unrelated sections together. The diagnostic still reports every sample and fails the same
 hard thresholds; do not compensate with sample filtering, process priority, affinity, or V8 flags.
 
+## Task lifecycle performance diagnostic
+
+For Task 10's extension of the same audited 24 by 16 fixture, run:
+
+```powershell
+corepack pnpm performance:tasks
+```
+
+The command measures 1,000 warm pure Task advancement samples, 200 warm complete production ticks,
+500 simultaneous-two-task progress samples, and 200 samples for offer reconciliation, phase and deadline
+transitions, SLA success and failure, completion rewards, each command path, and fresh witness work. Fixture/core
+setup, command enqueueing, and 100 JIT warm-ups are excluded; no timed sample is filtered. It reports
+median, p95, maximum, sample count, CPU, operating system, Node version, and build mode. The enforced
+i7-2600 gates are pure Task p95 below `0.20 ms` and complete production p95 below `4 ms`; below `3.7 ms`
+is preferred production headroom. See `docs/diagnostics/TASK_LIFECYCLE_PERFORMANCE.md` for the permanent
+fixture and path contract.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

@@ -57,6 +57,7 @@ describe("initial GameState", () => {
         objectiveKey: "ui.objective",
         transistorRevealed: false,
         verticalSliceCompleted: false,
+        reputation: 0,
       },
       economy: {
         cashUsd: 32_000,
@@ -107,6 +108,7 @@ describe("initial GameState", () => {
       },
       tasks: {
         activeSlotCount: 2,
+        nextTaskInstanceSequence: 1,
         offers: ["task-ballistic-table-verification", "task-census-tabulation-service"],
         instances: {},
       },

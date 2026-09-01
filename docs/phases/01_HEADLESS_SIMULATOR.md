@@ -345,6 +345,30 @@ selection is explicitly lower worst read/write latency, then higher minimum band
 provider ID. This correction changes no formula, balancing, topology direction, fixture, sample count,
 threshold, or Task 10 policy.
 
+## Task 10: Deterministic Task lifecycle and allocation
+
+Task 10 has one final checkpoint after Task 10.5 and owns Task lifecycle policy through the existing
+command processor and `SimCore` path. It never creates a second command path and does not add workload
+scaling to Power or Heat.
+
+- Task 10.1: foundations — ADR-0016, authoritative Task sequence/reputation/service-window fields,
+  stored and content-aware validators, Task content validation, compatibility vectors, localization,
+  and no handlers or production lifecycle stage.
+- Task 10.2: commands — `ACCEPT_TASK`, `ALLOCATE_TASK`, `SET_TASK_HOLD`, and `ABANDON_TASK` through
+  the existing queue/processor, with atomic validation and no progress/deadline/reward stage.
+- Task 10.3: progression — Task 9-gated phase progress, deadline failure, final rewards, evidence,
+  reputation, Research Data, and service-window accounting.
+- Task 10.4: transactional production integration — the Task portion of
+  `advance-tasks-and-benchmarks` consumes current Task 9 delivery, preserves it through commit, uses
+  private fresh evidence, and rolls back atomically.
+- Task 10.5: performance hardening and permanent documentation — `performance:tasks` extends the
+  audited dense fixture with Task lifecycle paths, preserves all samples and gates, and closes the
+  single Task 10 checkpoint boundary.
+
+Task 10 is complete. Its permanent lifecycle, ownership, validation, compatibility, and diagnostic
+contract is ADR-0016 and the Task section of the TDD. The exact next Phase 1 task is Task 11, Research
+lifecycle; it remains out of scope for Task 10.
+
 ## Nu implementa
 
 - React panels;

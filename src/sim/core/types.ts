@@ -125,6 +125,7 @@ export interface CampaignState {
   objectiveKey: string;
   transistorRevealed: boolean;
   verticalSliceCompleted: boolean;
+  reputation: number;
 }
 
 export interface EconomyState {
@@ -261,10 +262,12 @@ export interface TaskInstanceState {
   totalCompletedOperations: number;
   allocation: TaskAllocationState | null;
   accruedPayoutUsd: number;
+  serviceWindowCompliant: boolean | null;
 }
 
 export interface TaskSystemState {
   activeSlotCount: number;
+  nextTaskInstanceSequence: number;
   offers: TaskDefinitionId[];
   instances: Record<TaskInstanceId, TaskInstanceState>;
 }

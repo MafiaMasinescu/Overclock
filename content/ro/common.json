@@ -51,6 +51,9 @@
     "overclock-unsupported": "Acest modul nu acceptă overclocking.",
     "overclock-unavailable-in-design-mode": "Setările de overclock nu pot fi schimbate cât timp Design Mode este activ.",
     "research-required": "Cercetarea necesară nu este finalizată.",
+    "task-slot-limit": "Nu este disponibil niciun slot pentru task.",
+    "task-requirement-missing": "Cerințele task-ului nu sunt îndeplinite.",
+    "task-not-active": "Task-ul nu este activ.",
     "stale-design-preview": "Previzualizarea Design Mode nu mai este actuală.",
     "stale-tick": "Comanda a fost creată pentru un alt tick al simulării."
   },
