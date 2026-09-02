@@ -50,12 +50,14 @@ function calculatedState(): GameState {
           memoryFactor: 1,
           interconnectFactor: 1,
           suitabilityFactor: 1,
+          researchFactor: 1,
           stabilityFactor: 1,
           usefulComputeFlops: 100,
           bottlenecks: [],
         },
       },
     },
+    research: null,
     totalTheoreticalComputeFlops: 100,
     totalAvailableComputeFlops: 100,
     totalAllocatedUsefulComputeFlops: 100,
@@ -74,6 +76,48 @@ describe("Task 9.1 Useful Compute foundations", () => {
     expect(validate(dirty)).toEqual([]);
     expect(validate(calculatedState())).toEqual([]);
     expect(JSON.parse(canonicalSerialize(calculatedState()))).toEqual(calculatedState());
+  });
+
+  test("keeps historical Research delivery separate from the Task useful-compute total", () => {
+    const state = calculatedState();
+    state.facility.compute.research = {
+      nodeId: "research-stable-power-distribution",
+      reservedComputeShare: 0.25,
+      facilityAvailableComputeFlops: 200,
+      deliveredUsefulComputeFlops: 50,
+    };
+
+    expect(validate(state)).toEqual([]);
+    expect(state.facility.compute.totalAllocatedUsefulComputeFlops).toBe(100);
+  });
+
+  test.each([
+    {
+      name: "zero reservation",
+      research: {
+        nodeId: "research-stable-power-distribution",
+        reservedComputeShare: 0,
+        facilityAvailableComputeFlops: 100,
+        deliveredUsefulComputeFlops: 0,
+      },
+      path: "facility.compute.research.reservedComputeShare",
+    },
+    {
+      name: "non-string node ID",
+      research: {
+        nodeId: 42,
+        reservedComputeShare: 0.25,
+        facilityAvailableComputeFlops: 100,
+        deliveredUsefulComputeFlops: 25,
+      },
+      path: "facility.compute.research.nodeId",
+    },
+  ])("rejects historical Research Compute with $name", ({ research, path }) => {
+    const state = calculatedState();
+    state.facility.compute.research =
+      research as unknown as GameState["facility"]["compute"]["research"];
+
+    expect(validate(state)).toContainEqual(expect.objectContaining({ path }));
   });
 
   test.each([

@@ -614,7 +614,7 @@ describe("thermal production stages", () => {
     expect(Task8State.facility.thermalTiles).toEqual(Task7State.facility.thermalTiles);
     expect(Task8State.facility.thermalRevision).toBe(Task7State.facility.thermalRevision);
     expect(hashCanonicalState(withoutCompute(Task8State))).toBe("6a3d11ce3e14ca83");
-    expect(hashCanonicalState(Task7State)).toBe("955cb3249436db4b");
-    expect(hashCanonicalState(Task8State)).toBe("755cf754a5bd531b");
+    expect(hashCanonicalState(Task7State)).toBe("7157962fe832def9");
+    expect(hashCanonicalState(Task8State)).toBe("50e67e1213179a35");
   });
 });

@@ -4,16 +4,23 @@ import type {
   TaskDefinition,
 } from "../../content/schemas/contentSchemas.ts";
 import type {
+  ActiveResearchState,
   ComputeBreakdown,
   FacilityComputeState,
   FacilityState,
   GameState,
   ModuleComputeResultState,
+  ResearchNodeId,
   RouteState,
   TaskAllocationState,
   TaskComputeResultState,
   TaskInstanceState,
 } from "../core/types.ts";
+import {
+  calculateEffectiveTaskShare,
+  calculateResearchComputeResult,
+  calculateResearchFactor,
+} from "../research/researchComputeDomain.ts";
 
 export interface ComputeTopologyRoute {
   readonly routeId: string;
@@ -56,7 +63,9 @@ export interface ModuleComputeCapacity {
  */
 export interface ComputeCalculationWitness {
   readonly expected: Readonly<FacilityComputeState>;
+  readonly expectedResearch: FacilityComputeState["research"];
   readonly expectedTaskDeliveries: Readonly<Record<string, number>>;
+  readonly research: ResearchComputeInputProjection | null;
   readonly content: ContentBundle;
   readonly modules: GameState["facility"]["modules"];
   readonly power: GameState["facility"]["power"];
@@ -76,7 +85,37 @@ export interface FacilityComputeCalculation {
   readonly witness: ComputeCalculationWitness;
 }
 
+export interface ResearchComputeInputProjection {
+  readonly nodeId: ResearchNodeId;
+  readonly reservedComputeShare: number;
+}
+
+export function projectResearchComputeInput(
+  activeResearch: Readonly<ActiveResearchState> | null,
+): ResearchComputeInputProjection | null {
+  return activeResearch === null
+    ? null
+    : Object.freeze({
+        nodeId: activeResearch.nodeId,
+        reservedComputeShare: activeResearch.reservedComputeShare,
+      });
+}
+
+export function sameResearchComputeInputProjection(
+  left: ResearchComputeInputProjection | null,
+  right: ResearchComputeInputProjection | null,
+): boolean {
+  return (
+    (left === null && right === null) ||
+    (left !== null &&
+      right !== null &&
+      left.nodeId === right.nodeId &&
+      Object.is(left.reservedComputeShare, right.reservedComputeShare))
+  );
+}
+
 const FACTOR_ORDER = [
+  "research",
   "power",
   "thermal",
   "memory",
@@ -491,6 +530,7 @@ export function calculateTaskComputeResult(
   allocation: Readonly<TaskAllocationState>,
   pathCache?: ComputePathCache,
   memoryProviders?: readonly string[],
+  researchFactor = 1,
 ): TaskComputeResultState {
   if (task.status !== "active" || task.allocation === null)
     throw new RangeError("Task calculation requires an active allocated task.");
@@ -506,6 +546,7 @@ export function calculateTaskComputeResult(
   ) {
     throw new RangeError("Allocation must be stable, unique, and in [0, 1].");
   }
+  const effectiveTaskShare = calculateEffectiveTaskShare(allocation.requestedShare, researchFactor);
   let previousModuleId: string | undefined;
   let totalSelectedTheoreticalComputeFlops = 0;
   let theoreticalWeightTotal = 0;
@@ -646,7 +687,7 @@ export function calculateTaskComputeResult(
       : phase.memoryCapacityRecommendedBytes === 0
         ? 1
         : Math.min(1, availableMemoryCapacityBytes / phase.memoryCapacityRecommendedBytes);
-  const requiredBandwidth = allocation.requestedShare * phase.memoryBandwidthRequiredBytesPerSecond;
+  const requiredBandwidth = effectiveTaskShare * phase.memoryBandwidthRequiredBytesPerSecond;
   const bandwidthFactor =
     requiredBandwidth === 0
       ? 1
@@ -709,6 +750,7 @@ export function calculateTaskComputeResult(
   let value = theoretical;
   const bottlenecks: ComputeBreakdown["bottlenecks"] = [];
   for (const [factor, factorValue] of [
+    ["research", researchFactor],
     ["power", powerFactor],
     ["thermal", thermalFactor],
     ["memory", memoryFactor],
@@ -750,6 +792,7 @@ export function calculateTaskComputeResult(
     warnings,
     breakdown: {
       theoreticalComputeFlops: theoretical,
+      researchFactor,
       powerFactor,
       thermalFactor,
       memoryFactor,
@@ -776,6 +819,11 @@ export function calculateFacilityCompute(
     topology.computeModuleIds,
     state.facility.compute.byModule,
   );
+  const research = calculateResearchComputeResult(
+    state.research.active,
+    capacity.totalAvailableComputeFlops,
+  );
+  const researchFactor = calculateResearchFactor(state.research.active);
   const byTask: Record<string, TaskComputeResultState> = {};
   const shares: Record<string, number> = {};
   const pathCache = cachedPathMetrics ?? topology.pathMetrics;
@@ -809,6 +857,7 @@ export function calculateFacilityCompute(
       task.allocation,
       pathCache,
       memoryProviders,
+      researchFactor,
     );
     byTask[taskId] = result;
     totalAllocatedUsefulComputeFlops += result.breakdown.usefulComputeFlops;
@@ -823,6 +872,7 @@ export function calculateFacilityCompute(
     thermalRevision: state.facility.thermalRevision,
     byModule: capacity.byModule,
     byTask,
+    research,
     totalTheoreticalComputeFlops: capacity.totalTheoreticalComputeFlops,
     totalAvailableComputeFlops: capacity.totalAvailableComputeFlops,
     totalAllocatedUsefulComputeFlops,
@@ -837,6 +887,7 @@ export function calculateFacilityComputeWithWitness(
   cachedMemoryProviders?: readonly string[],
 ): FacilityComputeCalculation {
   const topology = cachedTopology ?? buildComputeTopology(state.facility, content);
+  const research = projectResearchComputeInput(state.research.active);
   const compute = calculateFacilityCompute(
     state,
     content,
@@ -862,7 +913,9 @@ export function calculateFacilityComputeWithWitness(
     taskDeliveries,
     witness: Object.freeze({
       expected,
+      expectedResearch: expected.research,
       expectedTaskDeliveries: taskDeliveries,
+      research,
       content,
       modules: state.facility.modules,
       power: state.facility.power,
@@ -916,7 +969,24 @@ function hasCurrentWitnessDependencies(
     witness.thermalRevision === facility.thermalRevision &&
     witness.facilityWidth === facility.size.width &&
     witness.facilityHeight === facility.size.height &&
-    witness.topology === topology
+    witness.topology === topology &&
+    sameResearchComputeInputProjection(
+      witness.research,
+      projectResearchComputeInput(state.research.active),
+    )
+  );
+}
+
+function hasExactResearchResult(
+  candidate: FacilityComputeState["research"],
+  expected: FacilityComputeState["research"],
+): boolean {
+  if (candidate === null || expected === null) return candidate === expected;
+  return (
+    candidate.nodeId === expected.nodeId &&
+    Object.is(candidate.reservedComputeShare, expected.reservedComputeShare) &&
+    Object.is(candidate.facilityAvailableComputeFlops, expected.facilityAvailableComputeFlops) &&
+    Object.is(candidate.deliveredUsefulComputeFlops, expected.deliveredUsefulComputeFlops)
   );
 }
 
@@ -939,6 +1009,9 @@ export function validateFreshComputeWitness(
     }
     if (candidate !== witness.expected) {
       return ["Compute candidate does not match its detached exact calculation evidence."];
+    }
+    if (!hasExactResearchResult(candidate.research, witness.expectedResearch)) {
+      return ["Compute candidate Research result does not match exact calculation evidence."];
     }
     return hasExactTaskDeliveries(candidateTaskInstances, witness.expectedTaskDeliveries)
       ? []

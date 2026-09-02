@@ -369,6 +369,42 @@ Task 10 is complete. Its permanent lifecycle, ownership, validation, compatibili
 contract is ADR-0016 and the Task section of the TDD. The exact next Phase 1 task is Task 11, Research
 lifecycle; it remains out of scope for Task 10.
 
+## Task 11: Deterministic Research lifecycle
+
+Task 11 owns the Research contract, global proportional Compute reservation, lifecycle commands and
+progress, status reconciliation, final reveal, and Museum completion through the existing command
+processor and `SimCore` path. Its approved decomposition is:
+
+- Task 11.1: contract, state, content validation, localization, and compatibility foundations. This
+  subtask adds the authoritative Research Compute result shape, structural/content-aware Research
+  validation, Research content hardening, `INSUFFICIENT_RESEARCH_DATA` localization, and additive
+  serialized-state expectations. It does not register Research handlers or tick behavior.
+- Task 11.2: global proportional reservation formulas and pure Research Compute/Task factor
+  helpers.
+- Task 11.3: production Compute reservation, the existing Compute cache extension, fresh witness
+  validation, historical-result semantics, and Compute-owned Research/Task output ownership.
+- Task 11.4: `START_RESEARCH` and `CANCEL_RESEARCH`, atomic command costs, and cancellation through
+  the existing queue/processor.
+- Task 11.5: pure deterministic Research progression, status reconciliation, content-gated
+  availability, and final Museum result calculation.
+- Task 11.6: production Research tick integration and authoritative application of the pure result.
+- Task 11.7: performance, compatibility closeout, permanent documentation, and the single Task 11
+  checkpoint boundary.
+
+Task 11 is complete at its single checkpoint-neutral boundary. The approved Research commands,
+global reservation formulas, lifecycle and unlock reconciliation, final reveal and Museum result,
+production stage, cache projection/invalidation, exact ownership checks, rollback, compatibility,
+and determinism contracts are recorded in ADR-0017. The permanent Research diagnostic is
+`corepack pnpm performance:research`, documented in
+`docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md`. The exact next Phase 1 task is Task 12,
+Benchmark runners. Research UI, events, workers, saves/replay, achievements, and later scope remain
+deferred.
+
+The final target-host checkpoint review passed every Research, Task 9, Task 10, Thermal, correctness,
+and determinism gate. It records one accepted irregularity in the unchanged Task 8 diagnostic: pure
+p95 `0.2605 ms` against the nominal `< 0.25 ms` gate, with warm production p95 passing at
+`2.4462 ms`. No Task 8 benchmark input or implementation was changed.
+
 ## Nu implementa
 
 - React panels;

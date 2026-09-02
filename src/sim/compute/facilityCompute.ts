@@ -9,9 +9,12 @@ import {
   calculateFacilityComputeWithWitness,
   refreshComputeTopologyCongestion,
   refreshPoweredMemoryProviders,
+  projectResearchComputeInput,
+  sameResearchComputeInputProjection,
   validateFreshComputeWitness,
   type ComputePathCache,
   type ComputeTopology,
+  type ResearchComputeInputProjection,
 } from "./computeDomain.ts";
 import { assertValidStoredComputeState } from "./computeState.ts";
 
@@ -44,6 +47,7 @@ interface LastComputeCalculation {
   readonly thermalRevision: number;
   readonly facilityWidth: number;
   readonly facilityHeight: number;
+  readonly research: ResearchComputeInputProjection | null;
   readonly compute: GameState["facility"]["compute"];
 }
 
@@ -208,6 +212,7 @@ function isReusable(
   last: LastComputeCalculation | undefined,
   state: Readonly<GameState>,
   currentTaskInputs: readonly TaskCalculationInput[],
+  research: ResearchComputeInputProjection | null,
 ): boolean {
   const { facility } = state;
   if (!last) return false;
@@ -220,6 +225,7 @@ function isReusable(
     last.thermalRevision === facility.thermalRevision &&
     last.facilityWidth === facility.size.width &&
     last.facilityHeight === facility.size.height &&
+    sameResearchComputeInputProjection(last.research, research) &&
     last.compute === facility.compute &&
     sameTaskInputs(last.taskInputs, currentTaskInputs)
   );
@@ -254,6 +260,7 @@ export function createComputeTickSystems(
           run({ state }: StructuralSharingTickSystemContext): GameState {
             topologyCache = resolveTopology(topologyCache, state, content, options);
             assertCurrentComputeInputs(state, content, topologyCache.topology);
+            const research = projectResearchComputeInput(state.research.active);
             memoryProviders = refreshPoweredMemoryProviders(
               state.facility,
               content,
@@ -265,7 +272,7 @@ export function createComputeTickSystems(
               cachedTaskInputs = taskInputs(state);
             }
             const currentTaskInputs = cachedTaskInputs;
-            if (isReusable(lastCalculation, state, currentTaskInputs)) {
+            if (isReusable(lastCalculation, state, currentTaskInputs, research)) {
               options.onComputeResultCacheEvent?.("reused");
               return state;
             }
@@ -306,6 +313,7 @@ export function createComputeTickSystems(
               thermalRevision: state.facility.thermalRevision,
               facilityWidth: state.facility.size.width,
               facilityHeight: state.facility.size.height,
+              research,
               compute,
             };
             taskInputInstances = candidate.tasks.instances;

@@ -9,6 +9,7 @@ import { assertValidInventoryEconomyState } from "../economy/inventoryEconomySta
 import { assertValidStoredComputeState } from "../compute/computeState.ts";
 import { assertValidDesignModeState } from "../design/designModeState.ts";
 import { assertValidStoredTaskState } from "../tasks/taskState.ts";
+import { assertValidStoredResearchState } from "../research/researchState.ts";
 import { AuthoritativeState } from "./authoritativeState.ts";
 import {
   TICK_SYSTEM_STAGE_ORDER,
@@ -105,14 +106,25 @@ function parseClockCommand(command: ClockCommand): ClockCommand {
 
 type TickSystemRuntimeRegistry = Readonly<Partial<Record<TickSystemStage, TickSystemRuntime>>>;
 
-interface ComputeOwnedDeliveryProjection {
-  readonly byTask: Readonly<Record<string, number>>;
-  readonly allocationCount: number;
+interface ComputeOwnedResearchOutput {
+  readonly present: boolean;
+  readonly nodeId: string | null;
+  readonly reservedComputeShare: number | null;
+  readonly facilityAvailableComputeFlops: number | null;
+  readonly deliveredUsefulComputeFlops: number | null;
 }
 
-function captureComputeOwnedDeliveries(
+interface ComputeOwnedOutputProjection {
+  readonly compute: GameState["facility"]["compute"];
+  readonly byTask: Readonly<Record<string, number>>;
+  readonly allocationCount: number;
+  readonly research: ComputeOwnedResearchOutput;
+}
+
+function captureComputeOwnedOutputs(
+  compute: GameState["facility"]["compute"],
   instances: Readonly<GameState["tasks"]["instances"]>,
-): ComputeOwnedDeliveryProjection {
+): ComputeOwnedOutputProjection {
   const byTask: Record<string, number> = {};
   let allocationCount = 0;
   for (const taskId in instances) {
@@ -122,12 +134,34 @@ function captureComputeOwnedDeliveries(
     byTask[taskId] = allocation.deliveredUsefulComputeFlops;
     allocationCount += 1;
   }
-  return Object.freeze({ byTask: Object.freeze(byTask), allocationCount });
+  const research = compute.research;
+  return Object.freeze({
+    compute,
+    byTask: Object.freeze(byTask),
+    allocationCount,
+    research: Object.freeze(
+      research === null
+        ? {
+            present: false,
+            nodeId: null,
+            reservedComputeShare: null,
+            facilityAvailableComputeFlops: null,
+            deliveredUsefulComputeFlops: null,
+          }
+        : {
+            present: true,
+            nodeId: research.nodeId,
+            reservedComputeShare: research.reservedComputeShare,
+            facilityAvailableComputeFlops: research.facilityAvailableComputeFlops,
+            deliveredUsefulComputeFlops: research.deliveredUsefulComputeFlops,
+          },
+    ),
+  });
 }
 
-function preservesComputeOwnedDeliveries(
+function preservesComputeOwnedTaskDeliveries(
   instances: Readonly<GameState["tasks"]["instances"]>,
-  expected: ComputeOwnedDeliveryProjection,
+  expected: ComputeOwnedOutputProjection,
 ): boolean {
   let allocationCount = 0;
   for (const taskId in instances) {
@@ -143,6 +177,30 @@ function preservesComputeOwnedDeliveries(
     }
   }
   return allocationCount === expected.allocationCount;
+}
+
+function preservesComputeOwnedResearch(
+  compute: GameState["facility"]["compute"],
+  expected: ComputeOwnedOutputProjection,
+): boolean {
+  const research = compute.research;
+  const expectedResearch = expected.research;
+  if (
+    (research !== null) !== expectedResearch.present ||
+    (research?.nodeId ?? null) !== expectedResearch.nodeId ||
+    !Object.is(research?.reservedComputeShare ?? null, expectedResearch.reservedComputeShare) ||
+    !Object.is(
+      research?.facilityAvailableComputeFlops ?? null,
+      expectedResearch.facilityAvailableComputeFlops,
+    ) ||
+    !Object.is(
+      research?.deliveredUsefulComputeFlops ?? null,
+      expectedResearch.deliveredUsefulComputeFlops,
+    )
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function hasRegisteredSystem(tickSystems: TickSystemRuntimeRegistry): boolean {
@@ -186,6 +244,7 @@ export class SimCore {
     assertValidStoredComputeState(initialState);
     assertValidDesignModeState(initialState);
     assertValidStoredTaskState(initialState);
+    assertValidStoredResearchState(initialState);
     assertCanonicalSerializable(initialState);
 
     this.authoritativeState = new AuthoritativeState(initialState);
@@ -278,6 +337,8 @@ export class SimCore {
     assertValidClockAndTick(snapshot);
     assertValidStoredComputeState(snapshot);
     assertValidStoredTaskState(snapshot);
+    assertValidStoredResearchState(snapshot);
+    this.tickSystems["advance-research"]?.validateLifecycleState?.(snapshot);
     assertCanonicalSerializable(snapshot);
     return snapshot;
   }
@@ -291,6 +352,7 @@ export class SimCore {
     assertValidInventoryEconomyState(state);
     assertValidDesignModeState(state);
     assertValidStoredTaskState(state);
+    assertValidStoredResearchState(state);
     assertCanonicalSerializable(state);
     for (const stage of TICK_SYSTEM_STAGE_ORDER) {
       this.tickSystems[stage]?.validateLifecycleState?.(state);
@@ -316,7 +378,8 @@ export class SimCore {
     let validatedTasks = current.tasks;
     let validatedCampaign = current.campaign;
     let validatedResearch = current.research;
-    let computeOwnedDeliveries: ComputeOwnedDeliveryProjection | undefined;
+    let validatedMuseum = current.museum;
+    let computeOwnedOutputs: ComputeOwnedOutputProjection | undefined;
 
     // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in every production tick.
     for (let stageIndex = 0; stageIndex < TICK_SYSTEM_STAGE_ORDER.length; stageIndex += 1) {
@@ -339,12 +402,25 @@ export class SimCore {
           candidate = { ...candidate, rngState: nextRngState };
         }
         if (stage === "calculate-theoretical-and-useful-compute") {
-          computeOwnedDeliveries = captureComputeOwnedDeliveries(candidate.tasks.instances);
-        } else if (
-          computeOwnedDeliveries !== undefined &&
-          !preservesComputeOwnedDeliveries(candidate.tasks.instances, computeOwnedDeliveries)
-        ) {
-          throw new Error("Later tick stages must preserve Compute-owned task delivery outputs.");
+          computeOwnedOutputs = captureComputeOwnedOutputs(
+            candidate.facility.compute,
+            candidate.tasks.instances,
+          );
+        } else if (computeOwnedOutputs !== undefined) {
+          if (
+            !preservesComputeOwnedTaskDeliveries(candidate.tasks.instances, computeOwnedOutputs)
+          ) {
+            throw new Error("Later tick stages must preserve Compute-owned task delivery outputs.");
+          }
+          if (!preservesComputeOwnedResearch(candidate.facility.compute, computeOwnedOutputs)) {
+            throw new Error("Later tick stages must preserve Compute-owned Research outputs.");
+          }
+          if (
+            system.executionMode === "structural-sharing" &&
+            candidate.facility.compute !== computeOwnedOutputs.compute
+          ) {
+            throw new Error("Later structural-sharing stages must preserve the Compute branch.");
+          }
         }
         this.assertSystemControlledFields(candidate, current);
         assertValidRngState(candidate.rngState);
@@ -360,12 +436,22 @@ export class SimCore {
           this.runsMutableTickSystems ||
           candidate.tasks !== validatedTasks ||
           candidate.campaign !== validatedCampaign ||
-          candidate.research !== validatedResearch
+          candidate.research !== validatedResearch ||
+          candidate.museum !== validatedMuseum
         ) {
           assertValidStoredTaskState(candidate);
+          assertValidStoredResearchState(candidate);
           validatedTasks = candidate.tasks;
           validatedCampaign = candidate.campaign;
           validatedResearch = candidate.research;
+          validatedMuseum = candidate.museum;
+          if (
+            candidate.research !== current.research ||
+            candidate.campaign !== current.campaign ||
+            candidate.museum !== current.museum
+          ) {
+            this.tickSystems["advance-research"]?.validateLifecycleState?.(candidate);
+          }
         }
         if (this.runsMutableTickSystems) {
           assertValidInventoryEconomyState(candidate);
@@ -408,6 +494,7 @@ export class SimCore {
     assertValidClockAndTick(completed);
     if (!computeAlreadyValidated) assertValidStoredComputeState(completed);
     assertValidStoredTaskState(completed);
+    assertValidStoredResearchState(completed);
     return completed;
   }
 

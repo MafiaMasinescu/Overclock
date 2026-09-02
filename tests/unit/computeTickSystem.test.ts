@@ -137,6 +137,25 @@ function readyState(): GameState {
   return state;
 }
 
+function withActiveResearch(state: GameState, reservedComputeShare = 0.25): GameState {
+  return {
+    ...state,
+    research: {
+      ...state.research,
+      statuses: {
+        ...state.research.statuses,
+        "research-stable-power-distribution": "active",
+      },
+      active: {
+        nodeId: "research-stable-power-distribution",
+        startedAtTick: state.tick,
+        completedOperations: 0,
+        reservedComputeShare,
+      },
+    },
+  };
+}
+
 describe("production Useful Compute tick system", () => {
   test("performs exactly one full facility calculation for a fresh Compute tick", () => {
     let calculations = 0;
@@ -157,7 +176,7 @@ describe("production Useful Compute tick system", () => {
 
   test("calculates active allocation delivery on a real tick without consuming RNG", () => {
     const core = new SimCore({
-      initialState: readyState(),
+      initialState: withActiveResearch(readyState()),
       tickSystems: createComputeTickSystems(content),
     });
     const before = core.getStateForSave();
@@ -173,7 +192,135 @@ describe("production Useful Compute tick system", () => {
     expect(after.tasks.instances["task"]?.allocation?.deliveredUsefulComputeFlops).toBe(
       after.facility.compute.byTask["task"]?.breakdown.usefulComputeFlops,
     );
+    expect(after.facility.compute.research).toEqual({
+      nodeId: "research-stable-power-distribution",
+      reservedComputeShare: 0.25,
+      facilityAvailableComputeFlops: 900,
+      deliveredUsefulComputeFlops: 225,
+    });
     expect(after.rngState).toBe(before.rngState);
+  });
+
+  test("keeps the minimum reservation share separate from Task delivery", () => {
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState(), 0.1),
+      tickSystems: createComputeTickSystems(content),
+    });
+
+    core.step();
+
+    const after = core.getStateForSave();
+    expect(after.facility.compute.research).toMatchObject({
+      reservedComputeShare: 0.1,
+      facilityAvailableComputeFlops: 900,
+      deliveredUsefulComputeFlops: 90,
+    });
+    expect(after.facility.compute.byTask["task"]?.breakdown).toMatchObject({
+      researchFactor: 0.9,
+    });
+    expect(after.facility.compute.totalAllocatedUsefulComputeFlops).toBe(
+      after.facility.compute.byTask["task"]?.breakdown.usefulComputeFlops,
+    );
+  });
+
+  test("reduces multiple Tasks proportionally without changing requested shares", () => {
+    const baselineState = readyState();
+    const baselineTask = baselineState.tasks.instances["task"];
+    if (!baselineTask?.allocation) throw new Error("Missing multiple-Task fixture.");
+    baselineState.tasks.instances = {
+      first: {
+        ...baselineTask,
+        id: "first",
+        allocation: { ...baselineTask.allocation, requestedShare: 0.5 },
+      },
+      second: {
+        ...baselineTask,
+        id: "second",
+        definitionId: "task-wiring-layout-study",
+        allocation: { ...baselineTask.allocation, requestedShare: 0.5 },
+      },
+    };
+    const baseline = new SimCore({
+      initialState: baselineState,
+      tickSystems: createComputeTickSystems(content),
+    });
+    baseline.step();
+
+    const activeState = withActiveResearch(structuredClone(baselineState), 0.2);
+    const active = new SimCore({
+      initialState: activeState,
+      tickSystems: createComputeTickSystems(content),
+    });
+    active.step();
+
+    const baselineAfter = baseline.getStateForSave();
+    const activeAfter = active.getStateForSave();
+    const baselineFirst =
+      baselineAfter.facility.compute.byTask["first"]?.breakdown.usefulComputeFlops;
+    const baselineSecond =
+      baselineAfter.facility.compute.byTask["second"]?.breakdown.usefulComputeFlops;
+    const activeFirst = activeAfter.facility.compute.byTask["first"];
+    const activeSecond = activeAfter.facility.compute.byTask["second"];
+    if (
+      baselineFirst === undefined ||
+      baselineSecond === undefined ||
+      activeFirst === undefined ||
+      activeSecond === undefined
+    ) {
+      throw new Error("Missing multiple-Task Compute results.");
+    }
+    expect(activeFirst.requestedShare).toBe(0.5);
+    expect(activeSecond.requestedShare).toBe(0.5);
+    expect(activeFirst.breakdown.researchFactor).toBe(0.8);
+    expect(activeSecond.breakdown.researchFactor).toBe(0.8);
+    expect(activeFirst.breakdown.usefulComputeFlops / baselineFirst).toBeCloseTo(
+      activeSecond.breakdown.usefulComputeFlops / baselineSecond,
+      12,
+    );
+  });
+
+  test("keeps Tasks runnable with zero delivery and gives all available Compute to Research at R=1", () => {
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState(), 1),
+      tickSystems: createComputeTickSystems(content),
+    });
+
+    core.step();
+
+    const after = core.getStateForSave();
+    const task = after.facility.compute.byTask["task"];
+    expect(task).toMatchObject({ runnable: true, blockingReasons: [] });
+    expect(task?.requestedShare).toBe(1);
+    expect(task?.breakdown).toMatchObject({ researchFactor: 0, usefulComputeFlops: 0 });
+    expect(after.tasks.instances["task"]?.allocation?.deliveredUsefulComputeFlops).toBe(0);
+    expect(after.facility.compute.research).toEqual({
+      nodeId: "research-stable-power-distribution",
+      reservedComputeShare: 1,
+      facilityAvailableComputeFlops: 900,
+      deliveredUsefulComputeFlops: 900,
+    });
+    expect(after.facility.compute.totalAllocatedUsefulComputeFlops).toBe(0);
+  });
+
+  test("calculates Research before memory and routing constraints", () => {
+    const state = withActiveResearch(readyState(), 0.25);
+    state.facility.routes = {};
+    const core = new SimCore({
+      initialState: state,
+      tickSystems: createComputeTickSystems(content),
+    });
+
+    core.step();
+
+    const after = core.getStateForSave();
+    expect(after.facility.compute.research).toMatchObject({
+      facilityAvailableComputeFlops: 900,
+      deliveredUsefulComputeFlops: 225,
+    });
+    expect(after.facility.compute.byTask["task"]).toMatchObject({
+      runnable: false,
+      blockingReasons: ["insufficient-memory-capacity", "data-disconnected"],
+    });
   });
 
   test("rejects later-stage delivery tampering and rolls back the complete tick and RNG", () => {
@@ -349,9 +496,411 @@ describe("production Useful Compute tick system", () => {
       },
     });
 
+    core.step(3);
+
+    expect(cacheEvents).toEqual(["calculated", "reused", "reused"]);
+  });
+
+  test("reuses the complete Research and Task result for progress-only Research changes", () => {
+    const cacheEvents: string[] = [];
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState()),
+      tickSystems: {
+        ...createComputeTickSystems(content, {
+          onComputeResultCacheEvent(event) {
+            cacheEvents.push(event);
+          },
+        }),
+        "advance-research": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                const active = state.research.active;
+                if (active === null) throw new Error("Missing active Research fixture.");
+                return {
+                  ...state,
+                  research: {
+                    ...state.research,
+                    active: {
+                      ...active,
+                      completedOperations: active.completedOperations + 1,
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    });
+
+    core.step(3);
+
+    expect(cacheEvents).toEqual(["calculated", "reused", "reused"]);
+    expect(core.getStateForSave().facility.compute.research).toMatchObject({
+      reservedComputeShare: 0.25,
+      deliveredUsefulComputeFlops: 225,
+    });
+  });
+
+  test("reuses Compute when only Research status, evidence, and data change", () => {
+    const cacheEvents: string[] = [];
+    let researchRuns = 0;
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState()),
+      tickSystems: {
+        ...createComputeTickSystems(content, {
+          onComputeResultCacheEvent(event) {
+            cacheEvents.push(event);
+          },
+        }),
+        "advance-research": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                researchRuns += 1;
+                if (researchRuns !== 2) return state;
+                return {
+                  ...state,
+                  research: {
+                    ...state.research,
+                    researchData: state.research.researchData + 1,
+                    evidenceTags: [...state.research.evidenceTags, "evidence-tube-failure-log"],
+                    statuses: {
+                      ...state.research.statuses,
+                      "research-buffered-io": "available" as const,
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    });
+
     core.step(2);
 
     expect(cacheEvents).toEqual(["calculated", "reused"]);
+  });
+
+  test("recalculates atomically when Research starts and changes the projection", () => {
+    const cacheEvents: string[] = [];
+    let workloadRuns = 0;
+    const core = new SimCore({
+      initialState: readyState(),
+      tickSystems: {
+        "calculate-workload-allocation": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                workloadRuns += 1;
+                return workloadRuns === 2 ? withActiveResearch(state, 0.25) : state;
+              },
+            };
+          },
+        },
+        ...createComputeTickSystems(content, {
+          onComputeResultCacheEvent(event) {
+            cacheEvents.push(event);
+          },
+        }),
+      },
+    });
+
+    core.step(2);
+
+    expect(cacheEvents).toEqual(["calculated", "calculated"]);
+    expect(core.getStateForSave().facility.compute.research).not.toBeNull();
+  });
+
+  test("recalculates atomically when Research is cancelled", () => {
+    const cacheEvents: string[] = [];
+    let workloadRuns = 0;
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState(), 0.25),
+      tickSystems: {
+        "calculate-workload-allocation": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                workloadRuns += 1;
+                if (workloadRuns !== 2) return state;
+                return {
+                  ...state,
+                  research: {
+                    ...state.research,
+                    active: null,
+                    statuses: {
+                      ...state.research.statuses,
+                      "research-stable-power-distribution": "cancelled" as const,
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+        ...createComputeTickSystems(content, {
+          onComputeResultCacheEvent(event) {
+            cacheEvents.push(event);
+          },
+        }),
+      },
+    });
+
+    core.step(2);
+
+    expect(cacheEvents).toEqual(["calculated", "calculated"]);
+    expect(core.getStateForSave().facility.compute.research).toBeNull();
+  });
+
+  test("keeps a completed Research result historical for the current tick and clears it next tick", () => {
+    const cacheEvents: string[] = [];
+    let researchRuns = 0;
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState(), 0.25),
+      tickSystems: {
+        ...createComputeTickSystems(content, {
+          onComputeResultCacheEvent(event) {
+            cacheEvents.push(event);
+          },
+        }),
+        "advance-research": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                researchRuns += 1;
+                if (researchRuns !== 1) return state;
+                return {
+                  ...state,
+                  research: {
+                    ...state.research,
+                    active: null,
+                    statuses: {
+                      ...state.research.statuses,
+                      "research-stable-power-distribution": "completed" as const,
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    });
+
+    core.step();
+    const completedTick = core.getStateForSave();
+    expect(completedTick.research.active).toBeNull();
+    expect(completedTick.facility.compute.research).not.toBeNull();
+
+    core.step();
+
+    expect(cacheEvents).toEqual(["calculated", "calculated"]);
+    expect(core.getStateForSave().facility.compute.research).toBeNull();
+  });
+
+  test("recalculates when the active Research share changes", () => {
+    const cacheEvents: string[] = [];
+    let workloadRuns = 0;
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState(), 0.25),
+      tickSystems: {
+        "calculate-workload-allocation": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                workloadRuns += 1;
+                const active = state.research.active;
+                if (workloadRuns !== 2 || active === null) return state;
+                return {
+                  ...state,
+                  research: {
+                    ...state.research,
+                    active: { ...active, reservedComputeShare: 0.5 },
+                  },
+                };
+              },
+            };
+          },
+        },
+        ...createComputeTickSystems(content, {
+          onComputeResultCacheEvent(event) {
+            cacheEvents.push(event);
+          },
+        }),
+      },
+    });
+
+    core.step(2);
+
+    expect(cacheEvents).toEqual(["calculated", "calculated"]);
+    expect(core.getStateForSave().facility.compute.research).toMatchObject({
+      reservedComputeShare: 0.5,
+      deliveredUsefulComputeFlops: 450,
+    });
+  });
+
+  test("recalculates when the active Research node changes at the same share", () => {
+    const cacheEvents: string[] = [];
+    let workloadRuns = 0;
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState(), 0.25),
+      tickSystems: {
+        "calculate-workload-allocation": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                workloadRuns += 1;
+                const active = state.research.active;
+                if (workloadRuns !== 2 || active === null) return state;
+                return {
+                  ...state,
+                  research: {
+                    ...state.research,
+                    statuses: {
+                      ...state.research.statuses,
+                      "research-stable-power-distribution": "completed" as const,
+                      "research-forced-airflow": "active" as const,
+                    },
+                    active: { ...active, nodeId: "research-forced-airflow" },
+                  },
+                };
+              },
+            };
+          },
+        },
+        ...createComputeTickSystems(content, {
+          onComputeResultCacheEvent(event) {
+            cacheEvents.push(event);
+          },
+        }),
+      },
+    });
+
+    core.step(2);
+
+    expect(cacheEvents).toEqual(["calculated", "calculated"]);
+    expect(core.getStateForSave().facility.compute.research).toMatchObject({
+      nodeId: "research-forced-airflow",
+      reservedComputeShare: 0.25,
+    });
+  });
+
+  test("recalculates after a command-only Research projection change", () => {
+    const cacheEvents: string[] = [];
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState(), 0.25),
+      commandHandlers: {
+        SET_GUIDANCE_MODE({ state }) {
+          const active = state.research.active;
+          if (active === null) throw new Error("Missing command Research fixture.");
+          state.research.active = { ...active, reservedComputeShare: 0.5 };
+        },
+      },
+      tickSystems: createComputeTickSystems(content, {
+        onComputeResultCacheEvent(event) {
+          cacheEvents.push(event);
+        },
+      }),
+    });
+
+    core.step();
+    core.enqueue(guidanceCommand());
+    expect(core.processPendingCommands()).toHaveLength(1);
+    core.step();
+
+    expect(cacheEvents).toEqual(["calculated", "calculated"]);
+    expect(core.getStateForSave().facility.compute.research).toMatchObject({
+      reservedComputeShare: 0.5,
+    });
+  });
+
+  test("does not share Research Compute projections between SimCore runtimes", () => {
+    const active = new SimCore({
+      initialState: withActiveResearch(readyState(), 0.25),
+      tickSystems: createComputeTickSystems(content),
+    });
+    const inactive = new SimCore({
+      initialState: readyState(),
+      tickSystems: createComputeTickSystems(content),
+    });
+
+    active.step();
+    inactive.step();
+
+    expect(active.getStateForSave().facility.compute.research).not.toBeNull();
+    expect(inactive.getStateForSave().facility.compute.research).toBeNull();
+  });
+
+  test("rejects later-stage Research result tampering and rolls back state and RNG", () => {
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState(), 0.25),
+      tickSystems: {
+        ...createComputeTickSystems(content),
+        "advance-research": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                const research = state.facility.compute.research;
+                if (research === null) throw new Error("Missing Compute Research fixture.");
+                return {
+                  ...state,
+                  facility: {
+                    ...state.facility,
+                    compute: {
+                      ...state.facility.compute,
+                      research: {
+                        ...research,
+                        deliveredUsefulComputeFlops: research.deliveredUsefulComputeFlops + 1,
+                      },
+                    },
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    });
+    const before = core.getStateForSave();
+
+    expect(() => core.step()).toThrow(/advance-research/);
+    expect(core.getStateForSave()).toEqual(before);
+    expect(core.getStateForSave().rngState).toBe(before.rngState);
+  });
+
+  test("rejects later structural Compute branch replacement", () => {
+    const core = new SimCore({
+      initialState: withActiveResearch(readyState(), 0.25),
+      tickSystems: {
+        ...createComputeTickSystems(content),
+        "advance-research": {
+          createRuntime() {
+            return {
+              executionMode: "structural-sharing" as const,
+              run({ state }: StructuralSharingTickSystemContext) {
+                return {
+                  ...state,
+                  facility: { ...state.facility, compute: { ...state.facility.compute } },
+                };
+              },
+            };
+          },
+        },
+      },
+    });
+
+    expect(() => core.step()).toThrow(/advance-research/);
   });
 
   test("rejects overcommitted allocations atomically", () => {
@@ -713,7 +1262,7 @@ describe("production Useful Compute tick system", () => {
   test("invalidates private caches on state replacement and remains deterministic for 100 ticks", () => {
     const events: string[] = [];
     const first = new SimCore({
-      initialState: readyState(),
+      initialState: withActiveResearch(readyState(), 0.25),
       tickSystems: createComputeTickSystems(content, {
         onTopologyCacheEvent(event) {
           events.push(event);
@@ -721,7 +1270,7 @@ describe("production Useful Compute tick system", () => {
       }),
     });
     const second = new SimCore({
-      initialState: readyState(),
+      initialState: withActiveResearch(readyState(), 0.25),
       tickSystems: createComputeTickSystems(content),
     });
 

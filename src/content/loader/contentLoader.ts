@@ -138,6 +138,12 @@ function validateResearchCycles(
   }
 }
 
+function hasSameStringSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
+}
+
 export function validateContent(raw: RawContentPack): ContentBundle {
   const issues: ContentIssue[] = [];
   const modulesFile = parseFile("modules", modulesFileSchema, raw.modules, issues);
@@ -186,6 +192,19 @@ export function validateContent(raw: RawContentPack): ContentBundle {
   const evidenceTags = new Set(tasksFile.tasks.flatMap((task) => task.evidenceTagRewards));
   const locales = { ro, en } as const;
 
+  const researchSortOrders = new Map<number, number>();
+  researchFile.nodes.forEach((node, nodeIndex) => {
+    const previousIndex = researchSortOrders.get(node.sortOrder);
+    if (previousIndex !== undefined) {
+      issues.push({
+        path: `research.nodes[${nodeIndex}].sortOrder`,
+        message: `duplicate sortOrder ${node.sortOrder}; already used at index ${previousIndex}`,
+      });
+    } else {
+      researchSortOrders.set(node.sortOrder, nodeIndex);
+    }
+  });
+
   modulesFile.modules.forEach((module, moduleIndex) => {
     validateLocalization(locales, module.nameKey, issues);
     validateLocalization(locales, module.descriptionKey, issues);
@@ -215,6 +234,12 @@ export function validateContent(raw: RawContentPack): ContentBundle {
         });
       }
     });
+    if (new Set(module.unlockResearchIds).size !== module.unlockResearchIds.length) {
+      issues.push({
+        path: `modules.modules[${moduleIndex}].unlockResearchIds`,
+        message: "must contain unique Research IDs",
+      });
+    }
     const { normalMaxC, warningMaxC, criticalMaxC, shutdownC } = module.thermal;
     if (!(normalMaxC < warningMaxC && warningMaxC < criticalMaxC && criticalMaxC < shutdownC)) {
       issues.push({
@@ -427,6 +452,13 @@ export function validateContent(raw: RawContentPack): ContentBundle {
           message: `unknown module ${moduleId}`,
         });
       }
+      const module = modules.get(moduleId);
+      if (module !== undefined && !module.unlockResearchIds.includes(node.id)) {
+        issues.push({
+          path: `research.nodes[${nodeIndex}].unlockModuleIds[${moduleIndex}]`,
+          message: `module ${moduleId} must reciprocally unlock research node ${node.id}`,
+        });
+      }
     });
     node.requiredBenchmarkIds.forEach((benchmarkId, benchmarkIndex) => {
       if (!benchmarks.has(benchmarkId)) {
@@ -458,6 +490,52 @@ export function validateContent(raw: RawContentPack): ContentBundle {
   eraFile.era.benchmarkDefinitions.forEach((benchmark) => {
     validateLocalization(locales, benchmark.nameKey, issues);
   });
+
+  modulesFile.modules.forEach((module, moduleIndex) => {
+    const expectedResearchIds = researchFile.nodes
+      .filter((node) => node.unlockModuleIds.includes(module.id))
+      .map((node) => node.id);
+    if (!hasSameStringSet(module.unlockResearchIds, expectedResearchIds)) {
+      issues.push({
+        path: `modules.modules[${moduleIndex}].unlockResearchIds`,
+        message: "must be the exact inverse of Research unlockModuleIds",
+      });
+    }
+  });
+
+  const finalNodes = researchFile.nodes.filter((node) => node.finalReveal);
+  if (finalNodes.length !== 1) {
+    issues.push({
+      path: "research.nodes",
+      message: "must contain exactly one final-reveal node",
+    });
+  } else {
+    const finalNode = finalNodes[0];
+    if (finalNode === undefined) throw new Error("Final Research node is missing.");
+    const reachable = new Set<string>();
+    const pending = [finalNode.id];
+    while (pending.length > 0) {
+      const nodeId = pending.pop();
+      if (nodeId === undefined || reachable.has(nodeId)) continue;
+      reachable.add(nodeId);
+      const node = research.get(nodeId);
+      if (node !== undefined) pending.push(...node.prerequisites);
+    }
+    if (!finalNode.mandatory) {
+      issues.push({
+        path: `research.nodes[${researchFile.nodes.indexOf(finalNode)}].mandatory`,
+        message: "the final-reveal node must be mandatory",
+      });
+    }
+    researchFile.nodes.forEach((node, nodeIndex) => {
+      if (node.mandatory && node.id !== finalNode.id && !reachable.has(node.id)) {
+        issues.push({
+          path: `research.nodes[${nodeIndex}].mandatory`,
+          message: "mandatory non-final nodes must be transitive prerequisites of the final node",
+        });
+      }
+    });
+  }
 
   validateResearchCycles(research, issues);
 

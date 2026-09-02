@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-01
+Updated: 2026-09-02
 
 ## Current phase
 
@@ -31,15 +31,20 @@ Updated: 2026-09-01
 - Phase 1 Task 9.1 through Task 9.5, deterministic Useful Compute and output ownership, are
   checkpointed at `d5dcab86c016f75bdc43d5db37258dcc54bc28c9`. Phase 1 Task 10, deterministic Task
   lifecycle and allocation under ADR-0016, is complete at its single final checkpoint boundary.
+- Phase 1 Task 11, deterministic Research lifecycle and global proportional Compute reservation, is
+  complete at its single checkpoint-neutral boundary under ADR-0017. Tasks 11.1 through 11.7 cover
+  the additive contract, pure and production reservation, commands, lifecycle/Museum calculation,
+  transactional Research integration, and performance/compatibility/documentation closeout. The
+  exact next Phase 1 task is Task 12, Benchmark runners.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
   `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN`,
   `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`, `ACCEPT_TASK`, `ALLOCATE_TASK`, `SET_TASK_HOLD`,
-  and `ABANDON_TASK`. Production
+  `ABANDON_TASK`, `START_RESEARCH`, and `CANCEL_RESEARCH`. Production
   gameplay tick systems are Task 6's `calculate-power-demand-and-delivery`, Task 7's
   `calculate-heat-generation` and `update-thermal-state`, Task 8's
   `apply-throttling-stability-and-shutdown`, Task 9's `calculate-theoretical-and-useful-compute`, and
-  Task 10's Task-only `advance-tasks-and-benchmarks` stage.
+  Task 10's Task-only `advance-tasks-and-benchmarks` stage and Task 11's `advance-research` stage.
 
 ## Implemented deterministic foundation
 
@@ -517,6 +522,14 @@ warm-up iterations.
   `4f51593129881319`. Task 10.1 intentionally adds serialized state fields, producing
   `955cb3249436db4b` and `755cf754a5bd531b` while preserving the Task 7/8 behavioral projections.
 
+Phase 1 Task 11 extends production Compute with the approved global Research reservation while
+reusing the existing per-`SimCore` Compute cache. Research delivery is a separate authoritative
+result, Task delivery remains the only contributor to `totalAllocatedUsefulComputeFlops`, and
+later stages preserve Compute-owned Research/Task outputs. The full-state compatibility vectors
+are `7157962fe832def9` (Task 7 projection), `50e67e1213179a35` (Task 8 projection), and
+`bc23753d687706dc` (Task 10 lifecycle). These intentional shape changes are recorded in ADR-0017
+and the permanent Research diagnostic; Task 7/8 behavioral projections remain unchanged.
+
 ## Phase 1 Task 10 implementation
 
 - ADR-0016 defines the authoritative sequence, reputation, and service-window fields; capacity slots;
@@ -539,11 +552,17 @@ warm-up iterations.
 - Task 7/8 behavior projections remain `3981c87f4603e9fd` and `6a3d11ce3e14ca83`; Task 10's
   serialized-state vectors are `955cb3249436db4b` and `755cf754a5bd531b`. The fixed 100-tick Task
   lifecycle integration hash is `1fc91ca07fa5a046`.
+- The Task 11.1 serialized-state vectors are `7157962fe832def9`, `50e67e1213179a35`, and
+  `bc23753d687706dc`; Task 11.3 adds no new compatibility vector because active Research Compute
+  results are derived during production ticks and existing no-Research fixtures retain their Task
+  delivery values.
 - `corepack pnpm performance:tasks` is permanent. Its final audited i7-2600 run measured warm pure Task
   median/p95/max `0.0186/0.0578/1.1083 ms` (1,000 samples) and full production
   `1.3456/2.2562/9.3940 ms` (200 samples), passing `<0.20 ms`, `<4 ms`, and preferred `<3.7 ms` p95
   gates. The diagnostic retains every sample and reports transition, payout, command, and witness paths.
-- Exact next Phase 1 task: Task 11, Research lifecycle. It remains outside the Task 10 boundary.
+- Task 11 is complete at its single checkpoint-neutral boundary. Its permanent Research diagnostic,
+  compatibility results, and final verification are recorded in ADR-0017 and
+  `docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md`. Task 12, Benchmark runners, is next.
 
 ## Verification
 
@@ -713,7 +732,8 @@ warm-up iterations.
 
 Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc`; Task 7, Task 8, and Task 9.1
 through Task 9.5 are complete. Task 10 is complete under ADR-0016 at its single final checkpoint
-boundary. The exact next planned Phase 1 task is Task 11, Research lifecycle.
+boundary. Task 11 is complete at its single checkpoint-neutral boundary under ADR-0017. The exact
+next Phase 1 task is Task 12, Benchmark runners; no Task 12 implementation is included here.
 
 ## Phase 1 Task 6 implementation
 
@@ -761,6 +781,41 @@ boundary. The exact next planned Phase 1 task is Task 11, Research lifecycle.
   immutable stage order, fixed tick timing, atomicity, rollback, RNG protection, and the legacy
   mutable-system fallback remain intact.
 
+## Phase 1 Task 11 implementation and closeout
+
+- ADR-0017 fixes the additive Research state/result contract, content hardening, global Compute
+  reservation, exact cache projection, historical-result semantics, command precedence/costs,
+  lifecycle eligibility, progress, final reveal, Museum formulas, rollback, ownership, and
+  determinism. The fixed production order is Compute after Power/Thermal/Stability, Task
+  advancement, then `advance-research`; Research does not consume Memory, Interconnect, Suitability,
+  or RNG.
+- The shared per-`SimCore` Compute cache reuses only the Research projection `null` or
+  `{ nodeId, reservedComputeShare }`. Progress/status/Data/Evidence changes are cache-compatible;
+  node/share/active-null changes invalidate Research and Task deliveries atomically. The current
+  Compute branch and its Research result remain owned by Compute, and later stages preserve them.
+- `START_RESEARCH` and `CANCEL_RESEARCH` use the existing command processor. Starts pay cash and
+  Research Data atomically with integer microdollars; cancellation has no refund and loses progress.
+  Research eligibility requires completed prerequisites, required Evidence Tags, and unique matching
+  passed benchmark mappings. Final completion creates only `museum-vacuum-tube-final` and no
+  transistor hardware.
+- The permanent diagnostic is `corepack pnpm performance:research`, documented in
+  `docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md`. Its audited i7-2600 p95 values are
+  `0.0048 ms` reservation, `0.0719 ms` lifecycle, `0.1082 ms` Task 9 Compute, and `2.9352 ms`
+  complete production, with all Research hard gates passing. It retains the fixed sample counts,
+  dense fixture, validation, formulas, and determinism repetitions.
+- Final checkpoint performance verification records one explicit exception: the unchanged Task 8
+  pure-domain diagnostic measured median/p95/max `0.1045/0.2605/1.5377 ms` over 500 samples, so its
+  p95 exceeded the nominal `< 0.25 ms` gate by `0.0105 ms`; warm Task 8 production passed at p95
+  `2.4462 ms`. The user accepted this isolated irregularity without any change to Task 8 code,
+  formulas, fixture, samples, warm-up, assertions, timeout, or threshold. Thermal passed at pure p95
+  `0.2706 ms` and production p95 `1.8368 ms`.
+- Compatibility changes are limited to serialized `research: null` on dirty Compute and
+  `researchFactor: 1` in Task breakdowns. Published full-state vectors are `7157962fe832def9`,
+  `50e67e1213179a35`, and `bc23753d687706dc`, with exact structural reasons in ADR-0017. Task 7/8
+  behavioral projections, balancing/module numeric values, GDD, and Word documents remain unchanged.
+- Task 11 is complete at its single checkpoint-neutral boundary. Task 12, Benchmark runners, is
+  the exact next Phase 1 task; no Task 12 behavior is included.
+
 ## Explicitly deferred
 
 - Real-time tick scheduling, timers, catch-up, pause/speed host scheduling, and worker integration.
@@ -768,11 +823,11 @@ boundary. The exact next planned Phase 1 task is Task 11, Research lifecycle.
   `ENTER_DESIGN_MODE`, `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`,
   `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`,
   `CANCEL_DESIGN`, `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`, `ACCEPT_TASK`,
-  `ALLOCATE_TASK`, `SET_TASK_HOLD`, and `ABANDON_TASK`.
-- Automatic energy deductions, power capacity purchases, labor and relocation costs, research
-  costs/progression, maintenance, inflation, market events, scarcity, financing, interest, insolvency,
-  bailout, bankruptcy, and financial game over.
+  `ALLOCATE_TASK`, `SET_TASK_HOLD`, `ABANDON_TASK`, `START_RESEARCH`, and `CANCEL_RESEARCH`.
+- Automatic energy deductions, power capacity purchases, labor and relocation costs, Research
+  staffing or maintenance beyond the approved lifecycle, inflation, market events, scarcity,
+  financing, interest, insolvency, bailout, bankruptcy, and financial game over.
 - Installed-module sales, auto-connect, auto-route, pathfinding, rerouting, and route preview.
-- Research lifecycle and Compute reservation, benchmarks, blueprints, replay execution, and balancing
-  bot.
+- Benchmarks, blueprints, replay execution, balancing bot, Research UI, Research events, and later
+  progression features outside the approved Task 11 lifecycle.
 - React/Pixi integration, IndexedDB, save/load, migrations, export, and import.

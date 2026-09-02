@@ -101,6 +101,7 @@ describe("initial GameState", () => {
           thermalRevision: null,
           byModule: {},
           byTask: {},
+          research: null,
           totalTheoreticalComputeFlops: 0,
           totalAvailableComputeFlops: 0,
           totalAllocatedUsefulComputeFlops: 0,

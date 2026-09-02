@@ -38,6 +38,7 @@ describe("application localization", () => {
     expect(i18n.t("errors.insufficient-cash")).toBe("Fonduri insuficiente.");
     expect(i18n.t("errors.insufficient-inventory")).toBe("Inventar insuficient.");
     expect(i18n.t("errors.research-required")).toBe("Cercetarea necesară nu este finalizată.");
+    expect(i18n.t("errors.insufficient-research-data")).toBe("Date de cercetare insuficiente.");
     for (const key of [
       "errors.not-in-design-mode",
       "errors.already-in-design-mode",
@@ -72,6 +73,7 @@ describe("application localization", () => {
     expect(i18n.t("errors.insufficient-cash")).toBe("Insufficient cash.");
     expect(i18n.t("errors.insufficient-inventory")).toBe("Insufficient inventory.");
     expect(i18n.t("errors.research-required")).toBe("The required research is not completed.");
+    expect(i18n.t("errors.insufficient-research-data")).toBe("Insufficient research data.");
     expect(i18n.t("errors.not-in-design-mode")).toBe("Design Mode is not active.");
     expect(i18n.t("errors.already-in-design-mode")).toBe("Design Mode is already active.");
     expect(i18n.t("errors.invalid-system")).toBe("The system state is invalid.");

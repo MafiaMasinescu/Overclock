@@ -159,6 +159,29 @@ i7-2600 gates are pure Task p95 below `0.20 ms` and complete production p95 belo
 is preferred production headroom. See `docs/diagnostics/TASK_LIFECYCLE_PERFORMANCE.md` for the permanent
 fixture and path contract.
 
+## Research lifecycle performance diagnostic
+
+For Task 11's extension of the same dense 24 by 16 fixture, run:
+
+```powershell
+corepack pnpm performance:research
+```
+
+It measures, separately, 1,000 pure Research reservation-helper samples, 1,000 pure lifecycle
+samples, 500 warm Task 9 Compute samples with Research, and 200 samples each for full production,
+progress-only cache reuse, start/cancel/share-change recalculation, completion, final Museum
+creation, and forced exact witness/ownership validation. The fixture includes active powered
+Compute, Power/Thermal/Overclock/Compute/Task/Research stages, two active Tasks, reservation and
+progress, Evidence Tag completion, cancellation/restart, realistic routes and contention, and
+nonuniform temperatures. Setup and 100 JIT warm-ups are excluded; no sample is filtered. The
+diagnostic reports median, p95, maximum, sample count, CPU, OS, Node, build mode, and warm-up.
+
+On the i7-2600, the hard gates are pure reservation p95 below `0.05 ms`, pure Research lifecycle
+below `0.15 ms`, warm Task 9 Compute below `0.35 ms`, and complete production below `4 ms`. The
+preferred production target is below `3 ms` p95 and is informative. See
+`docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md` for the permanent fixture, formulas, and
+audited results.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

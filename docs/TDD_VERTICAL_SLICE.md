@@ -1178,6 +1178,72 @@ Compute rezervat pentru research reduce compute-ul disponibil task-urilor. Jucă
 
 Nodul final `transistor-theory` cere benchmark-urile și research-ul mandatory. Finalizarea lui produce reveal-ul, Museum snapshot-ul și finalul vertical slice-ului. Nu creează componente transistor.
 
+### Task 11 contract and decomposition
+
+Task 11 keeps Research in `GameState` and extends it with historical Compute results, without a
+second command or execution path. The additive public shape is:
+
+```ts
+interface ResearchComputeResultState {
+  nodeId: ResearchNodeId;
+  reservedComputeShare: number;
+  facilityAvailableComputeFlops: number;
+  deliveredUsefulComputeFlops: number;
+}
+
+interface FacilityComputeState {
+  research: ResearchComputeResultState | null;
+}
+
+interface ComputeBreakdown {
+  researchFactor: number;
+  // bottleneck factor also admits "research"
+}
+```
+
+`totalAllocatedUsefulComputeFlops` remains the sum of useful Task delivery; Research delivery stays
+separate. Dirty Compute has `research: null`, and a Task breakdown without active Research has
+`researchFactor: 1`. Stored Research results are historical and are structurally validated without
+reinterpretation using current ResearchState.
+
+Content-independent Research validation covers Research Data, lexically ordered unique evidence
+tags, valid statuses and active-record consistency, at most one active status, active tick/progress/
+share shape, Museum snapshots, and unique historical identifiers. Content-aware validation requires
+exact Research ID coverage, known active content, active node limits, completed-node non-regression,
+and final flag/fixed Museum consistency. Research content requires positive finite operations/share,
+unique ID lists and sort orders, existing references, an acyclic graph, one mandatory final node,
+mandatory prerequisite closure, and inverse module-Research unlock relationships. Feature IDs are
+shape-checked without a feature registry.
+
+Task 11 is decomposed as follows:
+
+- 11.1 - contract, state, content validation, localization, and compatibility;
+- 11.2 - approved global proportional reservation formulas and pure Research Compute/Task factor
+  helpers;
+- 11.3 - production Compute reservation, the existing Compute cache extension, fresh witness
+  validation, historical-result semantics, and Compute-owned Research/Task output ownership;
+- 11.4 - `START_RESEARCH` and `CANCEL_RESEARCH`, atomic costs, and cancellation through the
+  existing command path;
+- 11.5 - pure deterministic Research progression, status reconciliation, content-gated
+  availability, and final Museum result calculation;
+- 11.6 - production Research tick integration and authoritative application of the pure result;
+- 11.7 - performance, compatibility closeout, permanent documentation, and the Task 11 boundary.
+
+Task 11 is complete at its single checkpoint-neutral boundary. The approved commands, pure
+reservation and lifecycle formulas, status reconciliation, final reveal, Museum calculation,
+production `advance-research` stage, atomic rollback, Compute-cache projection, exact ownership
+guards, compatibility vectors, and determinism rules are implemented through the existing
+`CommandProcessor` and `SimCore` path. The permanent audited Research diagnostic is
+`corepack pnpm performance:research`; its fixture and results are recorded in
+`docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md`. Task 12, Benchmark runners, is the exact next
+Phase 1 task. Research UI, events, additional benchmark behavior, saves/replay, workers,
+achievements, and later Phase 1 scope remain deferred.
+
+Final checkpoint verification passed all Task 11 hard gates. The unchanged Task 8 diagnostic had
+one explicitly accepted target-host irregularity: pure p95 `0.2605 ms` against its nominal
+`< 0.25 ms` gate; Task 8 production remained below `4 ms`, and no fixture, sample, threshold, or
+formula was changed.
+
 ## 24. Blueprint system
 
 Vertical slice-ul permite un blueprint de subansamblu. Schema susține tipurile viitoare, dar UI expune doar `subassembly`.

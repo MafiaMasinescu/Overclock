@@ -5,6 +5,7 @@ import type {
   FacilityComputeState,
   GameState,
   ModuleComputeResultState,
+  ResearchComputeResultState,
   TaskComputeResultState,
 } from "../core/types.ts";
 
@@ -20,6 +21,7 @@ const BLOCKING_REASONS: readonly ComputeBlockingReason[] = [
 ];
 const WARNINGS: readonly ComputeWarning[] = ["stability-below-minimum"];
 const BOTTLENECK_FACTORS = [
+  "research",
   "power",
   "thermal",
   "memory",
@@ -198,6 +200,12 @@ function validateBreakdown(
   );
   pushIf(
     issues,
+    !isUnitRate(breakdown.researchFactor),
+    `${path}.researchFactor`,
+    "must be in [0, 1]",
+  );
+  pushIf(
+    issues,
     !isUnitRate(breakdown.stabilityFactor),
     `${path}.stabilityFactor`,
     "must be in [0, 1]",
@@ -214,6 +222,7 @@ function validateBreakdown(
     issues,
     breakdown.usefulComputeFlops !==
       breakdown.theoreticalComputeFlops *
+        breakdown.researchFactor *
         breakdown.powerFactor *
         breakdown.thermalFactor *
         breakdown.memoryFactor *
@@ -225,6 +234,7 @@ function validateBreakdown(
   );
   const bottlenecks = breakdown.bottlenecks;
   const factorValues = [
+    ["research", breakdown.researchFactor],
     ["power", breakdown.powerFactor],
     ["thermal", breakdown.thermalFactor],
     ["memory", breakdown.memoryFactor],
@@ -308,6 +318,37 @@ function validateBreakdown(
       "must use the canonical factor localization key",
     );
   }
+}
+
+function validateResearchResult(
+  result: Readonly<ResearchComputeResultState>,
+  issues: ComputeStateIssue[],
+): void {
+  const path = "facility.compute.research";
+  pushIf(
+    issues,
+    typeof result.nodeId !== "string" || result.nodeId.length === 0,
+    `${path}.nodeId`,
+    "must be a nonempty string",
+  );
+  pushIf(
+    issues,
+    !isFinitePositive(result.reservedComputeShare) || result.reservedComputeShare > 1,
+    `${path}.reservedComputeShare`,
+    "must be finite, strictly positive, and at most one",
+  );
+  pushIf(
+    issues,
+    !isFiniteNonnegative(result.facilityAvailableComputeFlops),
+    `${path}.facilityAvailableComputeFlops`,
+    "must be finite and nonnegative",
+  );
+  pushIf(
+    issues,
+    !isFiniteNonnegative(result.deliveredUsefulComputeFlops),
+    `${path}.deliveredUsefulComputeFlops`,
+    "must be finite and nonnegative",
+  );
 }
 
 function validateTaskResult(
@@ -524,6 +565,7 @@ export function createDirtyComputeState(): FacilityComputeState {
     thermalRevision: null,
     byModule: {},
     byTask: {},
+    research: null,
     totalTheoreticalComputeFlops: 0,
     totalAvailableComputeFlops: 0,
     totalAllocatedUsefulComputeFlops: 0,
@@ -580,6 +622,12 @@ export function validateComputeState(state: Readonly<GameState>): ComputeStateIs
       "dirty state must be empty",
     );
     pushIf(issues, taskIds.length !== 0, "facility.compute.byTask", "dirty state must be empty");
+    pushIf(
+      issues,
+      compute.research !== null,
+      "facility.compute.research",
+      "dirty state must be null",
+    );
     for (const [field, value] of [
       ["totalTheoreticalComputeFlops", compute.totalTheoreticalComputeFlops],
       ["totalAvailableComputeFlops", compute.totalAvailableComputeFlops],
@@ -607,6 +655,9 @@ export function validateComputeState(state: Readonly<GameState>): ComputeStateIs
   for (const taskId of taskIds) {
     const result = compute.byTask[taskId];
     if (result !== undefined) validateTaskResult(result, taskId, compute.byModule, issues);
+  }
+  if (compute.research !== null) {
+    validateResearchResult(compute.research, issues);
   }
   let totalTheoreticalComputeFlops = 0;
   let totalAvailableComputeFlops = 0;

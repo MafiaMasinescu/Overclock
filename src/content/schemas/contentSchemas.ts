@@ -3,8 +3,13 @@ import { z } from "zod";
 const idSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 const localizationKeySchema = z.string().min(3);
 const finiteNonNegativeSchema = z.number().nonnegative();
+const finitePositiveSchema = z.number().positive();
 const positiveIntegerSchema = z.number().int().positive();
 const positiveSafeIntegerSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const uniqueIdArraySchema = z.array(idSchema).refine(
+  (values) => new Set(values).size === values.length,
+  "must contain unique IDs",
+);
 
 export const gridPointSchema = z.object({
   x: z.number().int(),
@@ -141,15 +146,15 @@ export const researchNodeSchema = z.object({
   domain: z.enum(["compute", "materials", "memory", "thermal", "software"]),
   sortOrder: z.number().int().nonnegative(),
   mandatory: z.boolean(),
-  prerequisites: z.array(idSchema),
-  requiredEvidenceTags: z.array(idSchema),
-  requiredBenchmarkIds: z.array(idSchema),
+  prerequisites: uniqueIdArraySchema,
+  requiredEvidenceTags: uniqueIdArraySchema,
+  requiredBenchmarkIds: uniqueIdArraySchema,
   cashCostUsd: finiteNonNegativeSchema,
   researchDataCost: finiteNonNegativeSchema,
-  requiredOperations: finiteNonNegativeSchema,
-  minimumComputeShare: z.number().min(0).max(1),
-  unlockModuleIds: z.array(idSchema),
-  unlockFeatureIds: z.array(idSchema),
+  requiredOperations: finitePositiveSchema,
+  minimumComputeShare: finitePositiveSchema.max(1),
+  unlockModuleIds: uniqueIdArraySchema,
+  unlockFeatureIds: uniqueIdArraySchema,
   finalReveal: z.boolean(),
   graphPosition: z.object({ column: z.number().int().nonnegative(), row: z.number().int().nonnegative() }),
 });

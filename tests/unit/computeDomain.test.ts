@@ -157,6 +157,43 @@ function addModuleResults(state: GameState, moduleId: string): void {
   };
 }
 
+function explicitTaskResult(state: GameState, researchFactor: number) {
+  const task = state.tasks.instances["task"];
+  if (task?.allocation === null || task?.allocation === undefined) {
+    throw new Error("Missing explicit Research factor task fixture.");
+  }
+  const topology = computeDomain.buildComputeTopology(state.facility, content);
+  const capacity = computeDomain.calculateModuleComputeCapacity(
+    state.facility,
+    content,
+    topology.moduleIds,
+  );
+  return computeDomain.calculateTaskComputeResult(
+    state,
+    content,
+    topology,
+    capacity,
+    task,
+    task.allocation,
+    undefined,
+    ["memory"],
+    researchFactor,
+  );
+}
+
+function addActiveResearch(state: GameState, reservedComputeShare = 0.25): void {
+  state.research.statuses = {
+    ...state.research.statuses,
+    "research-stable-power-distribution": "active",
+  };
+  state.research.active = {
+    nodeId: "research-stable-power-distribution",
+    startedAtTick: state.tick,
+    completedOperations: 0,
+    reservedComputeShare,
+  };
+}
+
 describe("Task 9.2 pure Useful Compute domain", () => {
   test("calculates exact Balanced theoretical and available module compute without mutating inputs", () => {
     const state = readyState();
@@ -246,8 +283,164 @@ describe("Task 9.2 pure Useful Compute domain", () => {
       extraLatencyMicroseconds: 25,
     });
     expect(result.byTask["task"]?.breakdown.usefulComputeFlops).toBeGreaterThan(0);
+    expect(result.byTask["task"]?.breakdown.researchFactor).toBe(1);
+    expect(result.research).toBeNull();
+    expect(result.totalAllocatedUsefulComputeFlops).toBe(
+      result.byTask["task"]?.breakdown.usefulComputeFlops,
+    );
     expect(state).toEqual(before);
     expect(topology.pathMetrics).toEqual(beforePathMetrics);
+  });
+
+  test("preserves Task requested share while applying an explicit Research factor", () => {
+    const state = activeTaskState();
+    const task = state.tasks.instances["task"];
+    if (task?.allocation === null || task?.allocation === undefined) {
+      throw new Error("Missing requested-share fixture.");
+    }
+    task.allocation.requestedShare = 0.6;
+
+    const result = explicitTaskResult(state, 0.25);
+
+    expect(result.requestedShare).toBe(0.6);
+    expect(result.breakdown.theoreticalComputeFlops).toBe(900 * 0.6);
+    expect(result.breakdown.researchFactor).toBe(0.25);
+    expect(result.breakdown.usefulComputeFlops).toBe(
+      result.breakdown.theoreticalComputeFlops *
+        result.breakdown.researchFactor *
+        result.breakdown.powerFactor *
+        result.breakdown.thermalFactor *
+        result.breakdown.memoryFactor *
+        result.breakdown.interconnectFactor *
+        result.breakdown.suitabilityFactor *
+        result.breakdown.stabilityFactor,
+    );
+  });
+
+  test("applies Research first and preserves exact lost-compute tie order", () => {
+    const state = activeTaskState();
+    const power = state.facility.power.byModule["compute"];
+    if (power === undefined) throw new Error("Missing Research ordering power fixture.");
+    power.powerFactor = 0;
+
+    const result = explicitTaskResult(state, 0.5);
+
+    expect(result.breakdown.usefulComputeFlops).toBe(0);
+    expect(result.breakdown.bottlenecks.slice(0, 2)).toEqual([
+      expect.objectContaining({
+        factor: "research",
+        factorValue: 0.5,
+        lostComputeFlops: 450,
+      }),
+      expect.objectContaining({
+        factor: "power",
+        factorValue: 0,
+        lostComputeFlops: 450,
+      }),
+    ]);
+  });
+
+  test("uses effective Task share for bandwidth demand while leaving memory capacity unscaled", () => {
+    const state = activeTaskState();
+    const phase = content.tasks["task-ballistic-table-verification"]?.phases[0];
+    const route = state.facility.routes["data-route"];
+    if (phase === undefined || route === undefined) {
+      throw new Error("Missing effective bandwidth fixture inputs.");
+    }
+    route.capacityPerSecond = phase.memoryBandwidthRequiredBytesPerSecond * 0.75;
+
+    const fullReservation = explicitTaskResult(state, 1);
+    const halfReservation = explicitTaskResult(state, 0.5);
+
+    expect(fullReservation.availableMemoryCapacityBytes).toBe(
+      halfReservation.availableMemoryCapacityBytes,
+    );
+    expect(fullReservation.breakdown.memoryFactor).toBe(0.75);
+    expect(halfReservation.breakdown.memoryFactor).toBe(1);
+    expect(fullReservation.breakdown.interconnectFactor).toBeLessThan(
+      halfReservation.breakdown.interconnectFactor,
+    );
+  });
+
+  test("keeps a valid task runnable with zero useful delivery at full Research reservation", () => {
+    const state = activeTaskState();
+
+    const result = explicitTaskResult(state, 0);
+
+    expect(result).toMatchObject({ runnable: true, blockingReasons: [] });
+    expect(result.breakdown.theoreticalComputeFlops).toBeGreaterThan(0);
+    expect(result.breakdown.usefulComputeFlops).toBe(0);
+  });
+
+  test("retains suitability boosts without turning them into bottlenecks", () => {
+    const state = activeTaskState();
+    const task = state.tasks.instances["task"];
+    if (task?.allocation === null || task?.allocation === undefined) {
+      throw new Error("Missing suitability boost fixture.");
+    }
+    task.definitionId = "task-wiring-layout-study";
+    task.allocation.clusterModuleIds = ["compute", "memory"];
+
+    const result = explicitTaskResult(state, 0.5);
+
+    expect(result.breakdown.suitabilityFactor).toBe(1.25);
+    expect(result.breakdown.bottlenecks).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ factor: "suitability" })]),
+    );
+    expect(result.breakdown.bottlenecks[0]?.factor).toBe("research");
+  });
+
+  test("does not mutate Task Compute inputs when applying a Research factor", () => {
+    const state = activeTaskState();
+    const before = structuredClone(state);
+
+    explicitTaskResult(state, 0.35);
+
+    expect(state).toEqual(before);
+  });
+
+  test("keeps the explicit factor-one result numerically identical to the existing path", () => {
+    const state = activeTaskState();
+    const baseline = computeDomain.calculateFacilityCompute(state, content).byTask["task"];
+    const explicit = explicitTaskResult(state, 1);
+
+    expect(explicit).toEqual(baseline);
+    expect(JSON.parse(JSON.stringify(explicit))).toEqual(explicit);
+  });
+
+  test("captures the exact Research projection and rejects same-generation Research input changes", () => {
+    const state = activeTaskState();
+    addActiveResearch(state, 0.25);
+    const topology = computeDomain.buildComputeTopology(state.facility, content);
+    const transaction = computeDomain.calculateFacilityComputeWithWitness(state, content, topology);
+    const active = state.research.active;
+    if (active === null || transaction.compute.research === null) {
+      throw new Error("Missing Research witness fixture.");
+    }
+    const changedState: GameState = {
+      ...state,
+      research: {
+        ...state.research,
+        active: { ...active, reservedComputeShare: 0.5 },
+      },
+    };
+
+    expect(transaction.witness.research).toEqual({
+      nodeId: "research-stable-power-distribution",
+      reservedComputeShare: 0.25,
+    });
+    expect(Object.isFrozen(transaction.witness.research)).toBe(true);
+    expect(transaction.witness.expectedResearch).toBe(transaction.compute.research);
+    expect(
+      computeDomain.validateFreshComputeWitness(
+        changedState,
+        content,
+        transaction.compute,
+        changedState.tasks.instances,
+        transaction.witness,
+        topology,
+      ),
+    ).toEqual(["Compute calculation inputs changed before candidate-state validation."]);
   });
 
   test("uses local memory bandwidth without requiring a route", () => {

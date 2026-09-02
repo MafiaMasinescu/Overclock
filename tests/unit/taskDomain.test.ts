@@ -94,6 +94,7 @@ function taskResult(
       memoryFactor: 1,
       interconnectFactor: 1,
       suitabilityFactor: 1,
+      researchFactor: 1,
       stabilityFactor: 1,
       bottlenecks: [],
     },

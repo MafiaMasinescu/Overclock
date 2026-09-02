@@ -103,11 +103,19 @@ export interface TaskComputeResultState {
   breakdown: ComputeBreakdown;
 }
 
+export interface ResearchComputeResultState {
+  nodeId: ResearchNodeId;
+  reservedComputeShare: number;
+  facilityAvailableComputeFlops: number;
+  deliveredUsefulComputeFlops: number;
+}
+
 export interface FacilityComputeState {
   layoutRevision: number | null;
   thermalRevision: number | null;
   byModule: Record<ModuleInstanceId, ModuleComputeResultState>;
   byTask: Record<TaskInstanceId, TaskComputeResultState>;
+  research: ResearchComputeResultState | null;
   totalTheoreticalComputeFlops: number;
   totalAvailableComputeFlops: number;
   totalAllocatedUsefulComputeFlops: number;
@@ -412,6 +420,7 @@ export interface GameState {
 
 export interface ComputeBreakdown {
   theoreticalComputeFlops: number;
+  researchFactor: number;
   powerFactor: number;
   thermalFactor: number;
   memoryFactor: number;
@@ -420,7 +429,8 @@ export interface ComputeBreakdown {
   stabilityFactor: number;
   usefulComputeFlops: number;
   bottlenecks: {
-    factor: "power" | "thermal" | "memory" | "interconnect" | "suitability" | "stability";
+    factor:
+      "research" | "power" | "thermal" | "memory" | "interconnect" | "suitability" | "stability";
     factorValue: number;
     lostComputeFlops: number;
     explanationKey: string;
