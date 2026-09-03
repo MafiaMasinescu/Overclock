@@ -28,7 +28,8 @@
         "minimumValidSampleRate": 0.9,
         "maximumRetryRate": 0.1,
         "maximumTemperatureC": 86,
-        "allowShutdowns": false
+        "allowShutdowns": false,
+        "requiredFeatureIds": ["peak-benchmark"]
       },
       {
         "id": "benchmark-sustained-stability",
@@ -39,9 +40,9 @@
         "minimumValidSampleRate": 0.98,
         "maximumRetryRate": 0.03,
         "maximumTemperatureC": 74,
-        "allowShutdowns": false
+        "allowShutdowns": false,
+        "requiredFeatureIds": []
       }
     ]
   }
 }
-

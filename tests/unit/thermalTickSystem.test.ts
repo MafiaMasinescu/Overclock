@@ -608,13 +608,13 @@ describe("thermal production stages", () => {
 
     const Task7State = first.getStateForSave();
     const Task8State = second.getStateForSave();
-    expect(hashCanonicalState(withoutCompute(Task7State))).toBe("3981c87f4603e9fd");
+    expect(hashCanonicalState(withoutCompute(Task7State))).toBe("aa48404b98aa1e48");
     expect(Task8State.facility.modules).toEqual(Task7State.facility.modules);
     expect(Task8State.facility.power).toEqual(Task7State.facility.power);
     expect(Task8State.facility.thermalTiles).toEqual(Task7State.facility.thermalTiles);
     expect(Task8State.facility.thermalRevision).toBe(Task7State.facility.thermalRevision);
-    expect(hashCanonicalState(withoutCompute(Task8State))).toBe("6a3d11ce3e14ca83");
-    expect(hashCanonicalState(Task7State)).toBe("7157962fe832def9");
-    expect(hashCanonicalState(Task8State)).toBe("50e67e1213179a35");
+    expect(hashCanonicalState(withoutCompute(Task8State))).toBe("62fc84b28af4a39c");
+    expect(hashCanonicalState(Task7State)).toBe("40a2e2270c2ba2bc");
+    expect(hashCanonicalState(Task8State)).toBe("97acfaa5ef64627e");
   });
 });

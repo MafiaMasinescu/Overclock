@@ -72,6 +72,7 @@ function validBenchmark(
   return {
     runId,
     benchmarkId,
+    clusterModuleIds: ["module-instance-00000001"],
     passed: true,
     startedAtTick: 0,
     durationTicks: 10,
@@ -80,9 +81,12 @@ function validBenchmark(
     peakPowerWatts: 30,
     averagePowerWatts: 20,
     maxTemperatureC: 60,
+    minimumPowerHeadroomWatts: 10,
     retryRate: 0,
     validSampleRate: 1,
     costUsd: 0,
+    shutdownObserved: false,
+    failureReasons: [],
     overclockSummary: {},
     ...overrides,
   };
@@ -158,19 +162,20 @@ function makeFinalState(): GameState {
     totalAllocatedUsefulComputeFlops: 0,
   };
   next.benchmarks.history = [
-    validBenchmark("run-sustained", "benchmark-sustained-stability", {
+    validBenchmark("benchmark-run-00000001", "benchmark-sustained-stability", {
       averagePowerWatts: 30,
       peakPowerWatts: 45,
     }),
-    validBenchmark("run-peak", "benchmark-peak-throughput", {
+    validBenchmark("benchmark-run-00000002", "benchmark-peak-throughput", {
       averagePowerWatts: 10,
       peakPowerWatts: 50,
     }),
   ];
   next.benchmarks.bestRunByBenchmark = {
-    "benchmark-sustained-stability": "run-sustained",
-    "benchmark-peak-throughput": "run-peak",
+    "benchmark-sustained-stability": "benchmark-run-00000001",
+    "benchmark-peak-throughput": "benchmark-run-00000002",
   };
+  next.benchmarks.nextBenchmarkRunSequence = 3;
   return next;
 }
 
@@ -208,37 +213,43 @@ describe("pure Research lifecycle", () => {
     }
     benchmarkState.research.evidenceTags = ["evidence-semiconductor-effect"];
     benchmarkState.benchmarks.history = [
-      validBenchmark("run-peak", "benchmark-peak-throughput"),
-      validBenchmark("run-sustained", "benchmark-sustained-stability"),
+      validBenchmark("benchmark-run-00000001", "benchmark-peak-throughput"),
+      validBenchmark("benchmark-run-00000002", "benchmark-sustained-stability"),
     ];
     benchmarkState.benchmarks.bestRunByBenchmark = {
-      "benchmark-peak-throughput": "run-peak",
-      "benchmark-sustained-stability": "run-sustained",
+      "benchmark-peak-throughput": "benchmark-run-00000001",
+      "benchmark-sustained-stability": "benchmark-run-00000002",
     };
+    benchmarkState.benchmarks.nextBenchmarkRunSequence = 3;
     expect(advanceResearchSystem(benchmarkState, content).result.research.statuses[FINAL]).toBe(
       "available",
     );
   });
 
   test.each([
-    ["missing", [], { "benchmark-peak-throughput": "run-peak" }],
+    ["missing", [], { "benchmark-peak-throughput": "benchmark-run-00000001" }],
     [
       "failed",
-      [validBenchmark("run-peak", "benchmark-peak-throughput", { passed: false })],
-      { "benchmark-peak-throughput": "run-peak" },
+      [
+        validBenchmark("benchmark-run-00000001", "benchmark-peak-throughput", {
+          passed: false,
+          failureReasons: ["average-compute"],
+        }),
+      ],
+      { "benchmark-peak-throughput": "benchmark-run-00000001" },
     ],
     [
       "wrong mapping",
-      [validBenchmark("run-sustained", "benchmark-sustained-stability")],
-      { "benchmark-peak-throughput": "run-sustained" },
+      [validBenchmark("benchmark-run-00000002", "benchmark-sustained-stability")],
+      { "benchmark-peak-throughput": "benchmark-run-00000002" },
     ],
     [
       "duplicate history",
       [
-        validBenchmark("run-peak", "benchmark-peak-throughput"),
-        validBenchmark("run-peak", "benchmark-peak-throughput"),
+        validBenchmark("benchmark-run-00000003", "benchmark-peak-throughput"),
+        validBenchmark("benchmark-run-00000003", "benchmark-peak-throughput"),
       ],
-      { "benchmark-peak-throughput": "run-peak" },
+      { "benchmark-peak-throughput": "benchmark-run-00000003" },
     ],
   ])("does not unlock a node with a %s benchmark mapping", (_name, history, bestRunByBenchmark) => {
     const next = state();
@@ -401,7 +412,7 @@ describe("pure Research lifecycle", () => {
       averageTemperatureC: 20,
       maxTemperatureC: 30,
       totalCostUsd: modulePrice,
-      benchmarkRunIds: ["run-peak", "run-sustained"],
+      benchmarkRunIds: ["benchmark-run-00000002", "benchmark-run-00000001"],
       completedResearchIds: Object.values(content.research)
         .toSorted(
           (left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id),

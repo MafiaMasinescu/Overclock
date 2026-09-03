@@ -5,6 +5,7 @@ import type {
   CommandHandlerRegistry,
 } from "../commands/commandHandlers.ts";
 import type { TaskAllocationState, TaskInstanceState } from "../core/types.ts";
+import { rejectIfBenchmarkConfigurationLocked } from "../benchmarks/benchmarkGuards.ts";
 import { addMicrodollars, microdollarsToUsd, usdToMicrodollars } from "../economy/money.ts";
 import { formatTaskInstanceId, secondsToTaskTicks } from "./taskState.ts";
 
@@ -193,6 +194,10 @@ export function createTaskCommandHandlers(content: ContentBundle): TaskCommandHa
       ) {
         return taskRequirement("share-capacity");
       }
+      if (instance.status === "accepted") {
+        const benchmarkLock = rejectIfBenchmarkConfigurationLocked(state);
+        if (benchmarkLock !== undefined) return benchmarkLock;
+      }
       state.tasks.instances[instance.id] = {
         ...instance,
         status: instance.status === "accepted" ? "active" : instance.status,
@@ -225,6 +230,8 @@ export function createTaskCommandHandlers(content: ContentBundle): TaskCommandHa
       if (!activeSharesRemainAvailable(state.tasks.instances, instance.id, instance.allocation)) {
         return taskRequirement("share-capacity");
       }
+      const benchmarkLock = rejectIfBenchmarkConfigurationLocked(state);
+      if (benchmarkLock !== undefined) return benchmarkLock;
       state.tasks.instances[instance.id] = {
         ...instance,
         status: "active",

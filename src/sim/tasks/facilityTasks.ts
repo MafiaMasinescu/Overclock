@@ -1,4 +1,14 @@
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
+import {
+  advanceBenchmarkRun,
+  clearBenchmarkAdvanceEvidence,
+  validateFreshBenchmarkAdvance,
+} from "../benchmarks/benchmarkDomain.ts";
+import {
+  assertValidContentAwareActiveBenchmarkState,
+  assertValidContentAwareBenchmarkState,
+  assertValidStoredBenchmarkState,
+} from "../benchmarks/benchmarkState.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import type {
   StructuralSharingTickSystemContext,
@@ -11,6 +21,11 @@ import { assertValidStoredTaskState } from "./taskState.ts";
 export interface TaskTickSystemOptions {
   /** Test/diagnostic-only observation after a fresh pure Task calculation. */
   readonly onTaskAdvance?: () => void;
+}
+
+export interface TaskBenchmarkTickSystemOptions extends TaskTickSystemOptions {
+  /** Test/diagnostic-only observation after a fresh pure Benchmark calculation. */
+  readonly onBenchmarkAdvance?: () => void;
 }
 
 function applyTaskResult(
@@ -79,6 +94,96 @@ export function createTaskTickSystems(
               return candidate;
             } finally {
               calculation = undefined;
+            }
+          },
+        };
+      },
+    },
+  });
+}
+
+function applyBenchmarkResult(
+  state: Readonly<GameState>,
+  result: ReturnType<typeof advanceBenchmarkRun>["result"],
+): GameState {
+  if (result.benchmarks === state.benchmarks) return state;
+  return { ...state, benchmarks: result.benchmarks };
+}
+
+/** Registers the single authoritative Task/Benchmark production stage. */
+export function createTaskBenchmarkTickSystems(
+  content: ContentBundle,
+  options: TaskBenchmarkTickSystemOptions = {},
+): TickSystemRegistry {
+  return Object.freeze({
+    "advance-tasks-and-benchmarks": {
+      createRuntime() {
+        let taskCalculation: ReturnType<typeof advanceTaskSystem> | undefined;
+        let benchmarkCalculation: ReturnType<typeof advanceBenchmarkRun> | undefined;
+        return {
+          executionMode: "structural-sharing" as const,
+          validateLifecycleState(state: Readonly<GameState>) {
+            assertValidStoredTaskState(state);
+            assertValidContentAwareBenchmarkState(state, content);
+          },
+          clearDerivedState() {
+            taskCalculation = undefined;
+            if (benchmarkCalculation !== undefined) {
+              clearBenchmarkAdvanceEvidence(benchmarkCalculation.witness);
+            }
+            benchmarkCalculation = undefined;
+          },
+          run({ state }: StructuralSharingTickSystemContext): GameState {
+            try {
+              taskCalculation = advanceTaskSystem(state, content);
+              options.onTaskAdvance?.();
+              const taskIssues = validateFreshTaskAdvance(
+                state,
+                content,
+                taskCalculation.result,
+                taskCalculation.witness,
+              );
+              if (taskIssues.length > 0) {
+                throw new Error(`Invalid Task advancement result:\n${taskIssues.join("\n")}`);
+              }
+              const taskCandidate = applyTaskResult(state, taskCalculation.result);
+              if (taskCandidate.tasks !== state.tasks) assertValidStoredTaskState(taskCandidate);
+              if (taskCandidate.economy !== state.economy) {
+                assertValidInventoryEconomyState(taskCandidate);
+              }
+
+              const active = taskCandidate.benchmarks.active;
+              if (active === null) return taskCandidate;
+
+              benchmarkCalculation = advanceBenchmarkRun(active, taskCandidate, content, {
+                useStructuralInputEvidence: options.onBenchmarkAdvance === undefined,
+              });
+              options.onBenchmarkAdvance?.();
+              const benchmarkIssues = validateFreshBenchmarkAdvance(
+                taskCandidate,
+                content,
+                benchmarkCalculation.result,
+                benchmarkCalculation.witness,
+              );
+              if (benchmarkIssues.length > 0) {
+                throw new Error(
+                  `Invalid Benchmark advancement result:\n${benchmarkIssues.join("\n")}`,
+                );
+              }
+              const candidate = applyBenchmarkResult(taskCandidate, benchmarkCalculation.result);
+              if (benchmarkCalculation.result.completedResult === null) {
+                assertValidContentAwareActiveBenchmarkState(candidate, content);
+              } else {
+                assertValidStoredBenchmarkState(candidate);
+                assertValidContentAwareBenchmarkState(candidate, content);
+              }
+              return candidate;
+            } finally {
+              taskCalculation = undefined;
+              if (benchmarkCalculation !== undefined) {
+                clearBenchmarkAdvanceEvidence(benchmarkCalculation.witness);
+              }
+              benchmarkCalculation = undefined;
             }
           },
         };

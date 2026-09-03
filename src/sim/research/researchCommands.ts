@@ -4,6 +4,7 @@ import type {
   CommandHandlerRegistry,
 } from "../commands/commandHandlers.ts";
 import type { GameState, ResearchNodeId } from "../core/types.ts";
+import { rejectIfBenchmarkConfigurationLocked } from "../benchmarks/benchmarkGuards.ts";
 import { addMicrodollars, microdollarsToUsd, usdToMicrodollars } from "../economy/money.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import { assertValidStoredResearchState } from "./researchState.ts";
@@ -167,6 +168,8 @@ export function createResearchCommandHandlers(content: ContentBundle): ResearchC
     START_RESEARCH({ state }, command) {
       assertValidInventoryEconomyState(state);
       assertValidStoredResearchState(state);
+      const benchmarkLock = rejectIfBenchmarkConfigurationLocked(state);
+      if (benchmarkLock !== undefined) return benchmarkLock;
       if (state.research.active !== null) return REJECTIONS.alreadyActive;
 
       const requirement = validateStartRequirements(

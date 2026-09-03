@@ -182,6 +182,24 @@ preferred production target is below `3 ms` p95 and is informative. See
 `docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md` for the permanent fixture, formulas, and
 audited results.
 
+## Benchmark performance diagnostic
+
+For the final Task 12 extension of the audited dense 24 by 16 fixture, run:
+
+```powershell
+corepack pnpm performance:benchmarks
+```
+
+It measures 1,000 warm pure Benchmark sample/advance and combined Task plus Benchmark samples,
+200 active complete production ticks, Peak and Sustained exact-completion paths, failed completion,
+fresh-witness validation, START/CANCEL command paths, and cold construction/replacement with
+realistic history. It reports median, p95, maximum, sample count, CPU, operating system, Node
+version, build mode, and warm-up method. Fixture creation and documented JIT warm-up are excluded;
+all timed samples remain included. On the i7-2600, the hard gates are pure p95 below `0.10 ms`,
+combined advancement p95 below `0.25 ms`, and active complete production p95 below `4 ms`. See
+`docs/diagnostics/BENCHMARK_LIFECYCLE_PERFORMANCE.md` for the permanent formulas, ownership,
+history, validation, and audited results.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

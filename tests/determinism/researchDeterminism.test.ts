@@ -14,6 +14,7 @@ function benchmark(runId: string, benchmarkId: string): BenchmarkResult {
   return {
     runId,
     benchmarkId,
+    clusterModuleIds: ["module-instance-00000001"],
     passed: true,
     startedAtTick: 0,
     durationTicks: 10,
@@ -22,9 +23,12 @@ function benchmark(runId: string, benchmarkId: string): BenchmarkResult {
     peakPowerWatts: 50,
     averagePowerWatts: 25,
     maxTemperatureC: 40,
+    minimumPowerHeadroomWatts: 10,
     retryRate: 0,
     validSampleRate: 1,
     costUsd: 0,
+    shutdownObserved: false,
+    failureReasons: [],
     overclockSummary: {},
   };
 }
@@ -42,13 +46,14 @@ function finalLifecycleState(): GameState {
   };
   state.research.evidenceTags = ["evidence-semiconductor-effect"];
   state.benchmarks.history = [
-    benchmark("run-peak", "benchmark-peak-throughput"),
-    benchmark("run-sustained", "benchmark-sustained-stability"),
+    benchmark("benchmark-run-00000001", "benchmark-peak-throughput"),
+    benchmark("benchmark-run-00000002", "benchmark-sustained-stability"),
   ];
   state.benchmarks.bestRunByBenchmark = {
-    "benchmark-peak-throughput": "run-peak",
-    "benchmark-sustained-stability": "run-sustained",
+    "benchmark-peak-throughput": "benchmark-run-00000001",
+    "benchmark-sustained-stability": "benchmark-run-00000002",
   };
+  state.benchmarks.nextBenchmarkRunSequence = 3;
   state.facility.compute = {
     layoutRevision: 0,
     thermalRevision: 0,

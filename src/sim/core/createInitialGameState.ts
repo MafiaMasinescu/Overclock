@@ -140,6 +140,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
       evidenceTags: [],
     },
     benchmarks: {
+      nextBenchmarkRunSequence: 1,
       active: null,
       history: [],
       bestRunByBenchmark: {},

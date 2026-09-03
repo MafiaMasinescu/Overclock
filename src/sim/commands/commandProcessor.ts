@@ -4,6 +4,7 @@ import { assertValidInventoryEconomyState } from "../economy/inventoryEconomySta
 import { assertValidDesignModeState } from "../design/designModeState.ts";
 import { assertValidStoredTaskState } from "../tasks/taskState.ts";
 import { assertValidStoredResearchState } from "../research/researchState.ts";
+import { assertValidStoredBenchmarkState } from "../benchmarks/benchmarkState.ts";
 import { assertCanonicalSerializable } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "./contracts.ts";
@@ -57,6 +58,7 @@ function validateCandidateState(
   assertValidDesignModeState(candidate, minimumModuleInstanceSequence, minimumRouteSequence);
   assertValidStoredTaskState(candidate);
   assertValidStoredResearchState(candidate);
+  assertValidStoredBenchmarkState(candidate);
 }
 
 function createRejectedResult(
@@ -97,6 +99,7 @@ export class CommandProcessor {
     assertValidDesignModeState(initialState);
     assertValidStoredTaskState(initialState);
     assertValidStoredResearchState(initialState);
+    assertValidStoredBenchmarkState(initialState);
     this.state = dependencies.state ?? new AuthoritativeState(initialState);
     this.queue = dependencies.queue ?? new CommandQueue();
     this.handlers = handlers;

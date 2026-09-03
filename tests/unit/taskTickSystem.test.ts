@@ -461,7 +461,7 @@ describe("production Task lifecycle tick system", () => {
     const expected = run();
     expect(expected.tick).toBe(100);
     expect(expected.rngUnchanged).toBe(true);
-    expect(expected.hash).toBe("bc23753d687706dc");
+    expect(expected.hash).toBe("046b2a57813e53a9");
     expect(run()).toEqual(expected);
   }, 30_000);
 });

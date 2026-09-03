@@ -19,6 +19,7 @@ import type {
   ModuleInstanceState,
   RouteState,
 } from "../core/types.ts";
+import { rejectIfBenchmarkConfigurationLocked } from "../benchmarks/benchmarkGuards.ts";
 import {
   parseDesignDraftOperation,
   assertValidDesignHistory,
@@ -1002,6 +1003,8 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
     },
 
     APPLY_DESIGN({ state }, command) {
+      const benchmarkLock = rejectIfBenchmarkConfigurationLocked(state);
+      if (benchmarkLock !== undefined) return benchmarkLock;
       const draft = state.facility.designDraft;
       if (draft === null) {
         return REJECTIONS.notInDesignMode;

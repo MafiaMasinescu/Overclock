@@ -5,6 +5,7 @@ import type {
   CommandHandlerRegistry,
 } from "../commands/commandHandlers.ts";
 import type { GameState, ModuleInstanceState, OverclockProfile } from "../core/types.ts";
+import { rejectIfBenchmarkConfigurationLocked } from "../benchmarks/benchmarkGuards.ts";
 import { createDirtyOverclockState } from "./overclockState.ts";
 
 export type OverclockCommandHandlers = Pick<
@@ -115,6 +116,8 @@ function validateManualRatios(
 export function createOverclockCommandHandlers(content: ContentBundle): OverclockCommandHandlers {
   return Object.freeze({
     SET_OVERCLOCK_PROFILE({ state }, command) {
+      const benchmarkLock = rejectIfBenchmarkConfigurationLocked(state);
+      if (benchmarkLock !== undefined) return benchmarkLock;
       if (state.facility.designDraft !== null) return REJECTIONS.unavailableInDesignMode;
       const targets = sortedDistinctTargets(command.moduleInstanceIds);
       if (targets === undefined) return REJECTIONS.invalidPayload;
@@ -125,6 +128,8 @@ export function createOverclockCommandHandlers(content: ContentBundle): Overcloc
     },
 
     SET_MANUAL_OVERCLOCK({ state }, command) {
+      const benchmarkLock = rejectIfBenchmarkConfigurationLocked(state);
+      if (benchmarkLock !== undefined) return benchmarkLock;
       if (state.facility.designDraft !== null) return REJECTIONS.unavailableInDesignMode;
       const targets = sortedDistinctTargets(command.moduleInstanceIds);
       if (targets === undefined) return REJECTIONS.invalidPayload;

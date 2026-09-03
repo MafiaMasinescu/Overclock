@@ -144,6 +144,15 @@ function hasSameStringSet(left: readonly string[], right: readonly string[]): bo
   return left.every((value) => rightSet.has(value));
 }
 
+function hasLexicalUniqueOrder(values: readonly string[]): boolean {
+  for (let index = 1; index < values.length; index += 1) {
+    const previous = values[index - 1];
+    const current = values[index];
+    if (previous === undefined || current === undefined || previous >= current) return false;
+  }
+  return true;
+}
+
 export function validateContent(raw: RawContentPack): ContentBundle {
   const issues: ContentIssue[] = [];
   const modulesFile = parseFile("modules", modulesFileSchema, raw.modules, issues);
@@ -191,6 +200,75 @@ export function validateContent(raw: RawContentPack): ContentBundle {
   );
   const evidenceTags = new Set(tasksFile.tasks.flatMap((task) => task.evidenceTagRewards));
   const locales = { ro, en } as const;
+
+  const peakBenchmarks = eraFile.era.benchmarkDefinitions.filter(({ type }) => type === "peak");
+  const sustainedBenchmarks = eraFile.era.benchmarkDefinitions.filter(
+    ({ type }) => type === "sustained",
+  );
+  if (peakBenchmarks.length !== 1) {
+    issues.push({
+      path: "era.era.benchmarkDefinitions",
+      message: "must contain exactly one peak benchmark definition",
+    });
+  }
+  if (sustainedBenchmarks.length !== 1) {
+    issues.push({
+      path: "era.era.benchmarkDefinitions",
+      message: "must contain exactly one sustained benchmark definition",
+    });
+  }
+
+  const providedFeatureIds = new Set(researchFile.nodes.flatMap((node) => node.unlockFeatureIds));
+  eraFile.era.benchmarkDefinitions.forEach((benchmark, benchmarkIndex) => {
+    const path = `era.era.benchmarkDefinitions[${benchmarkIndex}]`;
+    if (!Number.isSafeInteger(benchmark.durationSeconds) || benchmark.durationSeconds <= 0) {
+      issues.push({
+        path: `${path}.durationSeconds`,
+        message: "must be a positive safe integer",
+      });
+    } else if (!Number.isSafeInteger(benchmark.durationSeconds * 10)) {
+      issues.push({
+        path: `${path}.durationSeconds`,
+        message: "durationSeconds multiplied by 10 must be a safe integer",
+      });
+    }
+    if (!hasLexicalUniqueOrder(benchmark.requiredFeatureIds)) {
+      issues.push({
+        path: `${path}.requiredFeatureIds`,
+        message: "must contain unique feature IDs in lexical order",
+      });
+    }
+    const expectedFeatureIds = benchmark.type === "peak" ? ["peak-benchmark"] : [];
+    if (
+      benchmark.requiredFeatureIds.length !== expectedFeatureIds.length ||
+      benchmark.requiredFeatureIds.some((featureId, index) => featureId !== expectedFeatureIds[index])
+    ) {
+      issues.push({
+        path: `${path}.requiredFeatureIds`,
+        message: `must equal [${expectedFeatureIds.map((featureId) => `"${featureId}"`).join(", ")}] for ${benchmark.type} benchmarks`,
+      });
+    }
+    benchmark.requiredFeatureIds.forEach((featureId, featureIndex) => {
+      if (!providedFeatureIds.has(featureId)) {
+        issues.push({
+          path: `${path}.requiredFeatureIds[${featureIndex}]`,
+          message: `no Research node produces feature ${featureId}`,
+        });
+      }
+    });
+    if (benchmark.maximumTemperatureC <= eraFile.era.ambientTemperatureC) {
+      issues.push({
+        path: `${path}.maximumTemperatureC`,
+        message: "must be greater than facility ambient temperature",
+      });
+    }
+    if (benchmark.maximumTemperatureC > balancingFile.thermal.maximumTemperatureC) {
+      issues.push({
+        path: `${path}.maximumTemperatureC`,
+        message: "must not exceed balancing thermal maximum temperature",
+      });
+    }
+  });
 
   const researchSortOrders = new Map<number, number>();
   researchFile.nodes.forEach((node, nodeIndex) => {

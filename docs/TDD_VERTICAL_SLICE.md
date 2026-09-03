@@ -1244,6 +1244,40 @@ one explicitly accepted target-host irregularity: pure p95 `0.2605 ms` against i
 `< 0.25 ms` gate; Task 8 production remained below `4 ms`, and no fixture, sample, threshold, or
 formula was changed.
 
+## Task 12: Deterministic Benchmark runners
+
+Task 12 owns the Benchmark contract and deterministic runner through the existing command processor
+and `advance-tasks-and-benchmarks` stage without creating a second execution path. Task 12.6 closes
+the implementation with permanent diagnostics and complete verification.
+
+- 12.1 - benchmark contract, content, state, structural/content-aware validation, localization,
+  compatibility expectations, and no handlers, sampling, progression, scoring, or tick registration;
+- 12.2 - deterministic pass/fail comparisons, type-specific scoring and exact best-run selection;
+- 12.3 - `START_BENCHMARK` and `CANCEL_BENCHMARK`, deterministic run identity, and atomic command
+  results;
+- 12.4 - configuration and workload exclusivity guards for live overclock configuration, live
+  design application, Research start, and Task activation/resume;
+- 12.5 - transactional Task/Benchmark production integration at `advance-tasks-and-benchmarks`,
+  deterministic facility telemetry sampling, selected-cluster Compute/stability aggregation,
+  exact 100 ms progression boundaries, completion/history/best-run application, Research visibility,
+  rollback, and lifecycle ownership;
+- 12.6 - final performance hardening, compatibility/documentation closeout, and complete
+  verification; it does not remove or weaken the approved sampling or progression contract.
+
+Task 12.1 establishes only the public foundations. Task 12.3 owns deterministic command identity and
+Task 12.4 owns configuration/workload exclusivity. Completed-result records are historical,
+feature gating is Research-driven, and no current-facility reinterpretation of historical cluster,
+Power, Thermal, Compute, or overclock data is allowed.
+
+Task 12 is complete at its single checkpoint-neutral boundary. Task 12.5 owns transactional
+Task/Benchmark production integration, deterministic telemetry sampling, exact progression,
+Research visibility, rollback, and ownership. Task 12.6 owns measured private performance
+hardening, compatibility verification, permanent documentation, and the final diagnostic. The
+permanent Benchmark diagnostic is `corepack pnpm performance:benchmarks`, with its fixture,
+sample counts, gates, and audited results recorded in
+`docs/diagnostics/BENCHMARK_LIFECYCLE_PERFORMANCE.md`. Workload-dependent Power/Heat, random
+failures, UI, events, leaderboards, saves/replay, workers, and later Task 13 scope remain deferred.
+
 ## 24. Blueprint system
 
 Vertical slice-ul permite un blueprint de subansamblu. Schema susține tipurile viitoare, dar UI expune doar `subassembly`.
@@ -1279,23 +1313,28 @@ Exportul de blueprint este posibil ulterior. În 0.1, salvăm blueprint-ul în s
 
 ### 25.1 Peak Throughput
 
-- durată: 15 secunde simulate;
-- Boost și Manual sunt permise;
-- scor: Useful Compute mediu, cu bonus mic pentru vârf numai dacă minimum 90% dintre samples sunt valide;
-- fail: shutdown, valid sample rate sub prag sau compute sub target.
+- durată: 15 secunde simulate, exact 150 samples la 100 ms;
+- cere feature-ul Research `peak-benchmark`;
+- Useful Compute și retry/valid sunt agregate numai din clusterul selectat;
+- Power livrat, headroom, cost, temperatura maximă și shutdown sunt facility-wide;
+- trece inclusiv la egalitate pentru compute, valid rate, retry rate și temperatură;
+- failure reasons sunt evaluate în ordinea fixă `average-compute`, `valid-sample-rate`,
+  `retry-rate`, `maximum-temperature`, `shutdown`.
 
 ### 25.2 Sustained Stability
 
-- durată: 120 secunde simulate;
-- scor: Useful Compute mediu, eficiență energetică și headroom termic;
-- cere stabilitate medie, temperatură sub critical și zero shutdown-uri;
-- retry rate intră în scor și poate produce fail.
+- durată: 120 secunde simulate, exact 1.200 samples la 100 ms;
+- nu cere un feature Research suplimentar;
+- valid sample rate trebuie să atingă pragul, retry rate trebuie să rămână sub limită,
+  temperatura nu poate depăși limita, iar shutdown-ul e permis numai dacă definiția îl permite.
 
 Rezultatul salvează:
 
 ```ts
 interface BenchmarkResult {
+  runId: string;
   benchmarkId: string;
+  clusterModuleIds: string[];
   passed: boolean;
   startedAtTick: number;
   durationTicks: number;
@@ -1304,14 +1343,42 @@ interface BenchmarkResult {
   peakPowerWatts: number;
   averagePowerWatts: number;
   maxTemperatureC: number;
+  minimumPowerHeadroomWatts: number;
   retryRate: number;
   validSampleRate: number;
   costUsd: number;
+  shutdownObserved: boolean;
+  failureReasons: string[];
   overclockSummary: Record<string, OverclockSettings>;
 }
 ```
 
-Rezultatul este read-only după finalizare. Repetarea benchmark-ului creează o intrare nouă și actualizează recordul local dacă scorul este mai bun.
+Rezultatul este read-only după finalizare. Run IDs sunt
+`benchmark-run-${sequence padded to 8 decimal digits}`; secvența începe la 1 și nu se reutilizează,
+inclusiv după anulare. Repetarea benchmark-ului creează o intrare istorică nouă și actualizează
+recordul local numai dacă rezultatul trecut este mai bun sub comparatorul tipului.
+
+### 25.3 Commands, exclusivity, and production
+
+`START_BENCHMARK` și `CANCEL_BENCHMARK` folosesc coada și processor-ul existent. Start-ul este
+respins dacă există deja un benchmark, definiția este necunoscută, feature-ul este blocat,
+Research este activ, un Task este activ sau clusterul nu este valid. În timpul unui run sunt blocate
+configurația live de Overclock, `APPLY_DESIGN`, `START_RESEARCH` și activarea/resume-ul unui Task;
+editarea draftului, acceptarea/abandonarea Task-ului și anularea benchmark-ului rămân permise.
+
+Stage-ul unic `advance-tasks-and-benchmarks` aplică Task mai întâi și Benchmark apoi, iar
+`advance-research` vede finalizarea în același tick. Sampling-ul nu recalculează Power, Thermal,
+Overclock sau Compute și nu consumă RNG. Un failed/overflow/ownership mismatch face rollback la
+starea, clock-ul, tick-ul și RNG-ul de dinaintea tick-ului. Istoricul final este structural validat
+și nu este reinterpretat folosind facility-ul curent; modulele istorice pot lipsi din layout.
+
+### 25.4 Benchmark diagnostic
+
+Diagnosticul permanent este `corepack pnpm performance:benchmarks`, descris în
+`docs/diagnostics/BENCHMARK_LIFECYCLE_PERFORMANCE.md`. Pragurile i7-2600 sunt p95 sub `0.10 ms`
+pentru pure sample/advance, sub `0.25 ms` pentru stage-ul Task plus Benchmark și sub `4 ms`
+pentru tick-ul complet activ. Valorile cold, transition și completion sunt raportate separat și
+nu sunt ascunse în fixture setup.
 
 ## 26. Economia vertical slice-ului
 

@@ -8,6 +8,8 @@ export type BlueprintId = string;
 export type BenchmarkDefinitionId = string;
 export type BenchmarkRunId = string;
 export type EvidenceTagId = string;
+export type BenchmarkFailureReason =
+  "average-compute" | "valid-sample-rate" | "retry-rate" | "maximum-temperature" | "shutdown";
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 export interface JsonObject {
@@ -297,6 +299,7 @@ export interface ResearchState {
 export interface BenchmarkResult {
   runId: BenchmarkRunId;
   benchmarkId: BenchmarkDefinitionId;
+  clusterModuleIds: ModuleInstanceId[];
   passed: boolean;
   startedAtTick: number;
   durationTicks: number;
@@ -305,9 +308,12 @@ export interface BenchmarkResult {
   peakPowerWatts: number;
   averagePowerWatts: number;
   maxTemperatureC: number;
+  minimumPowerHeadroomWatts: number;
   retryRate: number;
   validSampleRate: number;
   costUsd: number;
+  shutdownObserved: boolean;
+  failureReasons: BenchmarkFailureReason[];
   overclockSummary: Record<ModuleInstanceId, OverclockSettings>;
 }
 
@@ -316,9 +322,22 @@ export interface ActiveBenchmarkState {
   benchmarkId: BenchmarkDefinitionId;
   startedAtTick: number;
   elapsedTicks: number;
+  clusterModuleIds: ModuleInstanceId[];
+  accumulatedUsefulComputeFlops: number;
+  peakUsefulComputeFlops: number;
+  accumulatedPowerWatts: number;
+  peakPowerWatts: number;
+  maxTemperatureC: number | null;
+  minimumPowerHeadroomWatts: number | null;
+  accumulatedRetryRate: number;
+  accumulatedValidSampleRate: number;
+  accumulatedCostUsd: number;
+  shutdownObserved: boolean;
+  overclockSummary: Record<ModuleInstanceId, OverclockSettings>;
 }
 
 export interface BenchmarkState {
+  nextBenchmarkRunSequence: number;
   active: ActiveBenchmarkState | null;
   history: BenchmarkResult[];
   bestRunByBenchmark: Partial<Record<BenchmarkDefinitionId, BenchmarkRunId>>;

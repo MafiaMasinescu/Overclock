@@ -112,6 +112,7 @@ function validBenchmarkRun(runId: string, benchmarkId: string, passed = true): B
   return {
     runId,
     benchmarkId,
+    clusterModuleIds: ["module-instance-00000001"],
     passed,
     startedAtTick: 0,
     durationTicks: 10,
@@ -120,9 +121,12 @@ function validBenchmarkRun(runId: string, benchmarkId: string, passed = true): B
     peakPowerWatts: 10,
     averagePowerWatts: 10,
     maxTemperatureC: 30,
+    minimumPowerHeadroomWatts: 10,
     retryRate: 0,
     validSampleRate: 1,
     costUsd: 0,
+    shutdownObserved: false,
+    failureReasons: passed ? [] : ["average-compute"],
     overclockSummary: {},
   };
 }
@@ -271,24 +275,24 @@ describe("Research command handlers", () => {
 
   test.each([
     ["missing mapping", undefined, []],
-    ["missing history", "run-missing", []],
+    ["missing history", "benchmark-run-00000001", []],
     [
       "failed run",
-      "run-failed",
-      [validBenchmarkRun("run-failed", "benchmark-peak-throughput", false)],
+      "benchmark-run-00000002",
+      [validBenchmarkRun("benchmark-run-00000002", "benchmark-peak-throughput", false)],
     ],
     [
       "duplicate history",
-      "run-duplicate",
+      "benchmark-run-00000003",
       [
-        validBenchmarkRun("run-duplicate", "benchmark-peak-throughput"),
-        validBenchmarkRun("run-duplicate", "benchmark-peak-throughput"),
+        validBenchmarkRun("benchmark-run-00000003", "benchmark-peak-throughput"),
+        validBenchmarkRun("benchmark-run-00000003", "benchmark-peak-throughput"),
       ],
     ],
     [
       "wrong benchmark run",
-      "run-wrong",
-      [validBenchmarkRun("run-wrong", "benchmark-sustained-stability")],
+      "benchmark-run-00000004",
+      [validBenchmarkRun("benchmark-run-00000004", "benchmark-sustained-stability")],
     ],
   ])("rejects a %s benchmark mapping", (_label, runId, history) => {
     const state = stateWithPrerequisites(FINAL_NODE_ID);
@@ -297,29 +301,24 @@ describe("Research command handlers", () => {
       state.benchmarks.bestRunByBenchmark["benchmark-peak-throughput"] = runId;
     }
     state.benchmarks.history = history;
-    const core = new SimCore({
-      initialState: state,
-      commandHandlers: createResearchCommandHandlers(content),
-    });
-
-    expectRejected(
-      process(core, startCommand(10, FINAL_NODE_ID, 0.2)),
-      "RESEARCH_NOT_AVAILABLE",
-      "benchmark",
-    );
+    state.benchmarks.nextBenchmarkRunSequence = 10;
+    const rejection = directStart(state, startCommand(10, FINAL_NODE_ID, 0.2));
+    expect(rejection?.code).toBe("RESEARCH_NOT_AVAILABLE");
+    expect(rejection?.parameters).toMatchObject({ reason: "benchmark" });
   });
 
   test("accepts a fully satisfied benchmark mapping only when every required run is exact and passed", () => {
     const state = stateWithPrerequisites(FINAL_NODE_ID);
     state.research.evidenceTags = ["evidence-semiconductor-effect"];
     state.benchmarks.bestRunByBenchmark = {
-      "benchmark-peak-throughput": "run-peak",
-      "benchmark-sustained-stability": "run-sustained",
+      "benchmark-peak-throughput": "benchmark-run-00000005",
+      "benchmark-sustained-stability": "benchmark-run-00000006",
     };
     state.benchmarks.history = [
-      validBenchmarkRun("run-peak", "benchmark-peak-throughput"),
-      validBenchmarkRun("run-sustained", "benchmark-sustained-stability"),
+      validBenchmarkRun("benchmark-run-00000005", "benchmark-peak-throughput"),
+      validBenchmarkRun("benchmark-run-00000006", "benchmark-sustained-stability"),
     ];
+    state.benchmarks.nextBenchmarkRunSequence = 10;
     const core = new SimCore({
       initialState: state,
       commandHandlers: createResearchCommandHandlers(content),

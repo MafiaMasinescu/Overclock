@@ -113,7 +113,12 @@ describe("initial GameState", () => {
         offers: ["task-ballistic-table-verification", "task-census-tabulation-service"],
         instances: {},
       },
-      benchmarks: { active: null, history: [], bestRunByBenchmark: {} },
+      benchmarks: {
+        nextBenchmarkRunSequence: 1,
+        active: null,
+        history: [],
+        bestRunByBenchmark: {},
+      },
       blueprints: { records: {} },
       tutorial: {
         guidanceMode: "simple",

@@ -57,6 +57,10 @@
     "task-slot-limit": "No task slot is available.",
     "task-requirement-missing": "The task requirements are not met.",
     "task-not-active": "The task is not active.",
+    "benchmark-already-active": "A benchmark is already active.",
+    "benchmark-requirement-missing": "The benchmark requirements are not met.",
+    "benchmark-not-active": "No benchmark is active.",
+    "benchmark-configuration-locked": "Benchmark configuration is locked while a benchmark is active.",
     "stale-design-preview": "The Design Mode preview is no longer current.",
     "stale-tick": "The command was created for a different simulation tick."
   },

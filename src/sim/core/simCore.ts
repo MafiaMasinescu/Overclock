@@ -3,13 +3,17 @@ import { CommandProcessor, SimulatorInvariantError } from "../commands/commandPr
 import { CommandQueue } from "../commands/commandQueue.ts";
 import { parseSimCommand } from "../commands/commandSchema.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "../commands/contracts.ts";
-import { assertCanonicalSerializable } from "../replay/canonicalState.ts";
+import { assertCanonicalSerializable, canonicalSerialize } from "../replay/canonicalState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import { assertValidStoredComputeState } from "../compute/computeState.ts";
 import { assertValidDesignModeState } from "../design/designModeState.ts";
 import { assertValidStoredTaskState } from "../tasks/taskState.ts";
 import { assertValidStoredResearchState } from "../research/researchState.ts";
+import {
+  assertValidActiveBenchmarkState,
+  assertValidStoredBenchmarkState,
+} from "../benchmarks/benchmarkState.ts";
 import { AuthoritativeState } from "./authoritativeState.ts";
 import {
   TICK_SYSTEM_STAGE_ORDER,
@@ -119,6 +123,31 @@ interface ComputeOwnedOutputProjection {
   readonly byTask: Readonly<Record<string, number>>;
   readonly allocationCount: number;
   readonly research: ComputeOwnedResearchOutput;
+}
+
+interface BenchmarkOwnedOutputProjection {
+  readonly branch: GameState["benchmarks"];
+  readonly fingerprint: string | undefined;
+}
+
+function captureBenchmarkOwnedOutput(
+  benchmarks: GameState["benchmarks"],
+  useFingerprint: boolean,
+): BenchmarkOwnedOutputProjection {
+  return {
+    branch: benchmarks,
+    fingerprint: useFingerprint ? canonicalSerialize(benchmarks) : undefined,
+  };
+}
+
+function preservesBenchmarkOwnedOutput(
+  benchmarks: Readonly<GameState["benchmarks"]>,
+  expected: BenchmarkOwnedOutputProjection,
+  useFingerprint: boolean,
+): boolean {
+  return useFingerprint
+    ? expected.fingerprint === canonicalSerialize(benchmarks)
+    : benchmarks === expected.branch;
 }
 
 function captureComputeOwnedOutputs(
@@ -245,6 +274,7 @@ export class SimCore {
     assertValidDesignModeState(initialState);
     assertValidStoredTaskState(initialState);
     assertValidStoredResearchState(initialState);
+    assertValidStoredBenchmarkState(initialState);
     assertCanonicalSerializable(initialState);
 
     this.authoritativeState = new AuthoritativeState(initialState);
@@ -334,18 +364,30 @@ export class SimCore {
 
   getStateForSave(): GameState {
     const snapshot = this.authoritativeState.snapshot();
-    assertValidClockAndTick(snapshot);
-    assertValidStoredComputeState(snapshot);
-    assertValidStoredTaskState(snapshot);
-    assertValidStoredResearchState(snapshot);
-    this.tickSystems["advance-research"]?.validateLifecycleState?.(snapshot);
-    assertCanonicalSerializable(snapshot);
-    return snapshot;
+    try {
+      assertValidClockAndTick(snapshot);
+      assertValidStoredComputeState(snapshot);
+      assertValidStoredTaskState(snapshot);
+      assertValidStoredResearchState(snapshot);
+      assertValidStoredBenchmarkState(snapshot);
+      this.tickSystems["advance-tasks-and-benchmarks"]?.validateLifecycleState?.(snapshot);
+      this.tickSystems["advance-research"]?.validateLifecycleState?.(snapshot);
+      assertCanonicalSerializable(snapshot);
+      return snapshot;
+    } catch (cause: unknown) {
+      for (const stage of TICK_SYSTEM_STAGE_ORDER) {
+        this.tickSystems[stage]?.clearDerivedState?.();
+      }
+      throw cause;
+    }
   }
 
   replaceState(state: GameState): void {
     if (this.commandProcessor.pendingCommandCount !== 0) {
       throw new Error("Cannot replace simulator state while commands are pending.");
+    }
+    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
+      this.tickSystems[stage]?.clearDerivedState?.();
     }
     assertValidClockAndTick(state);
     assertValidStoredComputeState(state);
@@ -353,21 +395,19 @@ export class SimCore {
     assertValidDesignModeState(state);
     assertValidStoredTaskState(state);
     assertValidStoredResearchState(state);
+    assertValidStoredBenchmarkState(state);
     assertCanonicalSerializable(state);
     for (const stage of TICK_SYSTEM_STAGE_ORDER) {
       this.tickSystems[stage]?.validateLifecycleState?.(state);
     }
     this.authoritativeState.replaceSnapshot(state);
-    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
-      this.tickSystems[stage]?.clearDerivedState?.();
-    }
   }
 
   private executeTickSystemsAndCommit(): void {
     const current = this.authoritativeState.readInternal();
 
     if (!this.runsTickSystems) {
-      this.authoritativeState.commitOwned(this.completeTick(current));
+      this.authoritativeState.commitOwned(this.completeTick(current, true, true));
       return;
     }
 
@@ -379,7 +419,9 @@ export class SimCore {
     let validatedCampaign = current.campaign;
     let validatedResearch = current.research;
     let validatedMuseum = current.museum;
+    let validatedBenchmarks = current.benchmarks;
     let computeOwnedOutputs: ComputeOwnedOutputProjection | undefined;
+    let benchmarkOwnedOutput: BenchmarkOwnedOutputProjection | undefined;
 
     // eslint-disable-next-line @typescript-eslint/prefer-for-of -- avoids iterators in every production tick.
     for (let stageIndex = 0; stageIndex < TICK_SYSTEM_STAGE_ORDER.length; stageIndex += 1) {
@@ -406,7 +448,28 @@ export class SimCore {
             candidate.facility.compute,
             candidate.tasks.instances,
           );
-        } else if (computeOwnedOutputs !== undefined) {
+        }
+        if (stage === "advance-tasks-and-benchmarks") {
+          benchmarkOwnedOutput = captureBenchmarkOwnedOutput(
+            candidate.benchmarks,
+            this.runsMutableTickSystems,
+          );
+        } else if (
+          benchmarkOwnedOutput !== undefined &&
+          !preservesBenchmarkOwnedOutput(
+            candidate.benchmarks,
+            benchmarkOwnedOutput,
+            this.runsMutableTickSystems,
+          )
+        ) {
+          throw new Error(
+            "Later tick stages must preserve the Task/Benchmark-owned Benchmark branch.",
+          );
+        }
+        if (
+          stage !== "calculate-theoretical-and-useful-compute" &&
+          computeOwnedOutputs !== undefined
+        ) {
           if (
             !preservesComputeOwnedTaskDeliveries(candidate.tasks.instances, computeOwnedOutputs)
           ) {
@@ -437,7 +500,8 @@ export class SimCore {
           candidate.tasks !== validatedTasks ||
           candidate.campaign !== validatedCampaign ||
           candidate.research !== validatedResearch ||
-          candidate.museum !== validatedMuseum
+          candidate.museum !== validatedMuseum ||
+          candidate.benchmarks !== validatedBenchmarks
         ) {
           assertValidStoredTaskState(candidate);
           assertValidStoredResearchState(candidate);
@@ -445,6 +509,16 @@ export class SimCore {
           validatedCampaign = candidate.campaign;
           validatedResearch = candidate.research;
           validatedMuseum = candidate.museum;
+          if (
+            stage === "advance-tasks-and-benchmarks" &&
+            benchmarkOwnedOutput !== undefined &&
+            candidate.benchmarks.active !== null
+          ) {
+            assertValidActiveBenchmarkState(candidate);
+          } else {
+            assertValidStoredBenchmarkState(candidate);
+          }
+          validatedBenchmarks = candidate.benchmarks;
           if (
             candidate.research !== current.research ||
             candidate.campaign !== current.campaign ||
@@ -475,13 +549,17 @@ export class SimCore {
       // The loop validated the final Compute and task branches after the last stage that changed
       // either identity. Completing a tick changes only host-owned tick/clock fields, so repeating
       // the allocation-heavy structural Compute validation here adds no corruption coverage.
-      this.authoritativeState.commitOwned(this.completeTick(candidate, true));
+      this.authoritativeState.commitOwned(this.completeTick(candidate, true, true));
     } catch (cause: unknown) {
       throw new TickSystemInvariantError(current.tick, lastExecutedStage, cause);
     }
   }
 
-  private completeTick(candidate: GameState, computeAlreadyValidated = false): GameState {
+  private completeTick(
+    candidate: GameState,
+    computeAlreadyValidated = false,
+    benchmarkAlreadyValidated = false,
+  ): GameState {
     const tick = candidate.tick + 1;
     const completed = {
       ...candidate,
@@ -495,6 +573,7 @@ export class SimCore {
     if (!computeAlreadyValidated) assertValidStoredComputeState(completed);
     assertValidStoredTaskState(completed);
     assertValidStoredResearchState(completed);
+    if (!benchmarkAlreadyValidated) assertValidStoredBenchmarkState(completed);
     return completed;
   }
 

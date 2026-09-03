@@ -165,6 +165,7 @@ function benchmark(runId: string, benchmarkId: string): BenchmarkResult {
   return {
     runId,
     benchmarkId,
+    clusterModuleIds: ["module-instance-00000001"],
     passed: true,
     startedAtTick: 0,
     durationTicks: 100,
@@ -173,9 +174,12 @@ function benchmark(runId: string, benchmarkId: string): BenchmarkResult {
     peakPowerWatts: 50,
     averagePowerWatts: 25,
     maxTemperatureC: 70,
+    minimumPowerHeadroomWatts: 10,
     retryRate: 0,
     validSampleRate: 1,
     costUsd: 0,
+    shutdownObserved: false,
+    failureReasons: [],
     overclockSummary: {},
   };
 }
@@ -206,13 +210,14 @@ function finalResearchState(seed: string, completedOperations = 0): GameState {
     },
   };
   state.benchmarks.history = [
-    benchmark("research-diagnostic-peak", "benchmark-peak-throughput"),
-    benchmark("research-diagnostic-sustained", "benchmark-sustained-stability"),
+    benchmark("benchmark-run-00000001", "benchmark-peak-throughput"),
+    benchmark("benchmark-run-00000002", "benchmark-sustained-stability"),
   ];
   state.benchmarks.bestRunByBenchmark = {
-    "benchmark-peak-throughput": "research-diagnostic-peak",
-    "benchmark-sustained-stability": "research-diagnostic-sustained",
+    "benchmark-peak-throughput": "benchmark-run-00000001",
+    "benchmark-sustained-stability": "benchmark-run-00000002",
   };
+  state.benchmarks.nextBenchmarkRunSequence = 3;
   return state;
 }
 

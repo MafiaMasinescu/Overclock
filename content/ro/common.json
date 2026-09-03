@@ -57,6 +57,10 @@
     "task-slot-limit": "Nu este disponibil niciun slot pentru task.",
     "task-requirement-missing": "Cerințele task-ului nu sunt îndeplinite.",
     "task-not-active": "Task-ul nu este activ.",
+    "benchmark-already-active": "Un benchmark este deja activ.",
+    "benchmark-requirement-missing": "Cerințele benchmark-ului nu sunt îndeplinite.",
+    "benchmark-not-active": "Niciun benchmark nu este activ.",
+    "benchmark-configuration-locked": "Configurația benchmark-ului este blocată cât timp un benchmark este activ.",
     "stale-design-preview": "Previzualizarea Design Mode nu mai este actuală.",
     "stale-tick": "Comanda a fost creată pentru un alt tick al simulării."
   },

@@ -168,12 +168,23 @@ export const benchmarkDefinitionSchema = z.object({
   id: idSchema,
   nameKey: localizationKeySchema,
   type: z.enum(["peak", "sustained"]),
-  durationSeconds: z.number().positive(),
-  targetAverageUsefulComputeFlops: finiteNonNegativeSchema,
-  minimumValidSampleRate: z.number().min(0).max(1),
-  maximumRetryRate: z.number().min(0).max(1),
+  durationSeconds: positiveSafeIntegerSchema,
+  targetAverageUsefulComputeFlops: z.number().positive(),
+  minimumValidSampleRate: z.number().gt(0).lte(1),
+  maximumRetryRate: z.number().gte(0).lt(1),
   maximumTemperatureC: z.number(),
   allowShutdowns: z.boolean(),
+  requiredFeatureIds: z.array(idSchema).refine(
+    (values) => new Set(values).size === values.length,
+    "must contain unique feature IDs",
+  ).refine(
+    (values) =>
+      values.every((value, index) => {
+        const previous = values[index - 1];
+        return previous === undefined || previous < value;
+      }),
+    "must contain feature IDs in lexical order",
+  ),
 });
 
 export const eraFileSchema = z.object({
@@ -233,6 +244,7 @@ export type ModuleDefinition = z.infer<typeof moduleDefinitionSchema>;
 export type ModulePortDefinition = z.infer<typeof modulePortSchema>;
 export type TaskDefinition = z.infer<typeof taskDefinitionSchema>;
 export type ResearchNodeDefinition = z.infer<typeof researchNodeSchema>;
+export type BenchmarkDefinition = z.infer<typeof benchmarkDefinitionSchema>;
 export type EraDefinition = z.infer<typeof eraFileSchema>["era"];
 export type BalancingDefinition = z.infer<typeof balancingFileSchema>;
 

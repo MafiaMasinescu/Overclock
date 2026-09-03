@@ -405,6 +405,34 @@ and determinism gate. It records one accepted irregularity in the unchanged Task
 p95 `0.2605 ms` against the nominal `< 0.25 ms` gate, with warm production p95 passing at
 `2.4462 ms`. No Task 8 benchmark input or implementation was changed.
 
+## Task 12: Deterministic Benchmark runners
+
+Task 12 uses the existing command processor and `advance-tasks-and-benchmarks` stage. Task 12.6
+closes the implementation with permanent diagnostics and complete verification.
+
+- Task 12.1: contract, benchmark content, authoritative state, structural/content-aware validation,
+  localization, compatibility expectations, and no handlers or production behavior.
+- Task 12.2: deterministic type-specific pass/fail comparisons, scoring, and exact best-run policy.
+- Task 12.3: `START_BENCHMARK`/`CANCEL_BENCHMARK`, deterministic run identity, and atomic command
+  results.
+- Task 12.4: configuration and workload exclusivity guards for live overclock configuration, live
+  design application, Research start, and Task activation/resume.
+- Task 12.5: transactional Task/Benchmark production integration at
+  `advance-tasks-and-benchmarks`, deterministic facility telemetry sampling, selected-cluster
+  aggregation, exact 100 ms progression boundaries, completion/history/best-run application,
+  Research visibility, rollback, and lifecycle coordination.
+- Task 12.6: final performance hardening, compatibility/documentation closeout, and complete
+  verification; the Task 12.5 sampling and progression contract remains authoritative.
+
+Task 12 is complete at its single checkpoint-neutral boundary. Task 12.5 owns transactional
+Task/Benchmark production integration, deterministic telemetry sampling, exact progression,
+Research visibility, rollback, and ownership. Task 12.6 owns measured private performance
+hardening, compatibility verification, permanent documentation, and the final diagnostic. The
+permanent Benchmark diagnostic is `corepack pnpm performance:benchmarks`, with its fixture,
+sample counts, gates, and audited results recorded in
+`docs/diagnostics/BENCHMARK_LIFECYCLE_PERFORMANCE.md`. Workload-dependent Power/Heat, random
+failures, UI, events, leaderboards, saves/replay, workers, and later Task 13 scope remain deferred.
+
 ## Nu implementa
 
 - React panels;

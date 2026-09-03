@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-02
+Updated: 2026-09-03
 
 ## Current phase
 
@@ -34,17 +34,20 @@ Updated: 2026-09-02
 - Phase 1 Task 11, deterministic Research lifecycle and global proportional Compute reservation, is
   complete at its single checkpoint-neutral boundary under ADR-0017. Tasks 11.1 through 11.7 cover
   the additive contract, pure and production reservation, commands, lifecycle/Museum calculation,
-  transactional Research integration, and performance/compatibility/documentation closeout. The
-  exact next Phase 1 task is Task 12, Benchmark runners.
+  transactional Research integration, and performance/compatibility/documentation closeout. Task 12,
+  deterministic Benchmark runners, is complete at its single checkpoint-neutral boundary under
+  ADR-0018. No Task 13 implementation is included in this boundary.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
   `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN`,
   `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`, `ACCEPT_TASK`, `ALLOCATE_TASK`, `SET_TASK_HOLD`,
-  `ABANDON_TASK`, `START_RESEARCH`, and `CANCEL_RESEARCH`. Production
+  `ABANDON_TASK`, `START_RESEARCH`, `CANCEL_RESEARCH`, `START_BENCHMARK`, and `CANCEL_BENCHMARK`.
+  Production
   gameplay tick systems are Task 6's `calculate-power-demand-and-delivery`, Task 7's
   `calculate-heat-generation` and `update-thermal-state`, Task 8's
   `apply-throttling-stability-and-shutdown`, Task 9's `calculate-theoretical-and-useful-compute`, and
-  Task 10's Task-only `advance-tasks-and-benchmarks` stage and Task 11's `advance-research` stage.
+  Task 12's canonical combined `advance-tasks-and-benchmarks` stage and Task 11's
+  `advance-research` stage.
 
 ## Implemented deterministic foundation
 
@@ -562,7 +565,7 @@ and the permanent Research diagnostic; Task 7/8 behavioral projections remain un
   gates. The diagnostic retains every sample and reports transition, payout, command, and witness paths.
 - Task 11 is complete at its single checkpoint-neutral boundary. Its permanent Research diagnostic,
   compatibility results, and final verification are recorded in ADR-0017 and
-  `docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md`. Task 12, Benchmark runners, is next.
+  `docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md`. Task 12 is complete below under ADR-0018.
 
 ## Verification
 
@@ -732,8 +735,9 @@ and the permanent Research diagnostic; Task 7/8 behavioral projections remain un
 
 Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc`; Task 7, Task 8, and Task 9.1
 through Task 9.5 are complete. Task 10 is complete under ADR-0016 at its single final checkpoint
-boundary. Task 11 is complete at its single checkpoint-neutral boundary under ADR-0017. The exact
-next Phase 1 task is Task 12, Benchmark runners; no Task 12 implementation is included here.
+boundary. Task 11 is complete at its single checkpoint-neutral boundary under ADR-0017. Task 12 is
+complete at its single checkpoint-neutral boundary under ADR-0018. No Task 13 implementation is
+included in this boundary.
 
 ## Phase 1 Task 6 implementation
 
@@ -813,8 +817,31 @@ next Phase 1 task is Task 12, Benchmark runners; no Task 12 implementation is in
   `researchFactor: 1` in Task breakdowns. Published full-state vectors are `7157962fe832def9`,
   `50e67e1213179a35`, and `bc23753d687706dc`, with exact structural reasons in ADR-0017. Task 7/8
   behavioral projections, balancing/module numeric values, GDD, and Word documents remain unchanged.
-- Task 11 is complete at its single checkpoint-neutral boundary. Task 12, Benchmark runners, is
-  the exact next Phase 1 task; no Task 12 behavior is included.
+- Task 11 is complete at its single checkpoint-neutral boundary. Task 12 is complete at its single
+  checkpoint-neutral boundary under ADR-0018; its final contract and verification are recorded below.
+
+## Task 12: Deterministic Benchmark runners
+
+Task 12 is complete at its single checkpoint-neutral boundary under ADR-0018. Task 12.1 through
+12.4 establish the additive content/state/validation, pure comparison, deterministic command, and
+configuration/workload-exclusivity contracts. Task 12.5 owns the single transactional
+`advance-tasks-and-benchmarks` stage: Task advancement precedes Benchmark sampling, current-tick
+Compute/Power/Thermal/lifecycle data are consumed without recalculation or RNG, exact Peak/Sustained
+boundaries are applied, Research sees completion in the same tick, and any calculation,
+validation, application, or ownership failure rolls back the complete tick. Task 12.6 adds only
+measured private evidence/validation hardening, compatibility verification, and permanent
+diagnostics.
+
+The permanent diagnostic is `corepack pnpm performance:benchmarks`, documented in
+`docs/diagnostics/BENCHMARK_LIFECYCLE_PERFORMANCE.md`. Its audited i7-2600 run reports pure
+Benchmark p95 `0.0965 ms`, combined Task plus Benchmark p95 `0.2146 ms`, and complete active
+production p95 `3.8753 ms`, passing all three Task 12 gates. The unchanged Task 8 nominal pure
+exception accepted at Task 11 remains recorded as p95 `0.2605 ms` against `< 0.25 ms`; Task 12 did
+not alter that implementation, fixture, threshold, sample count, warm-up, or semantics.
+
+Task 12 does not add workload-dependent Power/Heat, random failures, UI, events, leaderboards,
+saves/replay, workers, or later Task 13 scope. No Task 13 implementation is approved in this
+boundary.
 
 ## Explicitly deferred
 
