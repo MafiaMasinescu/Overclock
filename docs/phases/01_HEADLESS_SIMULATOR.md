@@ -458,3 +458,38 @@ failures, UI, events, leaderboards, saves/replay, workers, and later Task 13 sco
 ## Livrabil
 
 Un simulator care poate finaliza vertical slice-ul prin comenzi și teste, fără interfață.
+
+## Task 13: Deterministic Blueprint domain and Design Mode integration
+
+Task 13 has one final checkpoint. Task 13.1 adds the authoritative `BlueprintState`, deterministic
+identity and name contracts, structural/history-safe validation, ownership protection, and
+compatibility proofs. Task 13.2 adds pure live-layout capture and historical summary calculation.
+Task 13.3 adds pure Blueprint-wide rotation, placement planning, transformed footprints and
+routes, fresh facility-local ID allocation, current Research/content/inventory checks, candidate
+geometry validation, and detached materialization plans. Task 13.3 does not register command
+handlers, mutate Design Mode state, or add Blueprint Undo/Redo. Task 13.4 adds FIFO
+`SAVE_BLUEPRINT` and `RENAME_BLUEPRINT` command handling. Task 13.5 adds FIFO
+`INSTANTIATE_BLUEPRINT`, atomic Design Mode materialization, detached history operations, and
+sequence-preserving Undo/Redo. Instantiation edits only the draft; existing Apply remains the
+boundary for cash, inventory consumption, downtime, live layout revision, and runtime invalidation.
+The existing Benchmark exclusivity guard remains on Apply, while draft instantiation is allowed
+during an active Benchmark. Task 13.6 adds scoped occupancy reuse inside candidate placement and
+route-state validation without accepting external validation evidence, the permanent audited
+Blueprint diagnostic, complete compatibility evidence, and permanent documentation.
+
+Task 13 is complete at its single checkpoint-neutral implementation boundary. Blueprint capture
+uses only selected authoritative live modules and internal routes, maps facility identities to
+canonical local identities, includes route paths in tight bounds, and records historical Compute,
+Power, exact cost, and observed-temperature summaries. Materialization applies the specified four
+global transforms to every occupied tile and route point, initializes fresh modules and routes
+canonically, and validates the complete draft candidate. Instantiation edits only the Design Mode
+draft and extends draft inventory reservations; existing Apply remains the boundary for cash,
+inventory consumption, downtime, live layout revision, and runtime invalidation. Undo and Redo
+restore exact objects and IDs without rewinding or reallocating sequences.
+
+The permanent diagnostic is `corepack pnpm performance:blueprints`; its fixture, formulas,
+measurement method, hard gates, and final i7-2600 result are recorded in
+`docs/diagnostics/BLUEPRINT_PERFORMANCE.md`. The hard p95 gates are 5 ms for pure capture and
+materialization, 50 ms for SAVE/INSTANTIATE/Undo/Redo, and 4 ms for a complete production tick.
+Cold construction and state replacement are reported separately. The roadmap continues from Task
+13 to Task 15; there is no Task 14.

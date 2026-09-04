@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
+import { buildOccupancyIndex } from "../../src/grid/domain/occupancy.ts";
 import type { SimCommand } from "../../src/sim/commands/contracts.ts";
 import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
 import type { GameState, ModuleInstanceState, RouteState } from "../../src/sim/core/types.ts";
@@ -680,5 +681,38 @@ describe("manual routing", () => {
       commandHandlers: createDesignModeCommandHandlers(content),
     });
     expect(() => process(core, enter(59))).toThrow("Simulator invariant violation");
+  });
+
+  test("derives route occupancy from the facility instead of caller-supplied stale evidence", () => {
+    const content = loadContentBundle();
+    const state = createInitialGameState({ content, seed: "route-validator-owned-occupancy" });
+    twoRelays(state);
+    const staleOccupancy = buildOccupancyIndex({ modules: state.facility.modules, content });
+    state.facility.modules["blocking-module"] = relay("blocking-module", 1);
+    state.facility.routes = {
+      "route-live": {
+        id: "route-live",
+        kind: "data",
+        from: { moduleInstanceId: "left", portId: "data-east" },
+        to: { moduleInstanceId: "right", portId: "data-west" },
+        path: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 2, y: 0 },
+          { x: 3, y: 0 },
+        ],
+        capacityPerSecond: 60_000,
+        congestionRatio: 0,
+      },
+    };
+    const invokeWithUntrustedEvidence = validateRouteState as unknown as (
+      facility: Parameters<typeof validateRouteState>[0],
+      bundle: Parameters<typeof validateRouteState>[1],
+      occupancy: typeof staleOccupancy,
+    ) => ReturnType<typeof validateRouteState>;
+
+    expect(invokeWithUntrustedEvidence(state.facility, content, staleOccupancy)).toContainEqual(
+      expect.objectContaining({ reason: "PATH_INTERIOR_TILE_OCCUPIED" }),
+    );
   });
 });

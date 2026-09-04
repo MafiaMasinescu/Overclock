@@ -213,7 +213,7 @@ export interface FacilityPowerState {
 
 export interface DesignDraftOperation {
   operationId: string;
-  kind: "place" | "move" | "rotate" | "remove" | "connect" | "disconnect";
+  kind: "place" | "move" | "rotate" | "remove" | "connect" | "disconnect" | "instantiate-blueprint";
   payload: JsonObject;
 }
 
@@ -380,6 +380,7 @@ export interface BlueprintRecord {
 }
 
 export interface BlueprintState {
+  nextBlueprintSequence: number;
   records: Record<BlueprintId, BlueprintRecord>;
 }
 

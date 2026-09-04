@@ -1,3 +1,4 @@
+import { compareStableStrings } from "../../grid/domain/stableOrdering.ts";
 import type { GameState, GridPoint, ModuleInstanceState, RouteState } from "../core/types.ts";
 
 export type ParsedDesignDraftOperation =
@@ -28,7 +29,20 @@ export type ParsedDesignDraftOperation =
       payload: { module: ModuleInstanceState; removedRoutes: RouteState[] };
     }
   | { operationId: string; kind: "connect"; payload: { route: RouteState } }
-  | { operationId: string; kind: "disconnect"; payload: { route: RouteState } };
+  | { operationId: string; kind: "disconnect"; payload: { route: RouteState } }
+  | {
+      operationId: string;
+      kind: "instantiate-blueprint";
+      payload: {
+        blueprintId: string;
+        blueprintVersion: number;
+        addedModules: ModuleInstanceState[];
+        addedRoutes: RouteState[];
+        inventoryReservationDelta: { definitionId: string; quantity: number }[];
+        nextModuleInstanceSequence: number;
+        nextRouteSequence: number;
+      };
+    };
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -72,6 +86,12 @@ function nonnegativeSafeInteger(value: unknown, description: string): number {
     `${description} must be a nonnegative safe integer.`,
   );
   return value;
+}
+
+function positiveSafeInteger(value: unknown, description: string): number {
+  const result = nonnegativeSafeInteger(value, description);
+  assert(result > 0, `${description} must be positive.`);
+  return result;
 }
 
 function point(value: unknown, description: string): GridPoint {
@@ -193,6 +213,99 @@ function routes(value: unknown, description: string): RouteState[] {
   return result;
 }
 
+function modules(value: unknown, description: string): ModuleInstanceState[] {
+  assert(Array.isArray(value), `${description} must be an array.`);
+  const result = value.map((entry) => module(entry));
+  const ids = new Set<string>();
+  for (const entry of result) {
+    assert(!ids.has(entry.id), `${description} contains duplicate module ids.`);
+    ids.add(entry.id);
+  }
+  return result;
+}
+
+function reservationDelta(
+  value: unknown,
+  description: string,
+): { definitionId: string; quantity: number }[] {
+  assert(Array.isArray(value), `${description} must be an array.`);
+  const result = value.map((entry, index) => {
+    const source = record(entry, ["definitionId", "quantity"], `${description} ${index}`);
+    return {
+      definitionId: nonemptyString(source["definitionId"], `${description} definition id`),
+      quantity: positiveSafeInteger(source["quantity"], `${description} quantity`),
+    };
+  });
+  const ids = new Set<string>();
+  for (let index = 0; index < result.length; index += 1) {
+    const entry = result[index];
+    if (entry === undefined) continue;
+    assert(!ids.has(entry.definitionId), `${description} contains duplicate definition ids.`);
+    ids.add(entry.definitionId);
+    if (index > 0) {
+      const previous = result[index - 1];
+      assert(
+        previous !== undefined &&
+          compareStableStrings(previous.definitionId, entry.definitionId) < 0,
+        `${description} must be lexically sorted.`,
+      );
+    }
+  }
+  return result;
+}
+
+function assertCanonicalAllocatedId(id: string, prefix: "module-instance" | "route"): number {
+  const pattern = prefix === "module-instance" ? /^module-instance-(\d{8,})$/ : /^route-(\d{8,})$/;
+  const match = pattern.exec(id);
+  assert(match?.[1] !== undefined, "Blueprint operation contains a noncanonical id.");
+  const sequence = Number(match[1]);
+  assert(
+    Number.isSafeInteger(sequence) &&
+      sequence > 0 &&
+      id === `${prefix}-${sequence.toString().padStart(8, "0")}`,
+    "Blueprint operation contains an invalid allocated id.",
+  );
+  return sequence;
+}
+
+function assertBlueprintOperationPayload(payload: {
+  blueprintId: string;
+  blueprintVersion: number;
+  addedModules: ModuleInstanceState[];
+  addedRoutes: RouteState[];
+  inventoryReservationDelta: { definitionId: string; quantity: number }[];
+  nextModuleInstanceSequence: number;
+  nextRouteSequence: number;
+}): void {
+  assert(payload.addedModules.length > 0, "Blueprint operation must add a module.");
+  const moduleStart = payload.nextModuleInstanceSequence - payload.addedModules.length;
+  assert(moduleStart > 0, "Blueprint operation module sequence evidence is invalid.");
+  const moduleIds = new Set<string>();
+  for (const [index, moduleEntry] of payload.addedModules.entries()) {
+    const sequence = assertCanonicalAllocatedId(moduleEntry.id, "module-instance");
+    assert(sequence === moduleStart + index, "Blueprint operation module allocation is invalid.");
+    assert(!moduleIds.has(moduleEntry.id), "Blueprint operation module ids must be unique.");
+    moduleIds.add(moduleEntry.id);
+  }
+  const routeStart = payload.nextRouteSequence - payload.addedRoutes.length;
+  assert(
+    payload.addedRoutes.length === 0 || routeStart > 0,
+    "Blueprint operation route sequence evidence is invalid.",
+  );
+  const routeIds = new Set<string>();
+  for (const [index, routeEntry] of payload.addedRoutes.entries()) {
+    const sequence = assertCanonicalAllocatedId(routeEntry.id, "route");
+    assert(sequence === routeStart + index, "Blueprint operation route allocation is invalid.");
+    assert(!routeIds.has(routeEntry.id), "Blueprint operation route ids must be unique.");
+    routeIds.add(routeEntry.id);
+    assert(
+      moduleIds.has(routeEntry.from.moduleInstanceId) &&
+        moduleIds.has(routeEntry.to.moduleInstanceId),
+      "Blueprint operation route endpoints must reference added modules.",
+    );
+  }
+}
+
 export function parseDesignDraftOperation(value: unknown): ParsedDesignDraftOperation {
   const source = record(value, ["operationId", "kind", "payload"], "Design operation");
   const operationId = nonemptyString(source["operationId"], "Design operation id");
@@ -255,6 +368,48 @@ export function parseDesignDraftOperation(value: unknown): ParsedDesignDraftOper
     case "disconnect": {
       const parsed = record(payload, ["route"], `${kind} operation payload`);
       return { operationId, kind, payload: { route: route(parsed["route"]) } };
+    }
+    case "instantiate-blueprint": {
+      const parsed = record(
+        payload,
+        [
+          "addedModules",
+          "addedRoutes",
+          "blueprintId",
+          "blueprintVersion",
+          "inventoryReservationDelta",
+          "nextModuleInstanceSequence",
+          "nextRouteSequence",
+        ],
+        "Blueprint instantiation operation payload",
+      );
+      const parsedOperation = {
+        operationId,
+        kind,
+        payload: {
+          blueprintId: nonemptyString(parsed["blueprintId"], "Blueprint operation id"),
+          blueprintVersion: positiveSafeInteger(
+            parsed["blueprintVersion"],
+            "Blueprint operation version",
+          ),
+          addedModules: modules(parsed["addedModules"], "Blueprint operation modules"),
+          addedRoutes: routes(parsed["addedRoutes"], "Blueprint operation routes"),
+          inventoryReservationDelta: reservationDelta(
+            parsed["inventoryReservationDelta"],
+            "Blueprint operation reservation delta",
+          ),
+          nextModuleInstanceSequence: positiveSafeInteger(
+            parsed["nextModuleInstanceSequence"],
+            "Blueprint operation module sequence",
+          ),
+          nextRouteSequence: positiveSafeInteger(
+            parsed["nextRouteSequence"],
+            "Blueprint operation route sequence",
+          ),
+        },
+      };
+      assertBlueprintOperationPayload(parsedOperation.payload);
+      return parsedOperation;
     }
     default:
       throw new Error("Design operation kind is invalid.");

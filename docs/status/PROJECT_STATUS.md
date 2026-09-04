@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-03
+Updated: 2026-09-04
 
 ## Current phase
 
@@ -36,12 +36,21 @@ Updated: 2026-09-03
   the additive contract, pure and production reservation, commands, lifecycle/Museum calculation,
   transactional Research integration, and performance/compatibility/documentation closeout. Task 12,
   deterministic Benchmark runners, is complete at its single checkpoint-neutral boundary under
-  ADR-0018. No Task 13 implementation is included in this boundary.
+  ADR-0018.
+- Phase 1 Task 13 is complete at its single checkpoint-neutral boundary. It adds deterministic
+  Blueprint contracts and ownership, pure live-layout capture and historical summary calculation,
+  pure rotation/materialization planning, FIFO `SAVE_BLUEPRINT` and `RENAME_BLUEPRINT`, FIFO
+  `INSTANTIATE_BLUEPRINT` as an atomic Design Mode transaction with detached history and
+  sequence-preserving Undo/Redo, scoped validation reuse, and the permanent Blueprint diagnostic.
+  Instantiation changes only the draft and authoritative fresh-ID counters; existing Apply remains
+  the cash, inventory, downtime, live-layout, Power, and Overclock invalidation boundary. Draft
+  instantiation is allowed during an active Benchmark, while Apply retains Benchmark exclusivity.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
   `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN`,
   `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`, `ACCEPT_TASK`, `ALLOCATE_TASK`, `SET_TASK_HOLD`,
-  `ABANDON_TASK`, `START_RESEARCH`, `CANCEL_RESEARCH`, `START_BENCHMARK`, and `CANCEL_BENCHMARK`.
+  `ABANDON_TASK`, `START_RESEARCH`, `CANCEL_RESEARCH`, `SAVE_BLUEPRINT`,
+  `INSTANTIATE_BLUEPRINT`, `RENAME_BLUEPRINT`, `START_BENCHMARK`, and `CANCEL_BENCHMARK`.
   Production
   gameplay tick systems are Task 6's `calculate-power-demand-and-delivery`, Task 7's
   `calculate-heat-generation` and `update-thermal-state`, Task 8's
@@ -736,8 +745,8 @@ and the permanent Research diagnostic; Task 7/8 behavioral projections remain un
 Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc`; Task 7, Task 8, and Task 9.1
 through Task 9.5 are complete. Task 10 is complete under ADR-0016 at its single final checkpoint
 boundary. Task 11 is complete at its single checkpoint-neutral boundary under ADR-0017. Task 12 is
-complete at its single checkpoint-neutral boundary under ADR-0018. No Task 13 implementation is
-included in this boundary.
+complete at its single checkpoint-neutral boundary under ADR-0018. Task 13 is complete at its
+single checkpoint-neutral boundary under ADR-0019; the roadmap proceeds directly to Task 15.
 
 ## Phase 1 Task 6 implementation
 
@@ -840,8 +849,7 @@ exception accepted at Task 11 remains recorded as p95 `0.2605 ms` against `< 0.2
 not alter that implementation, fixture, threshold, sample count, warm-up, or semantics.
 
 Task 12 does not add workload-dependent Power/Heat, random failures, UI, events, leaderboards,
-saves/replay, workers, or later Task 13 scope. No Task 13 implementation is approved in this
-boundary.
+saves/replay, workers, or Task 13 behavior; Task 13.1 is documented in the following section.
 
 ## Explicitly deferred
 
@@ -855,6 +863,73 @@ boundary.
   staffing or maintenance beyond the approved lifecycle, inflation, market events, scarcity,
   financing, interest, insolvency, bailout, bankruptcy, and financial game over.
 - Installed-module sales, auto-connect, auto-route, pathfinding, rerouting, and route preview.
-- Benchmarks, blueprints, replay execution, balancing bot, Research UI, Research events, and later
-  progression features outside the approved Task 11 lifecycle.
+- Replay execution, balancing bot, Research UI, Research events, and later progression features
+  outside the approved lifecycle boundaries.
 - React/Pixi integration, IndexedDB, save/load, migrations, export, and import.
+
+## Task 13.1: Deterministic Blueprint contracts and authoritative state
+
+Task 13.1 adds `BlueprintState.nextBlueprintSequence`, initialized to `1`, with deterministic
+Blueprint IDs and reserved local module/route ID formats. Blueprint records are deeply immutable
+when owned by the simulator. The dedicated structural validator checks exact shapes, key/ID
+agreement, sequence monotonicity, normalized names, supported structural kinds, local identity,
+relative geometry, saved Overclock settings, internal routes, bounds, Research ordering,
+content-version presence, summary values, and exact microdollar monetary representation without
+consulting current content.
+
+The branch is validated at initial construction, authoritative construction/replacement, save
+snapshot, command candidates, and production identity boundaries. Mutable-clone ticks reuse the
+frozen Blueprint branch and do not scan Blueprint records. Adding the authoritative sequence
+changes serialized compatibility hashes; the explicit old/new initial-state vector and affected
+Task 7/8/10 vectors are recorded in ADR-0019 and tests. `saveVersion`, `contentVersion`,
+`balancing.json`, and module numeric content are unchanged.
+
+Task 13.6 adds the permanent Blueprint diagnostic and closes the compatibility/documentation
+boundary. Task 13 has one final checkpoint, and the roadmap proceeds from Task 13 to Task 15;
+Task 14 is not introduced.
+
+## Task 13.5: INSTANTIATE_BLUEPRINT and atomic Design Mode history
+
+Task 13.5 registers `INSTANTIATE_BLUEPRINT` through the existing FIFO command path. It validates
+authoritative Blueprint, Facility, and draft state, then applies Research, kind, content-version,
+current-content, pure materialization, geometry, route, inventory, and ID-capacity checks before
+one complete candidate draft is installed. The command changes only the draft and the established
+Facility fresh-ID sequences. Live layout, cash, inventory, live layout revision, runtime Power,
+Overclock, lifecycle state, and RNG remain unchanged until existing `APPLY_DESIGN` behavior.
+
+The new immutable `instantiate-blueprint` operation stores Blueprint evidence, exact materialized
+modules/routes, reservation delta, and resulting sequences. Undo and Redo verify exact objects,
+geometry, routes, reservations, and non-rewinding sequence ownership; Redo restores the original
+IDs without allocating again. Operation parsing rejects malformed or tampered fresh-ID ranges,
+route endpoint ownership, and reservation payloads. The implementation preserves active Benchmark
+allowance for draft edits and the existing Benchmark exclusivity guard on Apply.
+
+Task 13.6 adds the permanent Blueprint diagnostic and closes the compatibility/documentation
+boundary. The roadmap proceeds from Task 13 to Task 15; Task 14 is not introduced.
+
+## Task 13.6: Blueprint performance and permanent documentation
+
+The permanent diagnostic is `corepack pnpm performance:blueprints`. Its audited fixture is a valid
+24 by 16 facility with 16 selected modules, 17 live modules including one external connection,
+six internal Power/data routes, mixed 1 by 1 through 3 by 2 footprints, all four rotations,
+compute/cooling, saved Overclock settings, route paths outside footprints, and nonuniform observed
+temperatures. It measures pure capture, summary, materialization, SAVE, INSTANTIATE, Undo, Redo,
+collision and inventory/content-version failures, production ticks with 128 records, and cold
+construction/replacement separately. The final i7-2600 run passed every hard p95 gate: capture
+1.0139 ms, materialization 4.4555 ms, SAVE 9.3438 ms, INSTANTIATE 17.7084 ms, Undo 21.3750 ms,
+Redo 16.0467 ms, and complete production 1.4973 ms. Full median/p95/max/sample/environment data
+is recorded in `docs/diagnostics/BLUEPRINT_PERFORMANCE.md`.
+
+Scoped hardening reuses command-local occupancy while incrementally validating candidate module
+placement, and route-state validation derives and reuses its own occupancy once per collection.
+Public validators do not accept caller-supplied occupancy evidence. This does not alter Blueprint
+ordering, formulas, validation meaning, authoritative ownership, or production tick behavior. No
+Blueprint record scan occurs on ordinary ticks.
+
+Task 13 compatibility remains additive: `nextBlueprintSequence` changes the full initial hash
+from `1ac5a1d2a3739390` to `539d230076b51eda`, while the prior Blueprint-excluded projection stays
+`1ac5a1d2a3739390`. Existing Task 7, Task 8, and Task 10 vectors retain their prior behavioral
+projections. `saveVersion`, `contentVersion`, balancing data, and module numeric content are
+unchanged. Export/import, nested Blueprints, definition editing, propagation, facility-zone
+instantiation, premiums, automation, UI/events, save/replay transport, workers, provenance
+enforcement, and Task 15 remain deferred.

@@ -119,7 +119,7 @@ describe("initial GameState", () => {
         history: [],
         bestRunByBenchmark: {},
       },
-      blueprints: { records: {} },
+      blueprints: { nextBlueprintSequence: 1, records: {} },
       tutorial: {
         guidanceMode: "simple",
         currentStepId: null,

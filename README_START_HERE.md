@@ -200,6 +200,25 @@ combined advancement p95 below `0.25 ms`, and active complete production p95 bel
 `docs/diagnostics/BENCHMARK_LIFECYCLE_PERFORMANCE.md` for the permanent formulas, ownership,
 history, validation, and audited results.
 
+## Blueprint performance diagnostic
+
+For the Task 13 Blueprint domain and Design Mode integration, run:
+
+```powershell
+corepack pnpm performance:blueprints
+```
+
+The audited diagnostic uses a valid `24 x 16` fixture with mixed module footprints and rotations,
+compute/cooling, internal Power and data routes, an omitted external connection, saved Overclock,
+and nonuniform temperatures. It measures pure capture and summary, rotation/materialization
+planning, SAVE, INSTANTIATE, Undo, Redo, specified rejection paths, a complete production tick
+with 128 stored Blueprint records, and cold construction/replacement separately. It reports median,
+p95, maximum, sample count, CPU, operating system, Node version, build mode, and warm-up. Fixture
+construction and warm-up are excluded from timed samples and no sample is filtered. The i7-2600
+hard gates are pure capture/materialization p95 below `5 ms`, SAVE/INSTANTIATE/Undo/Redo p95 below
+`50 ms`, and complete production p95 below `4 ms`. See
+`docs/diagnostics/BLUEPRINT_PERFORMANCE.md` for the permanent fixture, contract, and audited result.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

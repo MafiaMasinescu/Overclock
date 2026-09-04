@@ -15,6 +15,7 @@ import type {
   DesignDraftState,
   DesignDraftOperation,
   FacilityState,
+  GameState,
   JsonObject,
   ModuleInstanceState,
   RouteState,
@@ -389,11 +390,180 @@ function assertRoutesAbsent(draft: DesignDraftState, routes: readonly RouteState
   }
 }
 
+function reservationRequirements(
+  facility: FacilityState,
+  draft: Pick<DesignDraftState, "modules">,
+  inventory: GameState["inventory"]["stacks"],
+): ReadonlyMap<string, number> {
+  return new Map(
+    calculateDesignInventoryReservations(facility, draft, inventory).map((reservation) => [
+      reservation.definitionId,
+      reservation.requiredFromInventory,
+    ]),
+  );
+}
+
+function assertBlueprintReservationDelta(
+  facility: FacilityState,
+  draft: DesignDraftState,
+  inventory: GameState["inventory"]["stacks"],
+  addedModules: readonly ModuleInstanceState[],
+  delta: readonly { readonly definitionId: string; readonly quantity: number }[],
+  direction: "undo" | "redo",
+): void {
+  const current = reservationRequirements(facility, draft, inventory);
+  const modules = { ...draft.modules };
+  if (direction === "undo") {
+    for (const module of addedModules) {
+      const existing = modules[module.id];
+      if (existing === undefined || !sameCanonical(existing, module)) {
+        throw new Error("Blueprint reservation module does not match the history operation.");
+      }
+      Reflect.deleteProperty(modules, module.id);
+    }
+  } else {
+    for (const module of addedModules) {
+      if (Object.hasOwn(modules, module.id)) {
+        throw new Error("Blueprint reservation module id already exists in the draft.");
+      }
+      modules[module.id] = module;
+    }
+  }
+  const expected = reservationRequirements(facility, { modules }, inventory);
+  if (
+    direction === "redo" &&
+    calculateDesignInventoryReservations(facility, { modules }, inventory).some(
+      (reservation) => reservation.requiredFromInventory > reservation.availableInventory,
+    )
+  ) {
+    throw new Error("Blueprint redo inventory reservations are no longer available.");
+  }
+  const expectedDelta = new Map(delta.map((entry) => [entry.definitionId, entry.quantity]));
+  const definitionIds = new Set([...current.keys(), ...expected.keys(), ...expectedDelta.keys()]);
+  for (const definitionId of definitionIds) {
+    const change = (expected.get(definitionId) ?? 0) - (current.get(definitionId) ?? 0);
+    const requiredChange = (direction === "redo" ? 1 : -1) * (expectedDelta.get(definitionId) ?? 0);
+    if (change !== requiredChange) {
+      throw new Error("Blueprint history inventory reservation delta is inconsistent.");
+    }
+  }
+}
+
+function assertCanonicalAllocatedId(id: string, prefix: "module-instance" | "route"): number {
+  const pattern = prefix === "module-instance" ? /^module-instance-(\d{8,})$/ : /^route-(\d{8,})$/;
+  const match = pattern.exec(id);
+  if (match?.[1] === undefined) throw new Error("Blueprint history contains a noncanonical id.");
+  const sequence = Number(match[1]);
+  if (
+    !Number.isSafeInteger(sequence) ||
+    sequence <= 0 ||
+    id !== `${prefix}-${sequence.toString().padStart(8, "0")}`
+  ) {
+    throw new Error("Blueprint history contains an invalid allocated id.");
+  }
+  return sequence;
+}
+
+function assertBlueprintOperationShape(
+  operation: Extract<ParsedDesignDraftOperation, { kind: "instantiate-blueprint" }>,
+): void {
+  const { addedModules, addedRoutes, nextModuleInstanceSequence, nextRouteSequence } =
+    operation.payload;
+  if (addedModules.length === 0) throw new Error("Blueprint history must add a module.");
+  const moduleStart = nextModuleInstanceSequence - addedModules.length;
+  if (moduleStart <= 0) throw new Error("Blueprint history module sequence evidence is invalid.");
+  const moduleIds = new Set<string>();
+  for (const [index, module] of addedModules.entries()) {
+    const sequence = assertCanonicalAllocatedId(module.id, "module-instance");
+    if (sequence !== moduleStart + index || moduleIds.has(module.id)) {
+      throw new Error("Blueprint history module allocation is not consecutive.");
+    }
+    moduleIds.add(module.id);
+  }
+  const routeStart = nextRouteSequence - addedRoutes.length;
+  if (routeStart <= 0 && addedRoutes.length > 0) {
+    throw new Error("Blueprint history route sequence evidence is invalid.");
+  }
+  const routeIds = new Set<string>();
+  for (const [index, route] of addedRoutes.entries()) {
+    const sequence = assertCanonicalAllocatedId(route.id, "route");
+    if (sequence !== routeStart + index || routeIds.has(route.id)) {
+      throw new Error("Blueprint history route allocation is not consecutive.");
+    }
+    routeIds.add(route.id);
+    if (!moduleIds.has(route.from.moduleInstanceId) || !moduleIds.has(route.to.moduleInstanceId)) {
+      throw new Error("Blueprint history route endpoint is not an added module.");
+    }
+  }
+  const reservationIds = new Set<string>();
+  for (const reservation of operation.payload.inventoryReservationDelta) {
+    if (reservationIds.has(reservation.definitionId)) {
+      throw new Error("Blueprint history contains duplicate reservation definitions.");
+    }
+    reservationIds.add(reservation.definitionId);
+  }
+}
+
+function assertBlueprintOperationSequences(
+  facility: FacilityState,
+  operation: Extract<ParsedDesignDraftOperation, { kind: "instantiate-blueprint" }>,
+): void {
+  if (
+    facility.nextModuleInstanceSequence < operation.payload.nextModuleInstanceSequence ||
+    facility.nextRouteSequence < operation.payload.nextRouteSequence
+  ) {
+    throw new Error("Facility sequences are behind Blueprint history evidence.");
+  }
+  for (const module of operation.payload.addedModules) {
+    if (Object.hasOwn(facility.modules, module.id)) {
+      throw new Error("Blueprint history module id collides with the live facility.");
+    }
+  }
+  for (const route of operation.payload.addedRoutes) {
+    if (Object.hasOwn(facility.routes, route.id)) {
+      throw new Error("Blueprint history route id collides with the live facility.");
+    }
+  }
+}
+
+function assertBlueprintRedoGeometry(
+  facility: FacilityState,
+  draft: DesignDraftState,
+  operation: Extract<ParsedDesignDraftOperation, { kind: "instantiate-blueprint" }>,
+  content: ContentBundle,
+): void {
+  const modules: Record<string, ModuleInstanceState> = { ...draft.modules };
+  for (const module of operation.payload.addedModules) {
+    if (Object.hasOwn(modules, module.id)) {
+      throw new Error("Blueprint redo module id already exists in the draft.");
+    }
+    const placement = validateModulePlacement({
+      facilitySize: facility.size,
+      definitionId: module.definitionId,
+      position: module.position,
+      rotation: module.rotation,
+      modules,
+      content,
+    });
+    if (!placement.valid) throw new Error("Blueprint redo module placement is invalid.");
+    modules[module.id] = module;
+  }
+  const routes: Record<string, RouteState> = { ...draft.routes };
+  for (const route of operation.payload.addedRoutes) {
+    if (Object.hasOwn(routes, route.id)) {
+      throw new Error("Blueprint redo route id already exists in the draft.");
+    }
+    routes[route.id] = route;
+  }
+  assertValidDraftGrid(facility, { ...draft, modules, routes }, content);
+}
+
 function assertUndoPrecondition(
   facility: FacilityState,
   draft: DesignDraftState,
   operation: ParsedDesignDraftOperation,
   content: ContentBundle,
+  inventory: GameState["inventory"]["stacks"],
 ): void {
   switch (operation.kind) {
     case "place": {
@@ -443,6 +613,38 @@ function assertUndoPrecondition(
     case "disconnect":
       assertRoutesAbsent(draft, [operation.payload.route]);
       return;
+    case "instantiate-blueprint":
+      assertBlueprintOperationShape(operation);
+      assertBlueprintOperationSequences(facility, operation);
+      for (const module of operation.payload.addedModules) {
+        const existing = draft.modules[module.id];
+        if (existing === undefined || !sameCanonical(existing, module)) {
+          throw new Error("Blueprint module does not match the stored history operation.");
+        }
+        assertAttachedRoutesEqual(
+          draft.routes,
+          module.id,
+          operation.payload.addedRoutes.filter(
+            (route) =>
+              route.from.moduleInstanceId === module.id || route.to.moduleInstanceId === module.id,
+          ),
+        );
+      }
+      for (const route of operation.payload.addedRoutes) {
+        const existing = draft.routes[route.id];
+        if (existing === undefined || !sameCanonical(existing, route)) {
+          throw new Error("Blueprint route does not match the stored history operation.");
+        }
+      }
+      assertBlueprintReservationDelta(
+        facility,
+        draft,
+        inventory,
+        operation.payload.addedModules,
+        operation.payload.inventoryReservationDelta,
+        "undo",
+      );
+      return;
   }
 }
 
@@ -451,6 +653,7 @@ function assertRedoPrecondition(
   draft: DesignDraftState,
   operation: ParsedDesignDraftOperation,
   content: ContentBundle,
+  inventory: GameState["inventory"]["stacks"],
 ): void {
   switch (operation.kind) {
     case "place":
@@ -497,6 +700,19 @@ function assertRedoPrecondition(
       }
       return;
     }
+    case "instantiate-blueprint":
+      assertBlueprintOperationShape(operation);
+      assertBlueprintOperationSequences(facility, operation);
+      assertBlueprintReservationDelta(
+        facility,
+        draft,
+        inventory,
+        operation.payload.addedModules,
+        operation.payload.inventoryReservationDelta,
+        "redo",
+      );
+      assertBlueprintRedoGeometry(facility, draft, operation, content);
+      return;
   }
 }
 
@@ -571,6 +787,22 @@ function applyUndoOperation(
       restoreRoutes(draft, [operation.payload.route]);
       return;
     }
+    case "instantiate-blueprint":
+      for (const route of operation.payload.addedRoutes) {
+        const existing = draft.routes[route.id];
+        if (existing === undefined || !sameCanonical(existing, route)) {
+          throw new Error("Blueprint route does not match the stored history operation.");
+        }
+        Reflect.deleteProperty(draft.routes, route.id);
+      }
+      for (const module of operation.payload.addedModules) {
+        const existing = draft.modules[module.id];
+        if (existing === undefined || !sameCanonical(existing, module)) {
+          throw new Error("Blueprint module does not match the stored history operation.");
+        }
+        Reflect.deleteProperty(draft.modules, module.id);
+      }
+      return;
   }
 }
 
@@ -634,6 +866,14 @@ function applyRedoOperation(
       Reflect.deleteProperty(draft.routes, existing.id);
       return;
     }
+    case "instantiate-blueprint":
+      for (const module of operation.payload.addedModules) {
+        draft.modules[module.id] = structuredClone(module);
+      }
+      for (const route of operation.payload.addedRoutes) {
+        draft.routes[route.id] = structuredClone(route);
+      }
+      return;
   }
 }
 
@@ -967,7 +1207,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
         return;
       }
       const operation = parseDesignDraftOperation(stored);
-      assertUndoPrecondition(state.facility, draft, operation, content);
+      assertUndoPrecondition(state.facility, draft, operation, content, state.inventory.stacks);
       const revision = incrementRevision(draft);
       if (revision === null) {
         return REJECTIONS.invalidSystem;
@@ -990,7 +1230,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
         return;
       }
       const operation = parseDesignDraftOperation(stored);
-      assertRedoPrecondition(state.facility, draft, operation, content);
+      assertRedoPrecondition(state.facility, draft, operation, content, state.inventory.stacks);
       const revision = incrementRevision(draft);
       if (revision === null) {
         return REJECTIONS.invalidSystem;

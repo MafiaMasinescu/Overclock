@@ -1309,6 +1309,16 @@ Validarea verifică:
 
 Exportul de blueprint este posibil ulterior. În 0.1, salvăm blueprint-ul în save și îl putem instanția în același run.
 
+Task 13 trateazÄƒ `BlueprintState` ca stare autoritativÄƒ serializabilÄƒ È™i profund imutabilÄƒ.
+`SAVE_BLUEPRINT` creeazÄƒ mereu un record nou, iar `RENAME_BLUEPRINT` schimbÄƒ doar numele
+normalizat. `INSTANTIATE_BLUEPRINT` este o operaÈ›ie atomicÄƒ de Design Mode: materializeazÄƒ numai
+draft-ul cu ID-uri noi, rezervÄƒ implicit inventarul draft-ului È™i pÄƒstreazÄƒ secvenÈ›ele Facility
+fÄƒrÄƒ reutilizare. OperaÈ›ia `instantiate-blueprint` reÈ›ine datele exacte necesare pentru Undo È™i
+Redo; aceste operaÈ›ii restaureazÄƒ obiectele originale, nu alocÄƒ ID-uri noi È™i nu inverseazÄƒ
+secvenÈ›ele. Cash, consumul inventarului, downtime-ul, revision-ul live È™i invalidarea Power/
+Overclock apar numai prin `APPLY_DESIGN`. InstanÈ›ierea este permisÄƒ în timpul unui Benchmark,
+dar Apply rÄƒmâne exclusiv.
+
 ## 25. Benchmark system
 
 ### 25.1 Peak Throughput
@@ -1963,3 +1973,49 @@ Următoarele nu blochează vertical slice-ul:
 Prima sesiune Codex execută numai `docs/phases/00_SETUP.md`, folosind promptul `docs/prompts/00_FIRST_CODEX_PROMPT.md`.
 
 Faza 0 nu implementează gameplay complet. Ea creează repository-ul, quality gates, contractele, content loader-ul minimal, shell-ul aplicației și un smoke test. După validarea ei, Faza 1 construiește simulatorul headless.
+
+## 49. Task 13 Blueprint domain
+
+Task 13 are un singur checkpoint final. Task 13.1 adaugă `BlueprintState.nextBlueprintSequence`,
+inițializat la `1`, ID-uri deterministe pentru Blueprint/module/route, contractul de nume
+normalizat, ownership profund imutabil și validator structural independent de content-ul curent.
+Validatorul verifică forma exactă, acordul cheie-ID, secvențele, modulele, rutele interne,
+coordonatele relative, rotațiile, Overclock settings, bounds, Research IDs și summary numeric,
+inclusiv reprezentarea exactă în microdolari.
+
+State-ul este validat la construcție, snapshot/save, replacement și candidate commands. Tick
+systems păstrează ramura Blueprint prin identity și nu o scanează pe tick-uri obișnuite. Task
+13.2 adaugă captură deterministă din live layout și calculul summary, iar Task 13.3 adaugă
+rotația Blueprint-wide, planificarea placement-ului și materializarea pură într-un plan detașat.
+Task 13.4 added `SAVE_BLUEPRINT` and `RENAME_BLUEPRINT`; Task 13.5 adds
+`INSTANTIATE_BLUEPRINT` as an atomic Design Mode transaction with detached history. It changes
+only the draft and authoritative fresh-ID sequences. Cash, inventory consumption, downtime, live
+revision, and Power/Overclock invalidation remain exclusively in `APPLY_DESIGN`. Undo and Redo
+restore exact materialized objects without allocating new IDs or rewinding sequences. Instantiation
+is allowed during an active Benchmark, while Apply remains exclusive.
+
+Task 13 is complete at its single checkpoint-neutral implementation boundary. The permanent
+Blueprint contract, diagnostic, compatibility evidence, and deferred scope are recorded in
+ADR-0019 and `docs/diagnostics/BLUEPRINT_PERFORMANCE.md`. The roadmap proceeds from Task 13 to
+Task 15; Task 14 is not introduced.
+
+### Task 13 final verification and ownership details
+
+The authoritative Blueprint branch is validated at initial construction, replacement, command
+candidate validation, and ownership boundaries, then retained by identity through ordinary tick
+clones. It contains no derived indexes, witnesses, caches, or mutable scratch data. Invalid
+authoritative state is fatal; user rejections and fatal command failures are atomic, with state
+and RNG rollback. Blueprint commands do not consume RNG or read wall-clock time.
+
+The permanent performance diagnostic uses 1,000 pure samples and 200 samples for each command,
+failure, production-tick, construction, and replacement line after unmeasured warm-up. The final
+audited i7-2600 run reported p95 values of 1.0139 ms for capture, 4.4555 ms for materialization,
+9.3438 ms for SAVE, 17.7084 ms for INSTANTIATE, 21.3750 ms for Undo, 16.0467 ms for Redo, and
+1.4973 ms for a complete production tick with 128 stored records. Cold construction and replacement
+are reported separately. Fixture construction is outside timed samples and no sample is filtered.
+
+The compatibility change is limited to the serialized `blueprints.nextBlueprintSequence: 1`
+field: the full initial hash changes from `1ac5a1d2a3739390` to `539d230076b51eda`, while the
+Blueprint-excluded prior projection remains `1ac5a1d2a3739390`. Existing Task 7, Task 8, and
+Task 10 behavioral projections remain covered by their deliberate old/new vectors. No change is
+made to `saveVersion`, `contentVersion`, balancing data, or module numeric content.

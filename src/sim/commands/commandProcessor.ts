@@ -6,6 +6,7 @@ import { assertValidStoredTaskState } from "../tasks/taskState.ts";
 import { assertValidStoredResearchState } from "../research/researchState.ts";
 import { assertValidStoredBenchmarkState } from "../benchmarks/benchmarkState.ts";
 import { assertCanonicalSerializable } from "../replay/canonicalState.ts";
+import { assertValidBlueprintState } from "../blueprints/blueprintState.ts";
 import { createSeededRngFromState } from "../rng/seededRng.ts";
 import type { CommandReceipt, CommandResult, SimCommand } from "./contracts.ts";
 import {
@@ -59,6 +60,7 @@ function validateCandidateState(
   assertValidStoredTaskState(candidate);
   assertValidStoredResearchState(candidate);
   assertValidStoredBenchmarkState(candidate);
+  assertValidBlueprintState(candidate.blueprints);
 }
 
 function createRejectedResult(
@@ -100,6 +102,7 @@ export class CommandProcessor {
     assertValidStoredTaskState(initialState);
     assertValidStoredResearchState(initialState);
     assertValidStoredBenchmarkState(initialState);
+    assertValidBlueprintState(initialState.blueprints);
     this.state = dependencies.state ?? new AuthoritativeState(initialState);
     this.queue = dependencies.queue ?? new CommandQueue();
     this.handlers = handlers;

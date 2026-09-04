@@ -608,13 +608,39 @@ describe("thermal production stages", () => {
 
     const Task7State = first.getStateForSave();
     const Task8State = second.getStateForSave();
-    expect(hashCanonicalState(withoutCompute(Task7State))).toBe("aa48404b98aa1e48");
+    const Task7WithoutCompute = withoutCompute(Task7State);
+    const Task8WithoutCompute = withoutCompute(Task8State);
+    expect(
+      hashCanonicalState({
+        ...Task7WithoutCompute,
+        blueprints: { records: Task7State.blueprints.records },
+      }),
+    ).toBe("aa48404b98aa1e48");
+    expect(
+      hashCanonicalState({
+        ...Task8WithoutCompute,
+        blueprints: { records: Task8State.blueprints.records },
+      }),
+    ).toBe("62fc84b28af4a39c");
+    expect(
+      hashCanonicalState({
+        ...Task7State,
+        blueprints: { records: Task7State.blueprints.records },
+      }),
+    ).toBe("40a2e2270c2ba2bc");
+    expect(
+      hashCanonicalState({
+        ...Task8State,
+        blueprints: { records: Task8State.blueprints.records },
+      }),
+    ).toBe("97acfaa5ef64627e");
+    expect(hashCanonicalState(withoutCompute(Task7State))).toBe("bd238ff22638cf12");
     expect(Task8State.facility.modules).toEqual(Task7State.facility.modules);
     expect(Task8State.facility.power).toEqual(Task7State.facility.power);
     expect(Task8State.facility.thermalTiles).toEqual(Task7State.facility.thermalTiles);
     expect(Task8State.facility.thermalRevision).toBe(Task7State.facility.thermalRevision);
-    expect(hashCanonicalState(withoutCompute(Task8State))).toBe("62fc84b28af4a39c");
-    expect(hashCanonicalState(Task7State)).toBe("40a2e2270c2ba2bc");
-    expect(hashCanonicalState(Task8State)).toBe("97acfaa5ef64627e");
+    expect(hashCanonicalState(withoutCompute(Task8State))).toBe("9cb4b360875645b2");
+    expect(hashCanonicalState(Task7State)).toBe("6d75663a8cd48776");
+    expect(hashCanonicalState(Task8State)).toBe("5d370ba135412aec");
   });
 });

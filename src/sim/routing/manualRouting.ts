@@ -4,6 +4,7 @@ import {
   buildOccupancyIndex,
   findOccupyingModuleInstanceIds,
 } from "../../grid/domain/occupancy.ts";
+import type { OccupancyIndex } from "../../grid/domain/contracts.ts";
 import {
   resolveCompatiblePortPair,
   resolveModulePortGeometry,
@@ -156,6 +157,17 @@ export function validateManualRoutePath(
   to: ResolvedPortGeometry,
   path: readonly GridPoint[],
 ): ManualRouteFailure | null {
+  return validateManualRoutePathWithOccupancy(facility, content, from, to, path);
+}
+
+function validateManualRoutePathWithOccupancy(
+  facility: Pick<FacilityState, "size" | "modules">,
+  content: ContentBundle,
+  from: ResolvedPortGeometry,
+  to: ResolvedPortGeometry,
+  path: readonly GridPoint[],
+  occupancy?: OccupancyIndex,
+): ManualRouteFailure | null {
   const maximumLength = facility.size.width * facility.size.height;
   if (path.length < 2) {
     return failure("INVALID_ROUTE", "PATH_TOO_SHORT");
@@ -207,8 +219,9 @@ export function validateManualRoutePath(
     seen.add(key);
   }
 
-  const occupancy = buildOccupancyIndex({ modules: facility.modules, content });
-  if (occupancy.issues.length > 0) {
+  const resolvedOccupancy =
+    occupancy ?? buildOccupancyIndex({ modules: facility.modules, content });
+  if (resolvedOccupancy.issues.length > 0) {
     throw new Error("Route validation requires a valid module occupancy state.");
   }
   for (let index = 1; index < path.length - 1; index += 1) {
@@ -216,7 +229,7 @@ export function validateManualRoutePath(
     if (point === undefined) {
       throw new Error("Route path unexpectedly became sparse after command validation.");
     }
-    if (findOccupyingModuleInstanceIds(occupancy, point).length > 0) {
+    if (findOccupyingModuleInstanceIds(resolvedOccupancy, point).length > 0) {
       return failure("TILE_OCCUPIED", "PATH_INTERIOR_TILE_OCCUPIED");
     }
   }
@@ -252,6 +265,7 @@ export function validateRouteState(
   content: ContentBundle,
 ): readonly RouteValidationIssue[] {
   const issues: RouteValidationIssue[] = [];
+  const occupancy = buildOccupancyIndex({ modules: facility.modules, content });
   if (!Number.isSafeInteger(facility.nextRouteSequence) || facility.nextRouteSequence <= 0) {
     issues.push({ code: "INVALID_SYSTEM", reason: "INVALID_ROUTE_SEQUENCE" });
   }
@@ -291,12 +305,13 @@ export function validateRouteState(
       });
       continue;
     }
-    const pathFailure = validateManualRoutePath(
+    const pathFailure = validateManualRoutePathWithOccupancy(
       facility,
       content,
       endpoints.from,
       endpoints.to,
       route.path,
+      occupancy,
     );
     if (pathFailure !== null) {
       issues.push({ ...pathFailure, routeId: route.id });

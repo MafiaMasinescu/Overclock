@@ -4,6 +4,7 @@ import { createDirtyComputeState } from "../compute/computeState.ts";
 import { createDirtyPowerState } from "../power/powerState.ts";
 import { createDirtyOverclockState } from "../overclock/overclockState.ts";
 import { seedToUint32 } from "../rng/seededRng.ts";
+import { assertValidBlueprintState } from "../blueprints/blueprintState.ts";
 import type { GameState, ResearchStatus, ThermalTileState } from "./types.ts";
 
 export interface NewGameOptions {
@@ -75,7 +76,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
     )
     .map((task) => task.id);
 
-  return {
+  const state: GameState = {
     saveVersion: 1,
     contentVersion: content.contentVersion,
     seed,
@@ -145,7 +146,7 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
       history: [],
       bestRunByBenchmark: {},
     },
-    blueprints: { records: {} },
+    blueprints: { nextBlueprintSequence: 1, records: {} },
     tutorial: {
       guidanceMode: "simple",
       currentStepId: null,
@@ -158,4 +159,6 @@ export function createInitialGameState({ content, seed }: NewGameOptions): GameS
       unlockedAtTick: {},
     },
   };
+  assertValidBlueprintState(state.blueprints);
+  return state;
 }

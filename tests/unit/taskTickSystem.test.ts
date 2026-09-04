@@ -454,6 +454,10 @@ describe("production Task lifecycle tick system", () => {
         rngUnchanged: state.rngState === initialRngState,
         serialProgress: state.tasks.instances["task-9-serial"]?.totalCompletedOperations,
         servicePayout: state.tasks.instances["task-9-bandwidth"]?.accruedPayoutUsd,
+        priorShapeHash: hashCanonicalState({
+          ...state,
+          blueprints: { records: state.blueprints.records },
+        }),
         hash: hashCanonicalState(state),
       };
     }
@@ -461,7 +465,8 @@ describe("production Task lifecycle tick system", () => {
     const expected = run();
     expect(expected.tick).toBe(100);
     expect(expected.rngUnchanged).toBe(true);
-    expect(expected.hash).toBe("046b2a57813e53a9");
+    expect(expected.priorShapeHash).toBe("046b2a57813e53a9");
+    expect(expected.hash).toBe("03ebe1a5b7fba123");
     expect(run()).toEqual(expected);
   }, 30_000);
 });

@@ -1,4 +1,5 @@
 import { assertCanonicalSerializable } from "../replay/canonicalState.ts";
+import { assertValidBlueprintState } from "../blueprints/blueprintState.ts";
 import type { GameState } from "./types.ts";
 
 function cloneState(state: GameState): GameState {
@@ -45,6 +46,7 @@ export class AuthoritativeState {
 
   constructor(initialState: GameState) {
     assertCanonicalSerializable(initialState);
+    assertValidBlueprintState(initialState.blueprints);
     this.state = cloneState(initialState);
     freezeOwnedState(this.state, this.verifiedFrozenObjects, this.freezeWorkStack);
   }
@@ -59,6 +61,7 @@ export class AuthoritativeState {
 
   replaceSnapshot(state: GameState): void {
     assertCanonicalSerializable(state);
+    assertValidBlueprintState(state.blueprints);
     this.state = cloneState(state);
     freezeOwnedState(this.state, this.verifiedFrozenObjects, this.freezeWorkStack);
   }

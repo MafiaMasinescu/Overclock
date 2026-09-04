@@ -15,6 +15,7 @@ import {
   assertValidStoredBenchmarkState,
 } from "../benchmarks/benchmarkState.ts";
 import { AuthoritativeState } from "./authoritativeState.ts";
+import { assertValidBlueprintState } from "../blueprints/blueprintState.ts";
 import {
   TICK_SYSTEM_STAGE_ORDER,
   type TickSystemRegistration,
@@ -275,6 +276,7 @@ export class SimCore {
     assertValidStoredTaskState(initialState);
     assertValidStoredResearchState(initialState);
     assertValidStoredBenchmarkState(initialState);
+    assertValidBlueprintState(initialState.blueprints);
     assertCanonicalSerializable(initialState);
 
     this.authoritativeState = new AuthoritativeState(initialState);
@@ -370,6 +372,7 @@ export class SimCore {
       assertValidStoredTaskState(snapshot);
       assertValidStoredResearchState(snapshot);
       assertValidStoredBenchmarkState(snapshot);
+      assertValidBlueprintState(snapshot.blueprints);
       this.tickSystems["advance-tasks-and-benchmarks"]?.validateLifecycleState?.(snapshot);
       this.tickSystems["advance-research"]?.validateLifecycleState?.(snapshot);
       assertCanonicalSerializable(snapshot);
@@ -396,6 +399,7 @@ export class SimCore {
     assertValidStoredTaskState(state);
     assertValidStoredResearchState(state);
     assertValidStoredBenchmarkState(state);
+    assertValidBlueprintState(state.blueprints);
     assertCanonicalSerializable(state);
     for (const stage of TICK_SYSTEM_STAGE_ORDER) {
       this.tickSystems[stage]?.validateLifecycleState?.(state);
@@ -411,7 +415,9 @@ export class SimCore {
       return;
     }
 
-    let candidate = this.runsMutableTickSystems ? structuredClone(current) : current;
+    let candidate = this.runsMutableTickSystems
+      ? { ...structuredClone(current), blueprints: current.blueprints }
+      : current;
     const candidateRng = createSeededRngFromState(candidate.rngState);
     let lastExecutedStage: TickSystemStage | undefined;
     let validatedCompute = current.facility.compute;
@@ -442,6 +448,9 @@ export class SimCore {
         const nextRngState = candidateRng.getState();
         if (candidate.rngState !== nextRngState) {
           candidate = { ...candidate, rngState: nextRngState };
+        }
+        if (candidate.blueprints !== current.blueprints) {
+          throw new Error("Tick systems must preserve the authoritative Blueprint branch.");
         }
         if (stage === "calculate-theoretical-and-useful-compute") {
           computeOwnedOutputs = captureComputeOwnedOutputs(
