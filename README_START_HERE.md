@@ -219,6 +219,33 @@ hard gates are pure capture/materialization p95 below `5 ms`, SAVE/INSTANTIATE/U
 `50 ms`, and complete production p95 below `4 ms`. See
 `docs/diagnostics/BLUEPRINT_PERFORMANCE.md` for the permanent fixture, contract, and audited result.
 
+## Replay performance diagnostic
+
+For Task 14 Replay recording, verification, and resume, run:
+
+```powershell
+corepack pnpm performance:replay
+```
+
+The diagnostic uses a dense 24 by 16 production fixture with at least 75 percent occupancy, real
+Power/routing contention, nonuniform Thermal, Overclock and Compute work, Task/Research-compatible
+state, an active Benchmark, 128 stored Blueprint records, and all production stages. A separate
+protocol fixture covers accepted and rejected commands, Blueprint save/instantiate/Undo/Redo/Cancel,
+clock, command-only processing, `step(0)`, grouped steps, explicit checkpoints, normal finalization,
+expected-fatal playback, and nonzero-boundary resume. It reports median, p95, maximum, sample count,
+serialized log and artifact bytes, CPU, OS, Node, build mode, and warm-up with fixture construction
+excluded and no sample filtering.
+
+The i7-2600 hard target references are direct warm production p95 below `4 ms`, recorded warm
+production p95 below `5 ms`, and playback warm production p95 below `5 ms`. Checkpoint hashing,
+content fingerprinting, parsing/finalization, complete Replay, resume, and cold construction are
+reported separately without an ordinary-tick gate. See
+`docs/diagnostics/REPLAY_PERFORMANCE.md` for the permanent contract and latest diagnostic evidence.
+
+Task 14 Replay remains an in-memory diagnostic layer over the real production `SimCore`. It does not
+implement Task 15, save repositories, workers, UI, events, leaderboards, remote verification, or
+export/import.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

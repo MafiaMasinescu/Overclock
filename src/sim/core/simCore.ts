@@ -49,9 +49,10 @@ export interface SimCoreOptions {
   initialState: GameState;
   commandHandlers?: SimCoreCommandHandlerRegistry;
   tickSystems?: TickSystemRegistry;
+  initialCommandQueueSequence?: number;
 }
 
-class TickSystemInvariantError extends SimulatorInvariantError {
+export class TickSystemInvariantError extends SimulatorInvariantError {
   readonly tick: number;
   readonly stage: TickSystemStage;
 
@@ -252,6 +253,11 @@ function createTickSystemRuntimes(tickSystems: TickSystemRegistry): TickSystemRu
   return Object.freeze(runtimes);
 }
 
+function cloneMutableTickState(current: GameState): GameState {
+  const { blueprints, ...mutableState } = current;
+  return { ...structuredClone(mutableState), blueprints };
+}
+
 function createQueuedCommandHandlers(
   handlers: SimCoreCommandHandlerRegistry,
 ): CommandHandlerRegistry {
@@ -269,7 +275,12 @@ export class SimCore {
   private readonly runsTickSystems: boolean;
   private readonly runsMutableTickSystems: boolean;
 
-  constructor({ initialState, commandHandlers, tickSystems = {} }: SimCoreOptions) {
+  constructor({
+    initialState,
+    commandHandlers,
+    tickSystems = {},
+    initialCommandQueueSequence = 0,
+  }: SimCoreOptions) {
     assertValidClockAndTick(initialState);
     assertValidStoredComputeState(initialState);
     assertValidDesignModeState(initialState);
@@ -280,7 +291,7 @@ export class SimCore {
     assertCanonicalSerializable(initialState);
 
     this.authoritativeState = new AuthoritativeState(initialState);
-    this.commandQueue = new CommandQueue();
+    this.commandQueue = new CommandQueue(initialCommandQueueSequence);
     this.commandProcessor = new CommandProcessor(
       { initialState, handlers: createQueuedCommandHandlers(commandHandlers ?? {}) },
       { state: this.authoritativeState, queue: this.commandQueue },
@@ -300,6 +311,10 @@ export class SimCore {
 
   get tick(): number {
     return this.authoritativeState.readInternal().tick;
+  }
+
+  getCommandQueuePosition(): { readonly nextSequence: number; readonly pendingCount: number } {
+    return this.commandQueue.getPosition();
   }
 
   enqueue(command: SimCommand): CommandReceipt {
@@ -415,9 +430,7 @@ export class SimCore {
       return;
     }
 
-    let candidate = this.runsMutableTickSystems
-      ? { ...structuredClone(current), blueprints: current.blueprints }
-      : current;
+    let candidate = this.runsMutableTickSystems ? cloneMutableTickState(current) : current;
     const candidateRng = createSeededRngFromState(candidate.rngState);
     let lastExecutedStage: TickSystemStage | undefined;
     let validatedCompute = current.facility.compute;

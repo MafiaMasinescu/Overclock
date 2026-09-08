@@ -9,7 +9,6 @@ import {
   microdollarsToUsd,
   usdToMicrodollars,
 } from "../economy/money.ts";
-import { canonicalSerialize } from "../replay/canonicalState.ts";
 import type {
   ActiveBenchmarkState,
   BenchmarkFailureReason,
@@ -136,37 +135,94 @@ function benchmarkInputFingerprint(
   const definition = content.era.benchmarkDefinitions.find(({ id }) => id === active.benchmarkId);
   const moduleLifecycle = Object.keys(state.facility.modules)
     .toSorted()
-    .map((moduleId) => ({
-      moduleId,
-      operationalState: state.facility.modules[moduleId]?.operationalState ?? null,
-    }));
-  const selectedCompute = active.clusterModuleIds.map((moduleId) => ({
-    moduleId,
-    result: state.facility.compute.byModule[moduleId] ?? null,
-  }));
-  return canonicalSerialize({
-    active,
-    definition,
-    ...(isDeeplyFrozen(state.benchmarks)
-      ? {}
-      : {
-          historicalBenchmarks: {
-            history: state.benchmarks.history,
-            bestRunByBenchmark: state.benchmarks.bestRunByBenchmark,
-          },
-        }),
-    facility: {
-      modules: moduleLifecycle,
-      compute: selectedCompute,
-      power: {
-        totalDeliveredPowerWatts: state.facility.power.totalDeliveredPowerWatts,
-        headroomWatts: state.facility.power.headroomWatts,
-        energyCostUsdThisTick: state.facility.power.energyCostUsdThisTick,
-      },
-      thermalTiles: state.facility.thermalTiles,
-    },
-    tick: state.tick,
+    .map((moduleId) => [moduleId, state.facility.modules[moduleId]?.operationalState ?? null]);
+  const selectedCompute = active.clusterModuleIds.map((moduleId) => {
+    const result = state.facility.compute.byModule[moduleId];
+    return result === undefined
+      ? [moduleId, null]
+      : [
+          moduleId,
+          result.moduleInstanceId,
+          result.requestedFrequencyRatio,
+          result.operationalRatio,
+          result.theoreticalComputeFlops,
+          result.powerFactor,
+          result.thermalFactor,
+          result.retryRate,
+          result.invalidSampleRate,
+          result.stabilityFactor,
+          result.availableComputeFlops,
+        ];
   });
+  const activeFingerprint = [
+    active.runId,
+    active.benchmarkId,
+    active.startedAtTick,
+    active.elapsedTicks,
+    active.clusterModuleIds,
+    active.accumulatedUsefulComputeFlops,
+    active.peakUsefulComputeFlops,
+    active.accumulatedPowerWatts,
+    active.peakPowerWatts,
+    active.maxTemperatureC,
+    active.minimumPowerHeadroomWatts,
+    active.accumulatedRetryRate,
+    active.accumulatedValidSampleRate,
+    active.accumulatedCostUsd,
+    active.shutdownObserved,
+    active.clusterModuleIds.map((moduleId) => {
+      const settings = active.overclockSummary[moduleId];
+      return settings === undefined
+        ? [moduleId, null]
+        : [moduleId, settings.profile, settings.frequencyRatio, settings.voltageRatio];
+    }),
+  ];
+  const definitionFingerprint =
+    definition === undefined
+      ? null
+      : [
+          definition.id,
+          definition.nameKey,
+          definition.type,
+          definition.durationSeconds,
+          definition.targetAverageUsefulComputeFlops,
+          definition.minimumValidSampleRate,
+          definition.maximumRetryRate,
+          definition.maximumTemperatureC,
+          definition.allowShutdowns,
+          definition.requiredFeatureIds,
+        ];
+  const historicalBenchmarks = isDeeplyFrozen(state.benchmarks)
+    ? null
+    : {
+        history: state.benchmarks.history,
+        bestRunByBenchmark: Object.keys(state.benchmarks.bestRunByBenchmark)
+          .toSorted()
+          .map((benchmarkId) => [benchmarkId, state.benchmarks.bestRunByBenchmark[benchmarkId]]),
+      };
+
+  // This fingerprint is private mutation evidence, not an authoritative hash. The projection
+  // uses fixed array positions so repeated mutable-input checks avoid recursively sorting the
+  // complete state while retaining every dependency used by benchmark sampling.
+  return JSON.stringify([
+    content.contentVersion,
+    definitionFingerprint,
+    activeFingerprint,
+    historicalBenchmarks,
+    moduleLifecycle,
+    selectedCompute,
+    [
+      state.facility.power.totalDeliveredPowerWatts,
+      state.facility.power.headroomWatts,
+      state.facility.power.energyCostUsdThisTick,
+    ],
+    state.facility.thermalTiles.map((tile) => [
+      tile.position.x,
+      tile.position.y,
+      tile.temperatureC,
+    ]),
+    state.tick,
+  ]);
 }
 
 function deepFreeze<T>(value: T): T {

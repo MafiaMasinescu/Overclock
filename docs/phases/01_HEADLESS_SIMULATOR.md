@@ -20,8 +20,8 @@ Construiește simulatorul determinist fără gameplay UI.
 11. Research lifecycle.
 12. Benchmark runners.
 13. Blueprint save și instantiate la nivel de domeniu.
-15. Replay log și determinism tests.
-16. Bot simplu pentru milestone timings.
+14. Replay recording, verification și determinism tests.
+15. Bot simplu pentru milestone timings.
 
 ## Task 2: Command pipeline foundation
 
@@ -492,4 +492,48 @@ measurement method, hard gates, and final i7-2600 result are recorded in
 `docs/diagnostics/BLUEPRINT_PERFORMANCE.md`. The hard p95 gates are 5 ms for pure capture and
 materialization, 50 ms for SAVE/INSTANTIATE/Undo/Redo, and 4 ms for a complete production tick.
 Cold construction and state replacement are reported separately. The roadmap continues from Task
-13 to Task 15; there is no Task 14.
+13 to Task 14 Replay recording and verification, then Task 15 milestone-timing bot.
+
+## Task 14: Deterministic Replay recording, verification, and resume
+
+Task 14 has one final checkpoint after six bounded implementation subtasks. It operates only in
+memory over the real production `SimCore` public entry points and does not add a second simulator
+path.
+
+- Task 14.1: strict Replay contracts, operation/outcome schemas, compatibility header, and the
+  simulation-content fingerprint.
+- Task 14.2: one production command/tick composition and the non-authoritative queue cursor needed
+  for exact receipt equality and resume.
+- Task 14.3: detached recording sessions, ordered append-only entries, explicit checkpoints,
+  normal finalization, and normalized command/tick fatal boundaries.
+- Task 14.4: strict fresh-core playback, exact receipts/results/checkpoints, compatibility checks,
+  and first-divergence reports.
+- Task 14.5: verified nonterminal empty-queue resume, cold runtime reconstruction, cross-domain
+  traces, and exact-100 deterministic playback.
+- Task 14.6: audited performance diagnostic, complete verification, and permanent documentation.
+
+The Replay journal preserves `enqueue`, `clock`, `process-pending`, and grouped `step(ticks)` calls,
+including `step(0)`, their original order, queue receipts, normal command results, tick boundaries,
+and expected fatal outcomes. Replay and simulator-protocol versions are independent. The
+simulation fingerprint includes only simulation content, not locales. The queue, journal, reports,
+snapshots, checkpoints, caches, and witnesses remain outside authoritative `GameState`.
+
+Recording and playback use the existing production factory with the combined Task/Benchmark stage
+and the existing fixed stage order. Normal rejections are recorded; invariant failures roll back
+the failing transaction, terminate the recording, and preserve any unprocessed queue tail.
+Playback compares the complete ordered result and explicit full-state checkpoints and reports the
+first mismatch plus the last matching checkpoint. Resume is allowed only from a verified nonfatal
+empty-queue checkpoint and executes the remaining entries on cold private runtimes.
+
+The permanent diagnostic is `corepack pnpm performance:replay`. Its dense fixture is the audited
+24 by 16 production fixture with real Power/routing contention, nonuniform Thermal, Overclock,
+Compute, Task/Research-compatible data, an active Benchmark, stored Blueprint history, and every
+production stage. Its protocol fixture covers accepted/rejected commands, Blueprint operations,
+clock, command-only processing, `step(0)`, grouped steps, fatal paths, checkpoints, and resume.
+Direct warm production p95 targets below 4 ms and recording/playback p95 targets below 5 ms are
+reported separately from checkpoint hashing, parsing/finalization, end-to-end Replay, resume, and
+cold construction. No sample filtering or threshold weakening is permitted.
+
+Task 14 does not implement Task 15, save repositories, migration/file transport, IndexedDB,
+workers, UI, events, analytics, leaderboards, remote verification, or export/import. Task 14 is a
+complete checkpoint-neutral Replay boundary; Task 15 remains the next explicitly deferred task.

@@ -508,6 +508,34 @@ interface ReplayLog {
 
 Testul principal rulează același replay de două ori și compară checkpoint-urile. Hash-ul folosește o serializare canonică, cu chei ordonate și fără setări de prezentare.
 
+The historical minimal replay sketch above is superseded by the current Task 14 Replay contract.
+Replay is an ordered operation journal over the real public `SimCore` entry points. It records
+`enqueue`, clock commands, `processPendingCommands`, and grouped `step(n)` calls, including
+`step(0)`, exact queue receipts, normal command results, tick boundaries, explicit full-state
+checkpoints, and a normalized expected fatal boundary. Entries start at sequence 1 and are never
+reordered by tick.
+
+The current `ReplayLog` also stores independent replay and simulator-protocol versions, seed,
+content version, a canonical hash of simulation content (`contentVersion`, modules, tasks, research,
+era, and balancing), initial-state hash, initial queue sequence, terminal state, and strict limits
+of 100,000 entries and requested ticks by default. Locale-only changes remain compatible because
+localization is excluded from the simulation-content projection.
+
+Recording owns a detached production `SimCore`, never flushes commands implicitly, hashes only at
+the initial, explicit checkpoint, fatal, and final boundaries, and keeps the journal outside
+`GameState`. Normal command rejections are recorded as results. A command or tick-system invariant
+failure is recorded once as a normalized fatal outcome after the simulator has rolled back the
+failing transaction; the recorder then becomes terminal and preserves any unprocessed queue tail.
+Unexpected non-invariant errors are not certified as replay outcomes.
+
+Playback parses and validates the complete log before execution, reconstructs a fresh production
+core, compares every receipt/result, tick, queue position, checkpoint, and terminal boundary, and
+reports the first journal-order divergence plus the last matching checkpoint. Resume is a separate
+in-memory operation: it accepts only a verified nonfatal empty-queue checkpoint, binds a detached
+state snapshot to the complete replay hash, creates cold private runtimes, and executes only the
+remaining entries. Replay infrastructure consumes no RNG and uses no browser, filesystem,
+wall-clock, worker, or UI APIs.
+
 ## 16. Formula Useful Compute
 
 Formula centrală este:
@@ -1997,7 +2025,7 @@ is allowed during an active Benchmark, while Apply remains exclusive.
 Task 13 is complete at its single checkpoint-neutral implementation boundary. The permanent
 Blueprint contract, diagnostic, compatibility evidence, and deferred scope are recorded in
 ADR-0019 and `docs/diagnostics/BLUEPRINT_PERFORMANCE.md`. The roadmap proceeds from Task 13 to
-Task 15; Task 14 is not introduced.
+Task 14 Replay recording and verification, then Task 15 milestone-timing bot.
 
 ### Task 13 final verification and ownership details
 
@@ -2019,3 +2047,88 @@ field: the full initial hash changes from `1ac5a1d2a3739390` to `539d230076b51ed
 Blueprint-excluded prior projection remains `1ac5a1d2a3739390`. Existing Task 7, Task 8, and
 Task 10 behavioral projections remain covered by their deliberate old/new vectors. No change is
 made to `saveVersion`, `contentVersion`, balancing data, or module numeric content.
+
+## 50. Task 14 Replay recording, verification, and resume
+
+Task 14 implements an in-memory deterministic Replay facility over the real public `SimCore`
+entry points. The active numbering is Task 13 Blueprint, Task 14 Replay, and Task 15 the
+milestone-timing bot; historical commit and ADR identifiers retain their original names.
+
+### 50.1 Ordered journal and compatibility
+
+`ReplayLog` has independent `replayVersion: 1` and `simulatorProtocolVersion: 1`, the original
+seed and content version, a canonical simulation-content fingerprint over exactly
+`contentVersion`, `modules`, `tasks`, `research`, `era`, and `balancing`, the complete initial-state
+hash, initial tick, initial queue sequence, entries, checkpoints, and a completed or fatal terminal.
+Locales are intentionally excluded from the simulation fingerprint.
+
+Entries start at sequence 1 and preserve total order, even when ticks repeat. The supported
+operations are `enqueue(command)`, `clock(command)` for `SET_PAUSED` or `SET_SPEED`,
+`process-pending`, and grouped `step(ticks)`, including `step(0)`. A queued clock command remains
+queued. The journal stores parsed original commands, source, UUID, optional expected tick, exact
+receipt/result/outcome, and tick-before/tick-after values. No entry is reordered by tick or ID.
+
+The queue remains outside `GameState`. It owns a nonnegative safe `nextSequence`, starts at zero,
+and exposes only `{ nextSequence, pendingCount }`. Replay does not create command IDs. The client
+owns UUIDs, and replay preserves duplicate occurrences. Default verifier limits are 100,000
+entries and 100,000 requested ticks; invalid or exceeded limits are reported without execution.
+
+### 50.2 Recording and fatal boundaries
+
+`createReplayRecorder` creates a fresh production composition using one command-handler registry and
+one current tick-system registry. It calls `SimCore.enqueue`, `applyClockCommand`,
+`processPendingCommands`, and `step` exactly once per recorded operation. It never flushes commands
+implicitly, never advances time for a checkpoint, and keeps the append-only journal outside
+authoritative state. Initial, explicit, fatal, and final checkpoints hash the complete state and
+record tick and queue position; ordinary appends do not clone or hash the whole state.
+
+Normal command rejections are recorded as normal results. A `SimulatorInvariantError` records one
+normalized fatal outcome with stable code, origin, command ID or tick stage, then creates a terminal
+fatal checkpoint and preserves unprocessed queue tail. The simulator's transaction already rolls
+back the failing command or tick. Unexpected non-invariant exceptions are not certified as replay
+outcomes. A terminal recorder cannot be used for more operations.
+
+### 50.3 Verification and first divergence
+
+`runReplay` strictly parses the complete log before creating a core or executing an entry. It checks
+content version and simulation fingerprint, detached initial state and initial checkpoint, then
+replays the exact operation sequence through a fresh production core. It compares receipts,
+results, grouped step output, ticks, queue positions, full-state checkpoints, terminal kind, and
+fatal boundary. Reports are tagged as `matched`, `matched-fatal`, `invalid-log`, `incompatible`,
+`invalid-initial-state`, `limit-exceeded`, `diverged`, or `internal-error`; divergence reports the
+first journal-order path and the last matching checkpoint.
+
+### 50.4 Verified resume
+
+Resume is an in-memory operation. A resume artifact binds a detached full `GameState` snapshot and
+queue sequence to the hash of the complete finalized log and an existing nonterminal checkpoint.
+Only a nonfatal empty-queue boundary is resumable. Artifact creation verifies the complete Replay,
+reconstructs and hashes the prefix checkpoint, and then detaches the state. `resumeReplay` validates
+the log, artifact, content, seed, state hash, tick, and queue position, builds cold independent
+production runtimes, and executes only the remaining entries. Caches, witnesses, registries,
+pending commands, and scratch data are never serialized. Replay consumes no RNG beyond the
+delegated simulator operations and uses no browser, filesystem, worker, or wall-clock API.
+
+### 50.5 Diagnostics and exclusions
+
+Run the permanent diagnostic with:
+
+```powershell
+corepack pnpm performance:replay
+```
+
+It measures separately direct, recording, and playback warm production steps; enqueue, clock,
+command-only processing, checkpoint hashing, content fingerprinting, strict parsing, finalization,
+complete Replay, expected-fatal Replay, resume construction, resumed execution, and cold core
+construction. The dense fixture is 24 by 16, at least 75 percent occupied, uses real Power routes
+and contention, nonuniform Thermal, Overclock, Compute, Task/Research-compatible data, an active
+Sustained Benchmark, 128 stored Blueprint records, and all production stages. The protocol fixture
+contains accepted and rejected commands, Blueprint save/instantiate/Undo/Redo/Cancel, clock,
+`step(0)`, grouped operations, checkpoints, and a nonzero resume boundary. Each line reports
+median, p95, maximum, sample count, serialized bytes, CPU, OS, Node, build mode, and warm-up. The
+hard target references are direct p95 below 4 ms and recorder/playback p95 below 5 ms on i7-2600;
+checkpoint hashing, fingerprinting, parsing, finalization, cold construction, resume, and complete
+Replay have no ordinary-tick gate and remain separately visible.
+
+Task 14 does not implement Task 15, UI, events, analytics, leaderboards, save repositories,
+migrations, JSON/file transport, IndexedDB, workers, remote verification, or export/import.

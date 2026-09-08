@@ -33,6 +33,7 @@
     "performance:research": "node tests/performance/researchLifecycle.performance.ts",
     "performance:benchmarks": "node tests/performance/benchmarkLifecycle.performance.ts",
     "performance:blueprints": "node tests/performance/blueprint.performance.ts",
+    "performance:replay": "node tests/performance/replay.performance.ts",
     "test:e2e": "playwright test",
     "validate": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm content:validate && corepack pnpm test:unit && corepack pnpm build"
   },

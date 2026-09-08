@@ -746,7 +746,8 @@ Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc`; Task 7, 
 through Task 9.5 are complete. Task 10 is complete under ADR-0016 at its single final checkpoint
 boundary. Task 11 is complete at its single checkpoint-neutral boundary under ADR-0017. Task 12 is
 complete at its single checkpoint-neutral boundary under ADR-0018. Task 13 is complete at its
-single checkpoint-neutral boundary under ADR-0019; the roadmap proceeds directly to Task 15.
+single checkpoint-neutral boundary under ADR-0019; Task 14 Replay recording and verification is the
+next active task, followed by Task 15 milestone-timing bot.
 
 ## Phase 1 Task 6 implementation
 
@@ -885,8 +886,8 @@ Task 7/8/10 vectors are recorded in ADR-0019 and tests. `saveVersion`, `contentV
 `balancing.json`, and module numeric content are unchanged.
 
 Task 13.6 adds the permanent Blueprint diagnostic and closes the compatibility/documentation
-boundary. Task 13 has one final checkpoint, and the roadmap proceeds from Task 13 to Task 15;
-Task 14 is not introduced.
+boundary. Task 13 has one final checkpoint, and the active roadmap proceeds from Task 13 to Task 14
+Replay recording and verification, then Task 15 milestone-timing bot.
 
 ## Task 13.5: INSTANTIATE_BLUEPRINT and atomic Design Mode history
 
@@ -905,7 +906,8 @@ route endpoint ownership, and reservation payloads. The implementation preserves
 allowance for draft edits and the existing Benchmark exclusivity guard on Apply.
 
 Task 13.6 adds the permanent Blueprint diagnostic and closes the compatibility/documentation
-boundary. The roadmap proceeds from Task 13 to Task 15; Task 14 is not introduced.
+boundary. The roadmap proceeds from Task 13 to Task 14 Replay recording and verification, then
+Task 15 milestone-timing bot.
 
 ## Task 13.6: Blueprint performance and permanent documentation
 
@@ -940,3 +942,45 @@ projections. `saveVersion`, `contentVersion`, balancing data, and module numeric
 unchanged. Export/import, nested Blueprints, definition editing, propagation, facility-zone
 instantiation, premiums, automation, UI/events, save/replay transport, workers, provenance
 enforcement, and Task 15 remain deferred.
+
+## Task 14: Deterministic Replay recording, verification, and resume
+
+Task 14 implements the in-memory Replay layer over the real production `SimCore`. Its active
+numbering follows Task 13 Blueprint and precedes Task 15 milestone-timing bot. The fixed execution
+order is 14.1 contracts and strict parsing, 14.2 production composition and queue position, 14.3
+recording and fatal boundaries, 14.4 fresh-core verification and divergence reports, 14.5 verified
+resume and cross-domain determinism, and 14.6 performance/documentation closeout.
+
+The public contract includes independent Replay/protocol versions, a simulation-content fingerprint
+excluding locales, an ordered journal for enqueue/clock/process-pending/grouped-step operations,
+exact receipts/results/tick boundaries, explicit full-state checkpoints, normalized fatal outcomes,
+strict limits, and first-divergence diagnostics. The queue and all Replay-owned logs, snapshots,
+reports, caches, and witnesses remain outside `GameState`. Resume binds a detached state snapshot to
+the complete log hash and is allowed only at a verified nonfatal empty-queue checkpoint.
+
+Cross-domain deterministic coverage includes accepted and rejected commands, clock and zero/grouped
+steps, checkpoints, Blueprint save/instantiate/Undo/Redo/Cancel, Peak/Sustained Benchmark traces,
+Task/Research progression, fatal rollback, resume, and exact-100 fresh-run comparisons. Replay
+consumes no RNG beyond delegated simulator operations and does not add a second gameplay path.
+
+Checkpoint hardening prevents malformed incompatible-header accessors from executing during error
+classification, permanently invalidates a recorder if its mandatory fatal checkpoint cannot be
+captured, and rejects negative-zero resume boundaries. The adversarial suite also verifies
+same-tick ordering, duplicate UUID occurrences, exact optional result properties, queue-position
+and state-hash tampering, matched command/tick fatals, borrowed and rebound resume artifacts,
+independent runners/resumptions, complete Peak/Sustained traces, and the Task 13.7 route-allocation
+padding boundary.
+
+The permanent diagnostic is `corepack pnpm performance:replay`, documented in
+`docs/diagnostics/REPLAY_PERFORMANCE.md`. The audited fixture is a dense 24 by 16 production state
+with real routes and contention, nonuniform Thermal, Overclock, Compute, Task/Research-compatible
+data, an active Benchmark, 128 stored Blueprint records, and all production stages. The latest
+i7-2600 run reported direct/recording/playback warm production p95 values of `3.4725/3.3121/2.4705
+ms` over 200 samples, passing the hard references of `<4/<5/<5 ms`. The run filtered no samples and
+changed no thresholds, fixture work, formulas, or Replay semantics. Metadata, checkpoint, parsing,
+finalization, complete Replay, resume, and cold construction costs remain reported separately.
+
+Task 14 excludes Task 15, save repositories, migrations, JSON/file transport, IndexedDB, workers,
+UI, events, analytics, leaderboards, remote verification, and export/import. Task 14 is complete at
+its checkpoint-neutral Replay boundary. Task 15 is the next task and remains unstarted until
+explicitly approved.
