@@ -111,8 +111,10 @@ transformed before deriving the new anchor; the existing footprint helper must r
 transformed tile set. Routes transform and translate every stored path point, preserve order
 unless endpoint canonicalization requires complete reversal, recalculate current port capacity,
 and reset congestion. New modules are offline with current startup ticks, cooldown zero, saved
-Overclock, and nominal bin ratios. Fresh facility IDs are allocated in local-ID order and are
-never reused, including after failed operations, Cancel, Undo, or Redo. Inventory is reserved in
+Overclock, and nominal bin ratios. Fresh facility IDs are allocated in local-ID order. Failed
+commands consume no sequence values; a successful allocation advances each counter once, Undo
+and Cancel never rewind those counters, and Redo restores the exact allocated IDs without
+allocating again. Inventory is reserved in
 the Design Mode draft only until existing APPLY_DESIGN consumes inventory, cash, labor, downtime,
 and advances the live layout revision; active Benchmark permits draft instantiation but still
 blocks Apply.
@@ -170,6 +172,13 @@ and Design Mode behavior adds no authoritative state field, so it does not alter
 compatibility vector beyond `nextBlueprintSequence`. The subtask order above was corrected on
 4 September 2026 after implementation work confirmed that pure materialization is the approved
 Task 13.3 boundary and `SAVE_BLUEPRINT`/`RENAME_BLUEPRINT` belongs to Task 13.4.
+
+Task 13.7 corrected materialization output assembly at decimal padding boundaries. Added route
+objects are resolved in the numeric allocator order represented by `routeIds.ids`; they are not
+sorted lexically by their minimum-width-padded strings. This preserves local-ID allocation order
+for every safe sequence width without changing ID formats, endpoint canonicalization, or stable
+string comparison elsewhere. The correction confirms that failed commands consume no IDs and
+that accepted allocations are never reused after Undo or Cancel.
 
 ## Consequences
 

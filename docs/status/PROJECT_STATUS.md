@@ -926,6 +926,13 @@ Public validators do not accept caller-supplied occupancy evidence. This does no
 ordering, formulas, validation meaning, authoritative ownership, or production tick behavior. No
 Blueprint record scan occurs on ordinary ticks.
 
+Task 13.7 corrected Blueprint materialization output assembly at decimal padding boundaries. Added
+routes follow the numeric allocation order in the allocator ID list rather than lexical ordering
+of minimum-width-padded strings. Failed commands consume no sequence values; successful
+allocations advance counters once, Undo and Cancel do not rewind them, and Redo restores the exact
+allocated objects without reallocating IDs. ID formats, endpoint canonicalization, stable string
+comparison elsewhere, formulas, and compatibility vectors remain unchanged.
+
 Task 13 compatibility remains additive: `nextBlueprintSequence` changes the full initial hash
 from `1ac5a1d2a3739390` to `539d230076b51eda`, while the prior Blueprint-excluded projection stays
 `1ac5a1d2a3739390`. Existing Task 7, Task 8, and Task 10 vectors retain their prior behavioral

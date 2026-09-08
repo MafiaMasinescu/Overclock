@@ -130,6 +130,28 @@ function routeFixture(): BlueprintRoute {
   };
 }
 
+function boundaryRouteFixture(
+  localId: string,
+  fromLocalModuleId: string,
+  toLocalModuleId: string,
+  startX: number,
+): BlueprintRoute {
+  return {
+    localId,
+    kind: "data",
+    fromLocalModuleId,
+    fromPortId: "data-east",
+    toLocalModuleId,
+    toPortId: "data-west",
+    relativePath: [
+      { x: startX, y: 0 },
+      { x: startX + 1, y: 0 },
+      { x: startX + 2, y: 0 },
+      { x: startX + 3, y: 0 },
+    ],
+  };
+}
+
 function emptyDraft(): NonNullable<GameState["facility"]["designDraft"]> {
   return { revision: 0, modules: {}, routes: {}, undoStack: [], redoStack: [] };
 }
@@ -354,10 +376,14 @@ describe("INSTANTIATE_BLUEPRINT command", () => {
     const overflow = stateFor(undefined, (state) => {
       state.facility.nextModuleInstanceSequence = Number.MAX_SAFE_INTEGER;
     });
-    expect(process(createCore(overflow), instantiate(14))).toMatchObject({
+    const overflowCore = createCore(overflow);
+    const overflowBefore = overflowCore.getStateForSave();
+    expect(process(overflowCore, instantiate(14))).toMatchObject({
       accepted: false,
       code: "INVALID_SYSTEM",
     });
+    expect(overflowCore.getStateForSave()).toEqual(overflowBefore);
+    expect(overflowCore.getStateForSave().rngState).toBe(overflowBefore.rngState);
   });
 
   test("leaves cost, inventory consumption, downtime, and live revision to the existing Apply transaction", () => {
@@ -430,6 +456,49 @@ describe("INSTANTIATE_BLUEPRINT command", () => {
       accepted: false,
       code: "BENCHMARK_CONFIGURATION_LOCKED",
     });
+  });
+
+  test("accepts decimal-boundary route allocations and preserves their order through Undo and Redo", () => {
+    const modules = [
+      blueprintModule("module-0001", RELAY, { x: 0, y: 0 }),
+      blueprintModule("module-0002", RELAY, { x: 3, y: 0 }),
+      blueprintModule("module-0003", RELAY, { x: 6, y: 0 }),
+    ];
+    const record = blueprintRecord(modules, { width: 7, height: 1 }, [
+      boundaryRouteFixture("route-0001", "module-0001", "module-0002", 0),
+      boundaryRouteFixture("route-0002", "module-0002", "module-0003", 3),
+    ]);
+    const core = createCore(
+      stateFor(record, (state) => {
+        state.facility.nextRouteSequence = 99_999_999;
+      }),
+    );
+
+    expect(process(core, instantiate(24, { x: 5, y: 5 }))).toMatchObject({ accepted: true });
+    const instantiated = core.getStateForSave();
+    expect(instantiated.facility.nextRouteSequence).toBe(100_000_001);
+    const instantiatedDraft = instantiated.facility.designDraft;
+    if (instantiatedDraft === null) throw new Error("Expected Design Mode draft.");
+    const exactRoutes = structuredClone(instantiatedDraft.routes);
+    expect(Object.keys(exactRoutes)).toEqual(["route-99999999", "route-100000000"]);
+
+    expect(
+      process(core, { commandId: commandId(25), source: "player", kind: "UNDO_DESIGN" }),
+    ).toMatchObject({ accepted: true });
+    const undone = core.getStateForSave();
+    expect(undone.facility.nextRouteSequence).toBe(100_000_001);
+    expect(undone.facility.designDraft?.routes).toEqual({});
+
+    expect(
+      process(core, { commandId: commandId(26), source: "player", kind: "REDO_DESIGN" }),
+    ).toMatchObject({ accepted: true });
+    const redone = core.getStateForSave();
+    expect(redone.facility.nextRouteSequence).toBe(100_000_001);
+    expect(redone.facility.designDraft?.routes).toEqual(exactRoutes);
+    expect(Object.keys(redone.facility.designDraft?.routes ?? {})).toEqual([
+      "route-99999999",
+      "route-100000000",
+    ]);
   });
 });
 

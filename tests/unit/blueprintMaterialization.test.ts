@@ -569,6 +569,164 @@ describe("pure Blueprint materialization planning", () => {
     ).toEqual({ status: "rejected", code: "INVALID_SYSTEM", reason: "id-collision" });
   });
 
+  test("preserves numeric route allocation order across the eight-to-nine-digit boundary", () => {
+    const modules = [
+      blueprintModule("module-0001", RELAY, { x: 0, y: 0 }),
+      blueprintModule("module-0002", RELAY, { x: 3, y: 0 }),
+      blueprintModule("module-0003", RELAY, { x: 6, y: 0 }),
+    ];
+    const record = blueprintRecord(modules, { width: 7, height: 1 }, [
+      {
+        localId: "route-0001",
+        kind: "data",
+        fromLocalModuleId: "module-0001",
+        fromPortId: "data-east",
+        toLocalModuleId: "module-0002",
+        toPortId: "data-west",
+        relativePath: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 2, y: 0 },
+          { x: 3, y: 0 },
+        ],
+      },
+      {
+        localId: "route-0002",
+        kind: "data",
+        fromLocalModuleId: "module-0002",
+        fromPortId: "data-east",
+        toLocalModuleId: "module-0003",
+        toPortId: "data-west",
+        relativePath: [
+          { x: 3, y: 0 },
+          { x: 4, y: 0 },
+          { x: 5, y: 0 },
+          { x: 6, y: 0 },
+        ],
+      },
+    ]);
+    const state = materializationState(record, (current) => {
+      current.facility.nextRouteSequence = 99_999_999;
+    });
+
+    const result = planBlueprintMaterialization(state, content, record.id, { x: 0, y: 0 }, 0);
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") throw new Error("Expected a ready materialization plan.");
+    expect(result.plan.addedRoutes.map((route) => route.id)).toEqual([
+      "route-99999999",
+      "route-100000000",
+    ]);
+    expect(result.plan.nextRouteSequence).toBe(100_000_001);
+  });
+
+  test("preserves module allocation order and recanonicalizes boundary-crossing route paths", () => {
+    const record = blueprintRecord(
+      [
+        blueprintModule("module-0001", RELAY, { x: 0, y: 0 }),
+        blueprintModule("module-0002", RELAY, { x: 3, y: 0 }),
+      ],
+      { width: 4, height: 1 },
+      [
+        {
+          ...routeFixture(),
+          relativePath: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 2, y: 0 },
+            { x: 3, y: 0 },
+          ],
+        },
+      ],
+    );
+    const state = materializationState(record, (current) => {
+      current.facility.nextModuleInstanceSequence = 99_999_999;
+    });
+
+    const result = planBlueprintMaterialization(state, content, record.id, { x: 0, y: 0 }, 0);
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") throw new Error("Expected a ready materialization plan.");
+    expect(result.plan.addedModules.map((module) => module.id)).toEqual([
+      "module-instance-99999999",
+      "module-instance-100000000",
+    ]);
+    expect(result.plan.addedRoutes[0]).toMatchObject({
+      id: "route-00000001",
+      from: { moduleInstanceId: "module-instance-100000000", portId: "data-west" },
+      to: { moduleInstanceId: "module-instance-99999999", portId: "data-east" },
+      path: [
+        { x: 3, y: 0 },
+        { x: 2, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 0 },
+      ],
+    });
+  });
+
+  test("preserves allocation order at a later decimal-width transition", () => {
+    const record = blueprintRecord(
+      [
+        blueprintModule("module-0001", RELAY, { x: 0, y: 0 }),
+        blueprintModule("module-0002", RELAY, { x: 2, y: 0 }),
+        blueprintModule("module-0003", RELAY, { x: 4, y: 0 }),
+      ],
+      { width: 5, height: 1 },
+      [
+        {
+          ...routeFixture(),
+          relativePath: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 2, y: 0 },
+          ],
+        },
+        {
+          ...routeFixture(),
+          localId: "route-0002",
+          fromLocalModuleId: "module-0002",
+          toLocalModuleId: "module-0003",
+          relativePath: [
+            { x: 2, y: 0 },
+            { x: 3, y: 0 },
+            { x: 4, y: 0 },
+          ],
+        },
+      ],
+    );
+    const state = materializationState(record, (current) => {
+      current.facility.nextRouteSequence = 999_999_999;
+    });
+
+    const result = planBlueprintMaterialization(state, content, record.id, { x: 0, y: 0 }, 0);
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") throw new Error("Expected a ready materialization plan.");
+    expect(result.plan.addedRoutes.map((route) => route.id)).toEqual([
+      "route-999999999",
+      "route-1000000000",
+    ]);
+  });
+
+  test("accepts the last safe allocation when one sequence value remains", () => {
+    const record = blueprintRecord([blueprintModule("module-0001", RELAY, { x: 0, y: 0 })], {
+      width: 1,
+      height: 1,
+    });
+    const state = materializationState(record, (current) => {
+      current.facility.nextModuleInstanceSequence = Number.MAX_SAFE_INTEGER - 1;
+    });
+
+    const result = planBlueprintMaterialization(state, content, record.id, { x: 0, y: 0 }, 0);
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") throw new Error("Expected a ready materialization plan.");
+    expect(result.plan.addedModules[0]?.id).toBe(
+      `module-instance-${String(Number.MAX_SAFE_INTEGER - 1)}`,
+    );
+    expect(result.plan.nextModuleInstanceSequence).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
   test("rejects invalid rotation and missing Design Mode without consuming RNG", () => {
     const record = blueprintRecord([blueprintModule("module-0001", RELAY, { x: 0, y: 0 })], {
       width: 1,

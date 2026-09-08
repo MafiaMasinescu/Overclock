@@ -731,6 +731,15 @@ function planMaterialization(
   );
   if (candidateFailure !== null) return candidateFailure;
 
+  const addedRoutes: RouteState[] = [];
+  for (const routeId of routeIds.ids) {
+    const route = candidateRoutesResult.routes[routeId];
+    if (route?.id !== routeId) {
+      return failure("INVALID_SYSTEM", "invalid-route-allocation");
+    }
+    addedRoutes.push(route);
+  }
+
   return {
     status: "ready",
     plan: detached({
@@ -739,9 +748,7 @@ function planMaterialization(
       targetPosition: { ...targetPosition },
       globalRotation,
       addedModules,
-      addedRoutes: Object.values(candidateRoutesResult.routes)
-        .filter((route) => routeIds.ids.includes(route.id))
-        .toSorted((left, right) => compareStableStrings(left.id, right.id)),
+      addedRoutes,
       nextModuleInstanceSequence: moduleIds.nextSequence,
       nextRouteSequence: routeIds.nextSequence,
       inventoryReservationDelta: inventoryDelta,
