@@ -523,14 +523,19 @@ localization is excluded from the simulation-content projection.
 
 Recording owns a detached production `SimCore`, never flushes commands implicitly, hashes only at
 the initial, explicit checkpoint, fatal, and final boundaries, and keeps the journal outside
-`GameState`. Normal command rejections are recorded as results. A command or tick-system invariant
-failure is recorded once as a normalized fatal outcome after the simulator has rolled back the
-failing transaction; the recorder then becomes terminal and preserves any unprocessed queue tail.
-Unexpected non-invariant errors are not certified as replay outcomes.
+`GameState`. Normal command rejections are recorded as results. A completed log contains zero fatal
+outcomes. A fatal log contains exactly one normalized fatal outcome, it is the final entry, and its
+entry sequence, entry count, and terminal `afterSequence` are equal; no operation follows it. The
+fatal outcome is recorded after the simulator has rolled back the failing transaction, and the
+recorder then becomes terminal while preserving any unprocessed queue tail. Unexpected non-invariant
+errors are not certified as replay outcomes.
 
 Playback parses and validates the complete log before execution, reconstructs a fresh production
 core, compares every receipt/result, tick, queue position, checkpoint, and terminal boundary, and
-reports the first journal-order divergence plus the last matching checkpoint. Resume is a separate
+reports the first journal-order divergence plus the last matching checkpoint. The parser returns
+detached deeply immutable outputs and reports malformed canonical, prototype, or accessor input as
+a stable `TypeError` without invoking accessors. The internal executor defensively requires a unique
+final fatal and matching terminal checkpoint before reporting `matched-fatal`. Resume is a separate
 in-memory operation: it accepts only a verified nonfatal empty-queue checkpoint, binds a detached
 state snapshot to the complete replay hash, creates cold private runtimes, and executes only the
 remaining entries. Replay infrastructure consumes no RNG and uses no browser, filesystem,

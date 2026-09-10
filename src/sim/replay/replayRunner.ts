@@ -284,6 +284,10 @@ function invalidInitialStateReport(logHash: string, reason: string): ReplayVerif
 export function executeParsedReplay(options: ParsedReplayExecutionOptions): ParsedReplayExecution {
   const { log, core } = options;
   const startSequence = options.startSequence ?? 1;
+  const replayHash = hashCanonicalState(log);
+  const entries = [...log.entries];
+  const terminalKind = log.terminal.kind;
+  const terminalAfterSequence = log.terminal.afterSequence;
   let lastMatchingCheckpointAfterSequence = options.initialLastMatchingCheckpoint ?? null;
   let executedEntries = 0;
   let executedTicks = 0;
@@ -294,7 +298,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
     if (initialMismatch !== null) {
       return {
         core,
-        report: report("diverged", hashCanonicalState(log), {
+        report: report("diverged", replayHash, {
           executedEntries,
           executedTicks,
           lastMatchingCheckpointAfterSequence,
@@ -305,15 +309,15 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
     lastMatchingCheckpointAfterSequence = 0;
   }
 
-  for (let index = startSequence - 1; index < log.entries.length; index += 1) {
-    const entry = log.entries[index];
+  for (let index = startSequence - 1; index < entries.length; index += 1) {
+    const entry = entries[index];
     if (entry === undefined) break;
     const tickBefore = core.tick;
     executedEntries += 1;
     if (tickBefore !== entry.tickBefore) {
       return {
         core,
-        report: report("diverged", hashCanonicalState(log), {
+        report: report("diverged", replayHash, {
           executedEntries,
           executedTicks,
           lastMatchingCheckpointAfterSequence,
@@ -339,7 +343,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
       if (!(error instanceof SimulatorInvariantError)) {
         return {
           core,
-          report: report("internal-error", hashCanonicalState(log), {
+          report: report("internal-error", replayHash, {
             executedEntries,
             executedTicks,
             lastMatchingCheckpointAfterSequence,
@@ -366,7 +370,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
     if (outcomeDifference !== null) {
       return {
         core,
-        report: report("diverged", hashCanonicalState(log), {
+        report: report("diverged", replayHash, {
           executedEntries,
           executedTicks,
           lastMatchingCheckpointAfterSequence,
@@ -383,7 +387,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
     if (tickAfter !== entry.tickAfter) {
       return {
         core,
-        report: report("diverged", hashCanonicalState(log), {
+        report: report("diverged", replayHash, {
           executedEntries,
           executedTicks,
           lastMatchingCheckpointAfterSequence,
@@ -410,7 +414,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
       } catch (error: unknown) {
         return {
           core,
-          report: report("internal-error", hashCanonicalState(log), {
+          report: report("internal-error", replayHash, {
             executedEntries,
             executedTicks,
             lastMatchingCheckpointAfterSequence,
@@ -431,7 +435,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
       if (difference !== null) {
         return {
           core,
-          report: report("diverged", hashCanonicalState(log), {
+          report: report("diverged", replayHash, {
             executedEntries,
             executedTicks,
             lastMatchingCheckpointAfterSequence,
@@ -448,11 +452,134 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
     }
 
     if (actualOutcome.kind === "fatal") {
+      if (terminalKind !== "fatal") {
+        return {
+          core,
+          report: report("diverged", replayHash, {
+            executedEntries,
+            executedTicks,
+            lastMatchingCheckpointAfterSequence,
+            mismatch: createMismatch(
+              "terminal",
+              entry.sequence,
+              {
+                category: "fatal-terminal-kind",
+                path: "$.terminal.kind",
+                expected: "fatal",
+                actual: terminalKind,
+              },
+              lastMatchingCheckpointAfterSequence,
+            ),
+          }),
+        };
+      }
+      if (entry.sequence !== terminalAfterSequence) {
+        return {
+          core,
+          report: report("diverged", replayHash, {
+            executedEntries,
+            executedTicks,
+            lastMatchingCheckpointAfterSequence,
+            mismatch: createMismatch(
+              "terminal",
+              entry.sequence,
+              {
+                category: "fatal-boundary",
+                path: "$.terminal.afterSequence",
+                expected: terminalAfterSequence,
+                actual: entry.sequence,
+              },
+              lastMatchingCheckpointAfterSequence,
+            ),
+          }),
+        };
+      }
+      if (entry.sequence !== entries.length || executedEntries !== entries.length) {
+        return {
+          core,
+          report: report("diverged", replayHash, {
+            executedEntries,
+            executedTicks,
+            lastMatchingCheckpointAfterSequence,
+            mismatch: createMismatch(
+              "entry",
+              entry.sequence,
+              {
+                category: "fatal-not-final-entry",
+                path: "$.entries",
+                expected: entries.length,
+                actual: executedEntries,
+              },
+              lastMatchingCheckpointAfterSequence,
+            ),
+          }),
+        };
+      }
+      const terminalCheckpoint = checkpointMap.get(terminalAfterSequence);
+      if (terminalCheckpoint === undefined) {
+        return {
+          core,
+          report: report("diverged", replayHash, {
+            executedEntries,
+            executedTicks,
+            lastMatchingCheckpointAfterSequence,
+            mismatch: createMismatch(
+              "terminal",
+              entry.sequence,
+              {
+                category: "missing-checkpoint",
+                path: "$.checkpoints",
+                expected: terminalAfterSequence,
+                actual: null,
+              },
+              lastMatchingCheckpointAfterSequence,
+            ),
+          }),
+        };
+      }
+      const terminalDifference = checkpointDifference(terminalCheckpoint, core);
+      if (terminalDifference !== null) {
+        return {
+          core,
+          report: report("diverged", replayHash, {
+            executedEntries,
+            executedTicks,
+            lastMatchingCheckpointAfterSequence,
+            mismatch: createMismatch(
+              "checkpoint",
+              entry.sequence,
+              terminalDifference,
+              lastMatchingCheckpointAfterSequence,
+            ),
+          }),
+        };
+      }
+      if (entry.outcome.kind !== "fatal") {
+        return {
+          core,
+          report: report("diverged", replayHash, {
+            executedEntries,
+            executedTicks,
+            lastMatchingCheckpointAfterSequence,
+            mismatch: createMismatch(
+              "entry",
+              entry.sequence,
+              {
+                category: "fatal-outcome-not-final",
+                path: "$.outcome.kind",
+                expected: "fatal",
+                actual: entry.outcome.kind,
+              },
+              lastMatchingCheckpointAfterSequence,
+            ),
+          }),
+        };
+      }
       const finalState = core.getStateForSave();
       const queue = core.getCommandQueuePosition();
       return {
         core,
-        report: report("matched-fatal", hashCanonicalState(log), {
+        report: report("matched-fatal", replayHash, {
           finalTick: finalState.tick,
           finalStateHash: hashCanonicalState(finalState),
           finalQueuePosition: queue,
@@ -464,13 +591,35 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
     }
   }
 
+  if (terminalKind === "fatal") {
+    return {
+      core,
+      report: report("diverged", replayHash, {
+        executedEntries,
+        executedTicks,
+        lastMatchingCheckpointAfterSequence,
+        mismatch: createMismatch(
+          "terminal",
+          terminalAfterSequence,
+          {
+            category: "fatal-outcome-missing",
+            path: "$.entries",
+            expected: "fatal",
+            actual: "none",
+          },
+          lastMatchingCheckpointAfterSequence,
+        ),
+      }),
+    };
+  }
+
   const finalState = core.getStateForSave();
   const queue = core.getCommandQueuePosition();
   const finalCheckpoint = log.checkpoints.at(-1);
   if (finalCheckpoint === undefined) {
     return {
       core,
-      report: report("diverged", hashCanonicalState(log), {
+      report: report("diverged", replayHash, {
         finalTick: finalState.tick,
         finalStateHash: hashCanonicalState(finalState),
         finalQueuePosition: queue,
@@ -479,7 +628,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
         lastMatchingCheckpointAfterSequence,
         mismatch: createMismatch(
           "terminal",
-          log.terminal.afterSequence,
+          terminalAfterSequence,
           { category: "missing-checkpoint", path: "$.checkpoints", expected: 1, actual: 0 },
           lastMatchingCheckpointAfterSequence,
         ),
@@ -490,7 +639,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
   if (finalDifference !== null) {
     return {
       core,
-      report: report("diverged", hashCanonicalState(log), {
+      report: report("diverged", replayHash, {
         finalTick: finalState.tick,
         finalStateHash: hashCanonicalState(finalState),
         finalQueuePosition: queue,
@@ -499,7 +648,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
         lastMatchingCheckpointAfterSequence,
         mismatch: createMismatch(
           "terminal",
-          log.terminal.afterSequence,
+          terminalAfterSequence,
           finalDifference,
           lastMatchingCheckpointAfterSequence,
         ),
@@ -510,7 +659,7 @@ export function executeParsedReplay(options: ParsedReplayExecutionOptions): Pars
 
   return {
     core,
-    report: report("matched", hashCanonicalState(log), {
+    report: report("matched", replayHash, {
       finalTick: finalState.tick,
       finalStateHash: hashCanonicalState(finalState),
       finalQueuePosition: queue,

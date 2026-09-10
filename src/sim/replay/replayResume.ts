@@ -11,6 +11,7 @@ import {
   type ReplayVerificationReport,
 } from "./replayContracts.ts";
 import { executeParsedReplay, runReplay } from "./replayRunner.ts";
+import { assertCanonicalReplayParserInput, detachAndFreezeReplayData } from "./replayOwnership.ts";
 import { parseReplayLog } from "./replaySchema.ts";
 
 export interface ReplayResumeBuildOptions {
@@ -118,7 +119,7 @@ function assertExactKeys(value: Record<string, unknown>, expected: readonly stri
 }
 
 export function parseReplayResumeArtifact(value: unknown): ReplayResumeArtifact {
-  assertCanonicalSerializable(value);
+  assertCanonicalReplayParserInput(value, "Replay resume artifact");
   assertStandardTree(value, "resume artifact");
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("Replay resume artifact must be a plain object.");
@@ -145,7 +146,7 @@ export function parseReplayResumeArtifact(value: unknown): ReplayResumeArtifact 
   ) {
     throw new TypeError("resume artifact.state must be a GameState object.");
   }
-  return structuredClone(record) as unknown as ReplayResumeArtifact;
+  return detachAndFreezeReplayData(record) as unknown as ReplayResumeArtifact;
 }
 
 function reportFailure(

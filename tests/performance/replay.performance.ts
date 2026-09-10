@@ -24,6 +24,7 @@ import {
   executeReplayEntry,
   runReplay,
 } from "../../src/sim/replay/replayRunner.ts";
+import { hashSimulationContent } from "../../src/sim/replay/replayContracts.ts";
 import { parseReplayLog } from "../../src/sim/replay/replaySchema.ts";
 import { canonicalSerialize, hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
 import {
@@ -453,7 +454,7 @@ const checkpoint = measure(
 
 const fingerprint = measure(
   () => {
-    canonicalSerialize(content);
+    hashSimulationContent(content);
   },
   FINGERPRINT_SAMPLES,
   20,

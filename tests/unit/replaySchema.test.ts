@@ -2,7 +2,11 @@ import { describe, expect, test } from "vitest";
 
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
 import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
-import { hashSimulationContent, type ReplayLog } from "../../src/sim/replay/replayContracts.ts";
+import {
+  hashSimulationContent,
+  type ReplayFatalOutcome,
+  type ReplayLog,
+} from "../../src/sim/replay/replayContracts.ts";
 import { hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
 import {
   parseReplayLog,
@@ -115,6 +119,38 @@ function createPopulatedLog(): ReplayLog {
   };
 }
 
+function createFatalOutcome(tick = 0): ReplayFatalOutcome {
+  return {
+    kind: "fatal",
+    code: "SIMULATOR_INVARIANT_VIOLATION",
+    origin: "tick-system",
+    commandId: null,
+    tick,
+    stage: "rebuild-dirty-connectivity",
+  };
+}
+
+function createFatalLog(outcomes: readonly ReplayFatalOutcome[]): ReplayLog {
+  const log = createEmptyLog();
+  const entries = outcomes.map((outcome, index) => ({
+    sequence: index + 1,
+    tickBefore: 0,
+    tickAfter: 0,
+    operation: { kind: "step" as const, ticks: 0 },
+    outcome,
+  }));
+  const finalCheckpoint = at(log.checkpoints, 0);
+  return {
+    ...log,
+    entries,
+    checkpoints:
+      entries.length === 0
+        ? [finalCheckpoint]
+        : [finalCheckpoint, { ...finalCheckpoint, afterSequence: entries.length }],
+    terminal: { kind: "fatal", afterSequence: entries.length },
+  };
+}
+
 describe("Replay log validation", () => {
   test("accepts the mandatory empty log boundary", () => {
     const log = createEmptyLog();
@@ -206,6 +242,203 @@ describe("Replay log validation", () => {
     const cyclic = structuredClone(base) as ReplayLog & { self?: unknown };
     cyclic.self = cyclic;
     expect(() => parseReplayLog(cyclic)).toThrow();
+  });
+
+  test("reports canonical ownership violations as TypeError without invoking accessors", () => {
+    const operationWithPrototype = Object.assign(
+      Object.create({ inherited: true }) as Record<string, unknown>,
+      {
+        kind: "step",
+        ticks: 0,
+      },
+    );
+    expect(() => parseReplayOperation(operationWithPrototype)).toThrow(TypeError);
+
+    let operationAccessorReads = 0;
+    const operationWithAccessor: Record<string, unknown> = { ticks: 0 };
+    Object.defineProperty(operationWithAccessor, "kind", {
+      enumerable: true,
+      get() {
+        operationAccessorReads += 1;
+        return "step";
+      },
+    });
+    expect(() => parseReplayOperation(operationWithAccessor)).toThrow(TypeError);
+    expect(operationAccessorReads).toBe(0);
+
+    const logWithPrototype = Object.assign(
+      Object.create({ inherited: true }) as Record<string, unknown>,
+      createEmptyLog(),
+    );
+    expect(() => parseReplayLog(logWithPrototype)).toThrow(TypeError);
+
+    let logAccessorReads = 0;
+    const logWithAccessor = structuredClone(createEmptyLog()) as unknown as Record<string, unknown>;
+    Object.defineProperty(logWithAccessor, "seed", {
+      enumerable: true,
+      get() {
+        logAccessorReads += 1;
+        return "replay-test";
+      },
+    });
+    expect(() => parseReplayLog(logWithAccessor)).toThrow(TypeError);
+    expect(logAccessorReads).toBe(0);
+  });
+
+  test("requires exactly one final fatal for a fatal log and none for a completed log", () => {
+    const singleFatal = createFatalLog([createFatalOutcome()]);
+    expect(parseReplayLog(singleFatal)).toEqual(singleFatal);
+
+    const completedWithFatal = {
+      ...singleFatal,
+      terminal: { kind: "completed" as const, afterSequence: 1 },
+    };
+    expect(() => parseReplayLog(completedWithFatal)).toThrow(
+      "Completed Replay logs cannot contain fatal outcomes.",
+    );
+
+    const fatalWithoutOutcome = createEmptyLog();
+    fatalWithoutOutcome.terminal = { kind: "fatal", afterSequence: 0 };
+    expect(() => parseReplayLog(fatalWithoutOutcome)).toThrow(
+      "Fatal Replay logs require exactly one fatal outcome.",
+    );
+
+    const twoFatals = createFatalLog([createFatalOutcome(), createFatalOutcome()]);
+    expect(() => parseReplayLog(twoFatals)).toThrow(
+      "Fatal Replay logs require exactly one fatal outcome.",
+    );
+  });
+
+  test("rejects a fatal log when the unique fatal is followed by a normal entry", () => {
+    const log = createFatalLog([createFatalOutcome()]);
+    log.entries.push({
+      sequence: 2,
+      tickBefore: 0,
+      tickAfter: 0,
+      operation: { kind: "step", ticks: 0 },
+      outcome: {
+        kind: "step-result",
+        result: {
+          startTick: 0,
+          endTick: 0,
+          ticksExecuted: 0,
+          simulatedSecondsAdvanced: 0,
+          commandResults: [],
+        },
+      },
+    });
+    log.checkpoints[1] = { ...at(log.checkpoints, 1), afterSequence: 2 };
+    log.terminal = { kind: "fatal", afterSequence: 2 };
+
+    expect(() => parseReplayLog(log)).toThrow(
+      "Fatal Replay logs require the fatal outcome at the final entry.",
+    );
+  });
+
+  test.each([
+    ["an early fatal followed by a normal final entry", [createFatalOutcome()] as const],
+    [
+      "an early fatal followed by a final fatal",
+      [createFatalOutcome(), createFatalOutcome()] as const,
+    ],
+  ])("rejects %s", (_label, outcomes) => {
+    const base = createFatalLog(outcomes);
+    if (outcomes.length === 1) {
+      base.entries.push({
+        sequence: 2,
+        tickBefore: 0,
+        tickAfter: 0,
+        operation: { kind: "step", ticks: 0 },
+        outcome: {
+          kind: "step-result",
+          result: {
+            startTick: 0,
+            endTick: 0,
+            ticksExecuted: 0,
+            simulatedSecondsAdvanced: 0,
+            commandResults: [],
+          },
+        },
+      });
+      base.checkpoints[1] = { ...at(base.checkpoints, 1), afterSequence: 2 };
+      base.terminal = { kind: "completed", afterSequence: 2 };
+    }
+
+    expect(() => parseReplayLog(base)).toThrow();
+  });
+
+  test("returns a detached deeply frozen operation without freezing its input", () => {
+    const input = {
+      kind: "enqueue" as const,
+      command: {
+        commandId: COMMAND_ID,
+        source: "player" as const,
+        kind: "SET_GUIDANCE_MODE" as const,
+        mode: "engineering",
+      },
+    };
+    const parsed = parseReplayOperation(input);
+    if (parsed.kind !== "enqueue" || parsed.command.kind !== "SET_GUIDANCE_MODE") {
+      throw new Error("fixture mismatch");
+    }
+
+    expect(parsed).not.toBe(input);
+    expect(parsed.command).not.toBe(input.command);
+    expect(Object.isFrozen(input)).toBe(false);
+    expect(Object.isFrozen(input.command)).toBe(false);
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.command)).toBe(true);
+
+    input.command.mode = "simple";
+    expect(parsed.command).toMatchObject({ mode: "engineering" });
+    try {
+      parsed.command.mode = "simple";
+    } catch {
+      // Frozen output is the expected ownership boundary.
+    }
+    expect(parsed.command.mode).toBe("engineering");
+  });
+
+  test("returns a detached deeply frozen log tree without sharing successive parses", () => {
+    const input = createPopulatedLog();
+    const parsed = parseReplayLog(input);
+    const second = parseReplayLog(input);
+    const parsedEntry = at(parsed.entries, 0);
+
+    expect(parsed).not.toBe(input);
+    expect(parsed.entries).not.toBe(input.entries);
+    expect(parsed.entries).not.toBe(second.entries);
+    expect(Object.isFrozen(input)).toBe(false);
+    expect(Object.isFrozen(input.entries)).toBe(false);
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.entries)).toBe(true);
+    expect(Object.isFrozen(parsedEntry)).toBe(true);
+    expect(Object.isFrozen(parsedEntry.operation)).toBe(true);
+    if (
+      parsedEntry.operation.kind !== "enqueue" ||
+      parsedEntry.operation.command.kind !== "SET_GUIDANCE_MODE"
+    ) {
+      throw new Error("fixture mismatch");
+    }
+    expect(Object.isFrozen(parsedEntry.operation.command)).toBe(true);
+
+    const beforeHash = hashCanonicalState(parsed);
+    const inputEntry = at(input.entries, 0);
+    if (
+      inputEntry.operation.kind !== "enqueue" ||
+      inputEntry.operation.command.kind !== "SET_GUIDANCE_MODE"
+    ) {
+      throw new Error("fixture mismatch");
+    }
+    inputEntry.operation.command.mode = "simple";
+    expect(hashCanonicalState(parsed)).toBe(beforeHash);
+
+    try {
+      parsedEntry.operation.command.mode = "simple";
+    } catch {
+      // Frozen output is the expected ownership boundary.
+    }
+    expect(hashCanonicalState(parsed)).toBe(beforeHash);
   });
 
   test.each([

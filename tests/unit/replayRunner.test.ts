@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
 import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
+import type { ReplayLog } from "../../src/sim/replay/replayContracts.ts";
 import {
   createReplayRecorder,
   createReplayRecorderForTests,
@@ -43,6 +44,84 @@ function createArtifact() {
   recorder.perform({ kind: "step", ticks: 1 });
   recorder.checkpoint();
   return { content, ...recorder.finish() };
+}
+
+function createForgedEarlyFatalLog(): {
+  readonly content: ReturnType<typeof loadContentBundle>;
+  readonly initialState: ReturnType<typeof createInitialGameState>;
+  readonly log: ReplayLog;
+  readonly createFatalCore: () => SimCore;
+} {
+  const content = loadContentBundle();
+  const initialState = createInitialGameState({ content, seed: "replay-forged-early-fatal" });
+  const createFatalCore = () =>
+    new SimCore({
+      initialState: structuredClone(initialState),
+      commandHandlers: {
+        SET_GUIDANCE_MODE: ({ state }, command) => {
+          if (command.commandId === IDS.first) throw new Error("injected fatal");
+          state.tutorial = { ...state.tutorial, guidanceMode: "engineering" };
+        },
+      },
+    });
+  const recorder = createReplayRecorderForTests({
+    content,
+    initialState,
+    core: createFatalCore(),
+  });
+  recorder.perform({
+    kind: "enqueue",
+    command: {
+      commandId: IDS.first,
+      source: "player",
+      kind: "SET_GUIDANCE_MODE",
+      mode: "engineering",
+    },
+  });
+  recorder.perform({
+    kind: "enqueue",
+    command: {
+      commandId: IDS.second,
+      source: "player",
+      kind: "SET_GUIDANCE_MODE",
+      mode: "simple",
+    },
+  });
+  recorder.perform({ kind: "process-pending" });
+  const log = structuredClone(recorder.finish().log);
+  const earlyFatal = log.entries.at(-1)?.outcome;
+  const earlyCheckpoint = log.checkpoints.at(-1);
+  if (earlyFatal?.kind !== "fatal" || earlyCheckpoint === undefined) {
+    throw new Error("fatal fixture mismatch");
+  }
+  log.entries.push({
+    sequence: 4,
+    tickBefore: 0,
+    tickAfter: 0,
+    operation: {
+      kind: "clock",
+      command: {
+        commandId: IDS.second,
+        source: "player",
+        kind: "SET_SPEED",
+        speed: 4,
+      },
+    },
+    outcome: {
+      kind: "clock-result",
+      result: { commandId: IDS.second, accepted: true, appliedAtTick: 0 },
+    },
+  });
+  log.entries.push({
+    sequence: 5,
+    tickBefore: 0,
+    tickAfter: 0,
+    operation: { kind: "step", ticks: 0 },
+    outcome: structuredClone(earlyFatal),
+  });
+  log.checkpoints.push({ ...earlyCheckpoint, afterSequence: 5 });
+  log.terminal = { kind: "fatal", afterSequence: 5 };
+  return { content, initialState, log, createFatalCore };
 }
 
 describe("Replay runner", () => {
@@ -220,6 +299,105 @@ describe("Replay runner", () => {
       result: { commandId: IDS.second, accepted: true },
     });
     expect(runReplay({ content, initialState, log: artifact.log }).status).toBe("matched");
+  });
+
+  test("rejects a malformed fatal log before public replay execution", () => {
+    const forged = createForgedEarlyFatalLog();
+
+    const report = runReplay({
+      content: forged.content,
+      initialState: forged.initialState,
+      log: forged.log,
+    });
+
+    expect(report.status).toBe("invalid-log");
+    expect(report.executedEntries).toBe(0);
+  });
+
+  test("defensively refuses matched-fatal for an early fatal in a forged parsed log", () => {
+    const forged = createForgedEarlyFatalLog();
+    const core = forged.createFatalCore();
+
+    const execution = executeParsedReplay({ content: forged.content, log: forged.log, core });
+
+    expect(execution.report).toMatchObject({
+      status: "diverged",
+      executedEntries: 3,
+      mismatch: {
+        kind: "terminal",
+        sequence: 3,
+        category: "fatal-boundary",
+        path: "$.terminal.afterSequence",
+        expected: 5,
+        actual: 3,
+      },
+    });
+    expect(core.getStateForSave().clock.speed).toBe(1);
+  });
+
+  test("uses the original fatal boundary when caller-owned log data mutates during execution", () => {
+    const forged = createForgedEarlyFatalLog();
+    const log = forged.log;
+    const core = new SimCore({
+      initialState: structuredClone(forged.initialState),
+      commandHandlers: {
+        SET_GUIDANCE_MODE: (_context, command) => {
+          if (command.commandId !== IDS.first) return;
+          log.entries.length = 3;
+          log.terminal = { kind: "fatal", afterSequence: 3 };
+          throw new Error("injected fatal after caller mutation");
+        },
+      },
+    });
+
+    const execution = executeParsedReplay({ content: forged.content, log, core });
+
+    expect(execution.report).toMatchObject({
+      status: "diverged",
+      executedEntries: 3,
+      mismatch: {
+        kind: "terminal",
+        sequence: 3,
+        category: "fatal-boundary",
+        path: "$.terminal.afterSequence",
+        expected: 5,
+        actual: 3,
+      },
+    });
+    expect(log.entries).toHaveLength(3);
+    expect(log.terminal).toEqual({ kind: "fatal", afterSequence: 3 });
+  });
+
+  test("defensively refuses a fatal terminal with no fatal outcome", () => {
+    const content = loadContentBundle();
+    const initialState = createInitialGameState({ content, seed: "replay-fatal-without-outcome" });
+    const recorder = createReplayRecorderForTests({
+      content,
+      initialState,
+      core: new SimCore({ initialState: structuredClone(initialState) }),
+    });
+    recorder.perform({ kind: "step", ticks: 0 });
+    const log = structuredClone(recorder.finish().log);
+    log.terminal = { kind: "fatal", afterSequence: 1 };
+
+    const execution = executeParsedReplay({
+      content,
+      log,
+      core: new SimCore({ initialState: structuredClone(initialState) }),
+    });
+
+    expect(execution.report).toMatchObject({
+      status: "diverged",
+      executedEntries: 1,
+      mismatch: {
+        kind: "terminal",
+        sequence: 1,
+        category: "fatal-outcome-missing",
+        path: "$.entries",
+        expected: "fatal",
+        actual: "none",
+      },
+    });
   });
 
   test("detects same-tick operation reordering at the first proving checkpoint", () => {

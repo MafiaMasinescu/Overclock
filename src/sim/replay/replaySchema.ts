@@ -1,4 +1,3 @@
-import { assertCanonicalSerializable } from "./canonicalState.ts";
 import {
   REPLAY_VERSION,
   SIMULATOR_PROTOCOL_VERSION,
@@ -14,6 +13,7 @@ import type { CommandReceipt, CommandRejectionCode, CommandResult } from "../com
 import { parseSimCommand } from "../commands/commandSchema.ts";
 import type { StepResult } from "../core/simCore.ts";
 import type { TickSystemStage } from "../core/tickSystems.ts";
+import { assertCanonicalReplayParserInput, detachAndFreezeReplayData } from "./replayOwnership.ts";
 
 interface ReplayObject {
   readonly [key: string]: unknown;
@@ -359,14 +359,14 @@ function parseReplayOutcome(value: unknown, operation: ReplayOperation): ReplayO
 }
 
 export function parseReplayOperation(value: unknown): ReplayOperation {
-  assertCanonicalSerializable(value);
+  assertCanonicalReplayParserInput(value, "Replay operation");
   assertStandardReplayData(value, "operation");
   assertObject(value, "operation");
   assertString(value.kind, "operation.kind");
 
   if (value.kind === "enqueue") {
     assertExactKeys(value, ["kind", "command"], "enqueue operation");
-    return { kind: "enqueue", command: parseSimCommand(value.command) };
+    return detachAndFreezeReplayData({ kind: "enqueue", command: parseSimCommand(value.command) });
   }
   if (value.kind === "clock") {
     assertExactKeys(value, ["kind", "command"], "clock operation");
@@ -374,16 +374,16 @@ export function parseReplayOperation(value: unknown): ReplayOperation {
     if (command.kind !== "SET_PAUSED" && command.kind !== "SET_SPEED") {
       throw new TypeError("clock operation requires SET_PAUSED or SET_SPEED.");
     }
-    return { kind: "clock", command };
+    return detachAndFreezeReplayData({ kind: "clock", command });
   }
   if (value.kind === "process-pending") {
     assertExactKeys(value, ["kind"], "process-pending operation");
-    return { kind: "process-pending" };
+    return detachAndFreezeReplayData({ kind: "process-pending" });
   }
   if (value.kind === "step") {
     assertExactKeys(value, ["kind", "ticks"], "step operation");
     assertSafeInteger(value.ticks, "operation.ticks", 0);
-    return { kind: "step", ticks: value.ticks };
+    return detachAndFreezeReplayData({ kind: "step", ticks: value.ticks });
   }
   throw new TypeError("operation.kind is not a supported Replay operation.");
 }
@@ -448,7 +448,7 @@ function parseReplayEntry(
 }
 
 function parseReplayLogInternal(value: unknown): ReplayLog {
-  assertCanonicalSerializable(value);
+  assertCanonicalReplayParserInput(value, "Replay log");
   assertStandardReplayData(value, "replay log");
   assertObject(value, "replay log");
   assertExactKeys(
@@ -486,10 +486,16 @@ function parseReplayLogInternal(value: unknown): ReplayLog {
     throw new TypeError("replay log.checkpoints must be an array.");
 
   const entries: ReplayEntry[] = [];
+  let fatalCount = 0;
+  let fatalIndex = -1;
   let previousTick = value.initialTick;
   for (let index = 0; index < value.entries.length; index += 1) {
     const entry = parseReplayEntry(value.entries[index], index + 1, previousTick);
     entries.push(entry);
+    if (entry.outcome.kind === "fatal") {
+      fatalCount += 1;
+      fatalIndex = index;
+    }
     previousTick = entry.tickAfter;
   }
   const terminal = parseTerminal(value.terminal);
@@ -534,13 +540,15 @@ function parseReplayLogInternal(value: unknown): ReplayLog {
   if (terminal.kind === "completed" && finalCheckpoint.pendingCommandCount !== 0) {
     throw new TypeError("Completed Replay logs require an empty terminal command queue.");
   }
-  const fatalEntry = entries[entries.length - 1];
   if (terminal.kind === "fatal") {
-    if (fatalEntry?.outcome.kind !== "fatal") {
-      throw new TypeError("Fatal logs require a fatal outcome at the final entry.");
+    if (fatalCount !== 1) {
+      throw new TypeError("Fatal Replay logs require exactly one fatal outcome.");
     }
-  } else if (entries.some((entry) => entry.outcome.kind === "fatal")) {
-    throw new TypeError("Completed logs cannot contain fatal outcomes.");
+    if (fatalIndex !== entries.length - 1) {
+      throw new TypeError("Fatal Replay logs require the fatal outcome at the final entry.");
+    }
+  } else if (fatalCount !== 0) {
+    throw new TypeError("Completed Replay logs cannot contain fatal outcomes.");
   }
 
   return {
@@ -559,7 +567,7 @@ function parseReplayLogInternal(value: unknown): ReplayLog {
 }
 
 export function parseReplayLog(value: unknown): ReplayLog {
-  return structuredClone(parseReplayLogInternal(value));
+  return detachAndFreezeReplayData(parseReplayLogInternal(value));
 }
 
 export function validateReplayLog(value: unknown): string[] {

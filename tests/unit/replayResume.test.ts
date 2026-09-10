@@ -4,6 +4,7 @@ import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
 import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
 import { createReplayRecorder } from "../../src/sim/replay/replayRecorder.ts";
 import {
+  parseReplayResumeArtifact,
   resumeReplay,
   verifyReplayAndCreateResumeArtifact,
 } from "../../src/sim/replay/replayResume.ts";
@@ -253,5 +254,64 @@ describe("Replay resume", () => {
     expect(Object.isFrozen(resumeArtifact.state.clock)).toBe(true);
     expect(first).toEqual(second);
     expect(first.status).toBe("matched");
+  });
+
+  test("parses detached deeply frozen artifacts without freezing the source", () => {
+    const artifact = createArtifact();
+    const certified = verifyReplayAndCreateResumeArtifact({
+      content: artifact.content,
+      initialState: artifact.initialState,
+      log: artifact.log,
+      afterSequence: 2,
+    });
+    const source = structuredClone(certified);
+    const parsed = parseReplayResumeArtifact(source);
+    const second = parseReplayResumeArtifact(source);
+    const beforeHash = JSON.stringify(parsed);
+
+    expect(parsed).not.toBe(source);
+    expect(parsed.state).not.toBe(source.state);
+    expect(parsed.state).not.toBe(second.state);
+    expect(Object.isFrozen(source)).toBe(false);
+    expect(Object.isFrozen(source.state)).toBe(false);
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.state)).toBe(true);
+    expect(Object.isFrozen(parsed.state.clock)).toBe(true);
+
+    source.state.clock.speed = 4;
+    expect(JSON.stringify(parsed)).toBe(beforeHash);
+    try {
+      parsed.state.clock.speed = 4;
+    } catch {
+      // Frozen output is the expected ownership boundary.
+    }
+    expect(JSON.stringify(parsed)).toBe(beforeHash);
+  });
+
+  test("reports canonical resume ownership violations as TypeError without invoking accessors", () => {
+    const artifact = createArtifact();
+    const certified = verifyReplayAndCreateResumeArtifact({
+      content: artifact.content,
+      initialState: artifact.initialState,
+      log: artifact.log,
+      afterSequence: 2,
+    });
+    const withPrototype = Object.assign(
+      Object.create({ inherited: true }) as Record<string, unknown>,
+      certified,
+    );
+    expect(() => parseReplayResumeArtifact(withPrototype)).toThrow(TypeError);
+
+    let accessorReads = 0;
+    const withAccessor = structuredClone(certified) as unknown as Record<string, unknown>;
+    Object.defineProperty(withAccessor, "replayHash", {
+      enumerable: true,
+      get() {
+        accessorReads += 1;
+        return certified.replayHash;
+      },
+    });
+    expect(() => parseReplayResumeArtifact(withAccessor)).toThrow(TypeError);
+    expect(accessorReads).toBe(0);
   });
 });

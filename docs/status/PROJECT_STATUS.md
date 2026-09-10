@@ -746,8 +746,8 @@ Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc`; Task 7, 
 through Task 9.5 are complete. Task 10 is complete under ADR-0016 at its single final checkpoint
 boundary. Task 11 is complete at its single checkpoint-neutral boundary under ADR-0017. Task 12 is
 complete at its single checkpoint-neutral boundary under ADR-0018. Task 13 is complete at its
-single checkpoint-neutral boundary under ADR-0019; Task 14 Replay recording and verification is the
-next active task, followed by Task 15 milestone-timing bot.
+single checkpoint-neutral boundary under ADR-0019; Task 14 Replay recording and verification is
+complete, and Task 15 milestone-timing bot remains deferred.
 
 ## Phase 1 Task 6 implementation
 
@@ -971,16 +971,26 @@ and state-hash tampering, matched command/tick fatals, borrowed and rebound resu
 independent runners/resumptions, complete Peak/Sustained traces, and the Task 13.7 route-allocation
 padding boundary.
 
+Task 14.7 adds post-checkpoint terminal-certification and parser-ownership hardening without
+changing Replay protocol versions, ReplayLog shape, valid Replay hashes, or gameplay semantics.
+Completed logs now require zero fatal outcomes; fatal logs require exactly one fatal outcome at
+the final entry, with the entry sequence, entry count, and terminal boundary equal. The public
+operation, log, and resume parsers return detached deeply immutable standard data and never freeze
+caller input. Canonical, prototype, and accessor violations at these boundaries return stable
+`TypeError` instances without invoking caller accessors. The internal executor independently rejects
+forged early-fatal certification. The Replay performance diagnostic measures the contracted
+`hashSimulationContent(content)` operation.
+
 The permanent diagnostic is `corepack pnpm performance:replay`, documented in
 `docs/diagnostics/REPLAY_PERFORMANCE.md`. The audited fixture is a dense 24 by 16 production state
 with real routes and contention, nonuniform Thermal, Overclock, Compute, Task/Research-compatible
 data, an active Benchmark, 128 stored Blueprint records, and all production stages. The latest
-i7-2600 run reported direct/recording/playback warm production p95 values of `3.4725/3.3121/2.4705
+i7-2600 run reported direct/recording/playback warm production p95 values of `3.2388/3.5094/2.4196
 ms` over 200 samples, passing the hard references of `<4/<5/<5 ms`. The run filtered no samples and
 changed no thresholds, fixture work, formulas, or Replay semantics. Metadata, checkpoint, parsing,
 finalization, complete Replay, resume, and cold construction costs remain reported separately.
 
 Task 14 excludes Task 15, save repositories, migrations, JSON/file transport, IndexedDB, workers,
-UI, events, analytics, leaderboards, remote verification, and export/import. Task 14 is complete at
-its checkpoint-neutral Replay boundary. Task 15 is the next task and remains unstarted until
-explicitly approved.
+UI, events, analytics, leaderboards, remote verification, and export/import. Task 14 and its
+Task 14.7 post-checkpoint hardening are complete at a checkpoint-neutral Replay boundary. Task 15
+remains the next explicitly deferred task and is unstarted.

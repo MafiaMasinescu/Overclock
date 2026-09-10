@@ -121,10 +121,20 @@ performance.
 
 ### Checkpoint hardening
 
-The independent checkpoint audit added three boundary protections without changing the Replay
-wire format or gameplay semantics. Incompatible-header classification inspects only own data
-descriptors, so an accessor-bearing malformed log is rejected without invoking user code. A
-failure while capturing the mandatory fatal checkpoint permanently marks that recording session
+The independent checkpoint audit added boundary protections without changing the Replay wire format
+or gameplay semantics. A completed log contains zero fatal outcomes. A fatal log contains exactly
+one fatal outcome, that outcome belongs to the final entry, and the fatal entry sequence, entry
+count, and terminal `afterSequence` are equal. No operation may follow a fatal outcome. The parser
+enforces these rules before execution, while the internal parsed executor independently refuses
+false early-fatal certification.
+
+Public Replay parsers return detached, standard plain-object/array trees that are deeply immutable.
+They do not retain caller-owned commands, parameters, state branches, checkpoints, terminal values,
+or arrays, and they do not freeze caller input. Canonical-serialization, prototype, and accessor
+violations at those public parser boundaries produce a stable `TypeError` without retaining or
+exposing caller data. Incompatible-header classification inspects only own data descriptors, so an
+accessor-bearing malformed log is rejected without invoking user code.
+A failure while capturing the mandatory fatal checkpoint permanently marks that recording session
 unusable, and no artifact can subsequently be exported from it. Resume-boundary input also rejects
 negative zero explicitly. Regression coverage exercises these cases together with same-tick
 ordering, duplicate UUID occurrences, exact optional result fields, fatal partial commits,

@@ -22,7 +22,10 @@ The direct, recording, and playback production lines use separate cores. Playbac
 Replay trace and a warmed core; it executes one recorded `step(1)` entry per timed sample and checks
 the exact recorded outcome and tick boundary. Registry composition, fixture creation, and the first
 100 warm-up steps are excluded from the playback samples. Recording measures `step(1)` through the
-recorder without an explicit checkpoint.
+recorder without an explicit checkpoint. The simulation-content fingerprint line measures the
+contracted `hashSimulationContent(content)` operation over the simulation-content projection; it
+does not time generic `canonicalSerialize(content)` as a substitute and excludes content loading
+from the timed callback.
 
 ## Fixture B: protocol and fatal paths
 
@@ -59,21 +62,21 @@ Environment:
 
 | Path | Median | p95 | Maximum | Samples |
 | --- | ---: | ---: | ---: | ---: |
-| Direct production `step(1)` | 2.0950 ms | 3.4725 ms | 22.5481 ms | 200 |
-| Recording production `step(1)`, no checkpoint | 2.0096 ms | 3.3121 ms | 41.9262 ms | 200 |
-| Playback production trace | 1.6312 ms | 2.4705 ms | 44.7438 ms | 200 |
-| Enqueue recording | 0.0464 ms | 0.0818 ms | 4.0473 ms | 1,000 |
-| Clock recording | 0.0399 ms | 0.0782 ms | 2.3645 ms | 1,000 |
-| Command-only processing | 0.9699 ms | 1.9669 ms | 2.7682 ms | 200 |
-| Full-state checkpoint serialization/hash | 44.0405 ms | 56.8333 ms | 66.1169 ms | 200 |
-| Simulation-content fingerprint | 1.8490 ms | 3.3619 ms | 3.7631 ms | 200 |
-| Strict Replay parsing | 0.5564 ms | 1.2798 ms | 1.5722 ms | 200 |
-| Normal Replay finalization | 13.5783 ms | 18.4075 ms | 25.0575 ms | 200 |
-| Normal end-to-end Replay | 94.5194 ms | 112.1167 ms | 152.9546 ms | 200 |
-| Expected-fatal Replay | 26.0475 ms | 34.2716 ms | 40.4976 ms | 200 |
-| Resume artifact verification/construction | 110.2550 ms | 129.0364 ms | 147.8712 ms | 200 |
-| Resumed remaining execution | 42.0471 ms | 51.2528 ms | 58.9287 ms | 200 |
-| Cold production `SimCore` construction | 26.2264 ms | 33.7315 ms | 39.4420 ms | 200 |
+| Direct production `step(1)` | 1.9134 ms | 3.2388 ms | 17.0506 ms | 200 |
+| Recording production `step(1)`, no checkpoint | 1.9752 ms | 3.5094 ms | 37.7337 ms | 200 |
+| Playback production trace | 1.5553 ms | 2.4196 ms | 39.3546 ms | 200 |
+| Enqueue recording | 0.0555 ms | 0.1013 ms | 0.5076 ms | 1,000 |
+| Clock recording | 0.0654 ms | 0.1103 ms | 2.6800 ms | 1,000 |
+| Command-only processing | 1.0938 ms | 2.1626 ms | 4.1821 ms | 200 |
+| Full-state checkpoint serialization/hash | 45.8550 ms | 60.9550 ms | 74.8011 ms | 200 |
+| Simulation-content fingerprint (`hashSimulationContent`) | 4.8723 ms | 7.0430 ms | 11.5007 ms | 200 |
+| Strict Replay parsing | 1.1426 ms | 1.9777 ms | 3.0406 ms | 200 |
+| Normal Replay finalization | 14.9664 ms | 19.8375 ms | 30.0898 ms | 200 |
+| Normal end-to-end Replay | 105.9737 ms | 134.5951 ms | 215.3439 ms | 200 |
+| Expected-fatal Replay | 37.5477 ms | 48.5775 ms | 61.1756 ms | 200 |
+| Resume artifact verification/construction | 124.0967 ms | 151.2408 ms | 223.3291 ms | 200 |
+| Resumed remaining execution | 48.5795 ms | 59.7033 ms | 72.0545 ms | 200 |
+| Cold production `SimCore` construction | 30.0061 ms | 40.5402 ms | 50.8269 ms | 200 |
 
 ## Gate interpretation
 
@@ -83,7 +86,7 @@ The Task 14 hard references on an i7-2600 are:
 - recording warm production p95 `<5 ms`;
 - playback warm production p95 `<5 ms`.
 
-The latest unfiltered run measured `3.4725 ms`, `3.3121 ms`, and `2.4705 ms`, respectively, so all
+The latest unfiltered run measured `3.2388 ms`, `3.5094 ms`, and `2.4196 ms`, respectively, so all
 three hard references passed. No formula, gameplay threshold, fixture complexity, sample count,
 assertion, or Replay semantic was changed for this final rerun. Checkpoint hashing, content
 fingerprinting, parsing/finalization, complete Replay, resume, and cold construction have no
