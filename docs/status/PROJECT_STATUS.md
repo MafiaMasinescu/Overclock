@@ -1,10 +1,10 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-04
+Updated: 2026-09-12
 
 ## Current phase
 
-- Phase 1: Headless Simulator.
+- Phase 1: Headless Simulator, complete through Task 15.
 - Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
   `8e80b00` and explicitly approved on 18 August 2026.
 - Completed checkpoint: Task 5.1, deterministic grid geometry, occupancy, footprint rotation, port
@@ -45,6 +45,13 @@ Updated: 2026-09-04
   Instantiation changes only the draft and authoritative fresh-ID counters; existing Apply remains
   the cash, inventory, downtime, live-layout, Power, and Overclock invalidation boundary. Draft
   instantiation is allowed during an active Benchmark, while Apply retains Benchmark exclusivity.
+- Phase 1 Task 14 and its Task 14.7 hardening are complete. Replay recording, parsing,
+  verification, fatal certification, checkpoints, resume, ownership, and performance are governed
+  by ADR-0020.
+- Phase 1 Task 15 is complete under ADR-0021. It adds the exact 1946-1948 production calendar and a
+  development-only, public-command, Replay-verified milestone bot. The canonical baseline completes
+  every required progression and performance gate without RNG use, resource grants, state
+  injection, retries, or hidden recovery.
 - Production gameplay commands are `BUY_MODULE`, `SELL_INVENTORY_ITEM`, `ENTER_DESIGN_MODE`,
   `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`,
   `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN`,
@@ -56,7 +63,7 @@ Updated: 2026-09-04
   `calculate-heat-generation` and `update-thermal-state`, Task 8's
   `apply-throttling-stability-and-shutdown`, Task 9's `calculate-theoretical-and-useful-compute`, and
   Task 12's canonical combined `advance-tasks-and-benchmarks` stage and Task 11's
-  `advance-research` stage.
+  `advance-research` stage, followed by Task 15's campaign update stage.
 
 ## Implemented deterministic foundation
 
@@ -990,7 +997,52 @@ ms` over 200 samples, passing the hard references of `<4/<5/<5 ms`. The run filt
 changed no thresholds, fixture work, formulas, or Replay semantics. Metadata, checkpoint, parsing,
 finalization, complete Replay, resume, and cold construction costs remain reported separately.
 
-Task 14 excludes Task 15, save repositories, migrations, JSON/file transport, IndexedDB, workers,
-UI, events, analytics, leaderboards, remote verification, and export/import. Task 14 and its
-Task 14.7 post-checkpoint hardening are complete at a checkpoint-neutral Replay boundary. Task 15
-remains the next explicitly deferred task and is unstarted.
+Task 14 excludes the Task 15 bot implementation, save repositories, migrations, JSON/file transport,
+IndexedDB, workers, UI, events, analytics, leaderboards, remote verification, and export/import.
+Task 14 and its Task 14.7 post-checkpoint hardening are complete at a checkpoint-neutral Replay
+boundary. Task 15 is documented in the following section.
+
+## Task 15: Campaign timeline and milestone bot
+
+Task 15.1 through Task 15.7 implement the deterministic campaign timeline and the development-only
+milestone bot. The new campaign timing value is
+`balancing.campaign.secondsPerYear = 1200`; the fixed 100 ms tick therefore advances the campaign
+from 1946 to 1947 at completed tick 12,000 and to 1948 at completed tick 24,000. The campaign
+stage runs after Task/Benchmark and Research, so year-gated Task offers reconcile on the following
+tick. `campaign.currentYear` remains the only authoritative calendar addition.
+
+The bot is isolated under `src/devtools/milestoneBot`. It uses one shared deterministic policy
+engine, the fixed `starter-serial` → `expanded-balanced` → `cooled-benchmark` template chain,
+the real production command/tick path, ordinary public commands, the existing Replay recorder,
+and fresh Replay verification. It does not use debug grants, state replacement, fixture injection,
+hidden retries, pathfinding, adaptive search, or production imports. Baseline, conservative, and
+aggressive policies share selectors, templates, timing, milestones, blockers, deadtime, reports,
+and Replay behavior; their differences are limited to the approved frozen profile parameters and
+Overclock guards.
+
+Reports contain fixed-order exact/interval milestones, blocker and wait episodes, command and
+rejection counts, Task/Research/Benchmark/Blueprint progress, campaign completion, temperature,
+stability, shutdown, cash, income, expense, RNG, state, Replay, and report hashes. Bot state,
+templates, mappings, policy data, reports, caches, and witnesses remain outside `GameState`, save
+state, Replay contracts, and production imports. The exact-100 Task 15 determinism test covers
+each approved policy across the 1946→1947 boundary and fresh Replay verification.
+
+The approved Task 15.7 balance correction changes only measured Task and Research progression
+values: first Task operations `100,000`; Wiring reward `112`; Reactor operations `1,300,000`;
+Aerodynamic operations `700,000`; Blueprint Documentation cost `24` and operations `2,980,000`.
+The final expanded template introduces four arithmetic units and secondary Power with explicit
+routes; the cooled template adds delay-line memory, cooling, and the fifth arithmetic unit. Peak
+keeps the full six-module cluster while boosting only arithmetic unit 5.
+
+The permanent diagnostic is `corepack pnpm balance:milestones`, with detailed evidence in
+`docs/diagnostics/MILESTONE_BOT.md`. The canonical baseline completes at tick 30,270 with fresh
+Replay `matched`, unchanged RNG, first Task `(1,780, 1,790]`, blocker `(3,560, 3,570]`, Blueprint
+tick 7,620, exact 1947/1948 ticks 12,000/24,000, both Benchmarks passed, Transistor reveal and
+completion `(30,260, 30,270]`, and maximum forced deadtime 2,990. Task 15 closes Phase 1. Task 16,
+UI, save repositories, workers, analytics, and Phase 2 remain deferred.
+
+The final unchanged-fixture diagnostic was run twice in separate clean processes. Both runs
+reproduced all campaign and compatibility hashes. The first missed the direct-production and Replay
+recording p95 limits at `4.0002 ms` and `5.3677 ms`; the second passed every hard gate at
+`3.5477 ms` direct, `3.4560 ms` recording, and `4.0512 ms` playback p95. No results were averaged
+and no fixture, sample, warm-up, threshold, or simulation behavior changed.

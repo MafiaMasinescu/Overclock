@@ -24,6 +24,8 @@ import {
   type TickSystemStage,
 } from "./tickSystems.ts";
 import type { GameState } from "./types.ts";
+import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
+import { assertValidCampaignState } from "../campaign/campaignDomain.ts";
 
 const UINT32_MAX = 0xffff_ffff;
 
@@ -47,6 +49,7 @@ export type SimCoreCommandHandlerRegistry = Omit<
 
 export interface SimCoreOptions {
   initialState: GameState;
+  content?: ContentBundle | undefined;
   commandHandlers?: SimCoreCommandHandlerRegistry;
   tickSystems?: TickSystemRegistry;
   initialCommandQueueSequence?: number;
@@ -268,6 +271,7 @@ function createQueuedCommandHandlers(
 }
 
 export class SimCore {
+  private readonly content: ContentBundle | undefined;
   private readonly authoritativeState: AuthoritativeState;
   private readonly commandQueue: CommandQueue;
   private readonly commandProcessor: CommandProcessor;
@@ -277,11 +281,14 @@ export class SimCore {
 
   constructor({
     initialState,
+    content,
     commandHandlers,
     tickSystems = {},
     initialCommandQueueSequence = 0,
   }: SimCoreOptions) {
+    this.content = content;
     assertValidClockAndTick(initialState);
+    if (content !== undefined) assertValidCampaignState(initialState.campaign, content);
     assertValidStoredComputeState(initialState);
     assertValidDesignModeState(initialState);
     assertValidStoredTaskState(initialState);
@@ -293,7 +300,7 @@ export class SimCore {
     this.authoritativeState = new AuthoritativeState(initialState);
     this.commandQueue = new CommandQueue(initialCommandQueueSequence);
     this.commandProcessor = new CommandProcessor(
-      { initialState, handlers: createQueuedCommandHandlers(commandHandlers ?? {}) },
+      { initialState, content, handlers: createQueuedCommandHandlers(commandHandlers ?? {}) },
       { state: this.authoritativeState, queue: this.commandQueue },
     );
     this.tickSystems = createTickSystemRuntimes(Object.freeze({ ...tickSystems }));
@@ -383,6 +390,7 @@ export class SimCore {
     const snapshot = this.authoritativeState.snapshot();
     try {
       assertValidClockAndTick(snapshot);
+      if (this.content !== undefined) assertValidCampaignState(snapshot.campaign, this.content);
       assertValidStoredComputeState(snapshot);
       assertValidStoredTaskState(snapshot);
       assertValidStoredResearchState(snapshot);
@@ -408,6 +416,7 @@ export class SimCore {
       this.tickSystems[stage]?.clearDerivedState?.();
     }
     assertValidClockAndTick(state);
+    if (this.content !== undefined) assertValidCampaignState(state.campaign, this.content);
     assertValidStoredComputeState(state);
     assertValidInventoryEconomyState(state);
     assertValidDesignModeState(state);
@@ -487,6 +496,13 @@ export class SimCore {
           throw new Error(
             "Later tick stages must preserve the Task/Benchmark-owned Benchmark branch.",
           );
+        }
+        if (
+          this.content !== undefined &&
+          (this.runsMutableTickSystems || candidate.campaign !== validatedCampaign)
+        ) {
+          assertValidCampaignState(candidate.campaign, this.content);
+          validatedCampaign = candidate.campaign;
         }
         if (
           stage !== "calculate-theoretical-and-useful-compute" &&
@@ -593,6 +609,7 @@ export class SimCore {
     };
     assertValidClockAndTick(completed);
     if (!computeAlreadyValidated) assertValidStoredComputeState(completed);
+    if (this.content !== undefined) assertValidCampaignState(completed.campaign, this.content);
     assertValidStoredTaskState(completed);
     assertValidStoredResearchState(completed);
     if (!benchmarkAlreadyValidated) assertValidStoredBenchmarkState(completed);

@@ -210,6 +210,9 @@ export const eraFileSchema = z.object({
 export const balancingFileSchema = z.object({
   contentVersion: z.string(),
   tickMilliseconds: z.literal(100),
+  campaign: z.object({
+    secondsPerYear: positiveSafeIntegerSchema,
+  }),
   thermal: z.object({
     heatToTemperatureCoefficient: z.number().positive(),
     diffusionCoefficient: z.number().min(0).max(1),

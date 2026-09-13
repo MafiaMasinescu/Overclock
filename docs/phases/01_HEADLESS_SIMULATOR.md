@@ -536,4 +536,28 @@ cold construction. No sample filtering or threshold weakening is permitted.
 
 Task 14 does not implement Task 15, save repositories, migration/file transport, IndexedDB,
 workers, UI, events, analytics, leaderboards, remote verification, or export/import. Task 14 is a
-complete checkpoint-neutral Replay boundary; Task 15 remains the next explicitly deferred task.
+complete checkpoint-neutral Replay boundary.
+
+## Task 15: Campaign timeline and milestone bot
+
+Task 15 was split into six planned implementation tasks: 15.1 campaign and bot contracts,
+15.2 production calendar integration, 15.3 fixed templates and Replay driver, 15.4 baseline
+policy and milestone diagnostics, 15.5 strategy variants and comparisons, and 15.6 complete
+diagnostics and documentation. The separately approved Task 15.7 closes measured progression and
+checkpoint findings without adding automatic tuning.
+
+The campaign stage derives 1947 at completed tick 12,000 and 1948 at completed tick 24,000.
+Task-owned offers observe the new year on the next tick. All bot implementation is development
+only and must use the real production command/tick/Replay path without cheats, state replacement,
+hidden recovery, or simulator imports from the devtools tree.
+
+Task 15.1 through 15.7 are implemented. The bot uses the fixed
+starter → expanded → cooled template chain, one shared deterministic policy engine, exact tuple
+selectors, guarded Overclock variants, milestone intervals, blocker persistence, productive and
+forced-wait summaries, hard-lock evidence, detached reports, and fresh Replay verification.
+The approved Task 15.7 correction uses measured progression evidence and adds no automatic tuning.
+The canonical baseline completes at tick 30,270 with matched Replay and unchanged RNG. Its first
+finite Task, persistent blocker, Blueprint, year transitions, Benchmarks, Transistor reveal,
+completion, and maximum forced deadtime all satisfy the contract. The permanent diagnostic is
+`corepack pnpm balance:milestones` and enforces these gates directly. Task 15 closes Phase 1;
+Task 16 and Phase 2 remain deferred.

@@ -2137,3 +2137,68 @@ Replay have no ordinary-tick gate and remain separately visible.
 
 Task 14 does not implement Task 15, UI, events, analytics, leaderboards, save repositories,
 migrations, JSON/file transport, IndexedDB, workers, remote verification, or export/import.
+
+## 51. Task 15 campaign timeline and milestone bot
+
+Task 15 adds the deterministic 1946–1948 campaign timeline and a development-only
+milestone bot. The calendar contract adds `campaign.secondsPerYear: 1200`; with
+the fixed 100 ms tick this produces exactly 12,000 ticks per year. The campaign stage
+uses the completed tick (`state.tick + 1`), runs after Task/Research as specified by the
+fixed registry, and leaves Task offers to reconcile on the following tick.
+
+The bot is isolated under `src/devtools/milestoneBot`. It uses the production simulator,
+ordinary public commands, and the existing Replay recorder. Bot runtime state, templates,
+policies, milestones, blockers, reports, caches, and witnesses never enter `GameState`,
+save data, Replay protocol contracts, or production imports. The three fixed templates are
+`starter-serial`, `expanded-balanced`, and `cooled-benchmark`; baseline, conservative, and
+aggressive policies share one deterministic engine. See ADR-0021 for the complete contract.
+
+Task 15 does not implement Task 16, UI, events, analytics, leaderboards, save repositories,
+migrations, workers, or export/import.
+
+The fixed template chain is `starter-serial`, `expanded-balanced`, and `cooled-benchmark`.
+Templates use fixed geometry, explicit routes, and symbolic cluster roles. The Replay-backed
+driver assigns deterministic client-owned UUIDs, submits ordinary public commands with
+`source: "debug"`, checks every receipt/result, and never grants resources or replaces simulator
+state.
+
+Baseline and both strategy variants share one pure selector engine, Research graph, template
+executor, observer, blocker tracker, progress projection, runner, report builder, and Replay
+verification path. Research selection uses mandatory status, directed distance to the final
+reveal, evidence reachability, content order, and ID. Finite Task selection uses required
+evidence, mandatory reachability, Research Data reward, operations, deadline, content order, and
+ID. The baseline excludes the infinite census service, runs Sustained before Peak, and uses only
+guarded Balanced/Boost behavior. Conservative prefers Eco during idle and early cooling;
+aggressive prefers Boost for eligible finite Tasks. Neither uses Manual or adaptive search.
+
+Milestone observations preserve exact authoritative ticks for command/state changes and use
+bounded intervals no wider than the ten-tick decision cadence for cadence-only changes. Target
+bands are Task completion 1,200–1,800 ticks, first blocking bottleneck 2,400–3,600, first
+Blueprint 6,000–9,000, and vertical-slice completion 27,000–45,000. Progress and deadtime
+projections exclude tick/clock values, raw thermal drift, cache revisions, witnesses, and queue
+counters. A hard lock requires 600 ticks without meaningful progress and no calendar transition
+inside the approved 3,000-tick maximum forced-deadtime horizon, while any active lifecycle owner
+also keeps the wait eligible for future progress.
+
+The permanent development diagnostic is `corepack pnpm balance:milestones`. Its canonical baseline
+completes at tick 30,270 with matched Replay, unchanged RNG, both Benchmarks passed, one saved
+Blueprint, exact year transitions at ticks 12,000 and 24,000, and maximum forced deadtime of 2,990
+ticks. Its first finite Task completes in `(1,780, 1,790]`, the first persistent blocking bottleneck
+in `(3,560, 3,570]`, the first Blueprint at tick 7,620, and final reveal/completion in
+`(30,260, 30,270]`.
+
+Task 15.7 applies only separately approved, evidence-backed content corrections: the first Task
+phase requires 100,000 operations; Wiring Layout Study rewards 112 Research Data; Reactor Diffusion
+Study and Aerodynamic Load Matrix require 1,300,000 and 700,000 operations respectively; Blueprint
+Documentation costs 24 Research Data and requires 2,980,000 operations. No module, economy,
+Benchmark, era, save-version, or content-version value changes. The policy waits for the measured
+100-tick `deadline-risk` blocker before deadline Boost and applies Boost only to arithmetic unit 5
+for Peak while retaining the complete six-module Benchmark cluster.
+
+The diagnostic enforces every canonical baseline progression, Replay, RNG, and timing gate and runs
+a deterministic duplicate. See `docs/diagnostics/MILESTONE_BOT.md` for exact policy hashes,
+performance evidence, compatibility notes, and variant outcomes.
+
+Hard-lock progress tracking anchors a newly changed progress hash at the completed end tick of the
+interval where it was observed. An interval whose before/after hashes are equal begins at its start
+tick. The 600-tick threshold is therefore exact rather than up to one decision cadence early.

@@ -1,6 +1,9 @@
 {
   "contentVersion": "0.1.0",
   "tickMilliseconds": 100,
+  "campaign": {
+    "secondsPerYear": 1200
+  },
   "thermal": {
     "heatToTemperatureCoefficient": 0.000025,
     "diffusionCoefficient": 0.075,

@@ -246,6 +246,30 @@ Task 14 Replay remains an in-memory diagnostic layer over the real production `S
 implement Task 15, save repositories, workers, UI, events, leaderboards, remote verification, or
 export/import.
 
+## Task 15 milestone bot diagnostic
+
+Task 15 adds the deterministic 1946–1948 campaign timeline and a development-only milestone bot.
+Run the permanent diagnostic with:
+
+```powershell
+corepack pnpm balance:milestones
+```
+
+The bot uses the real production `SimCore`, public commands, and Replay. Its fixed templates,
+policy parameters, selectors, milestone observer, blocker/deadtime analysis, and comparison
+reports remain outside production imports and authoritative state. The diagnostic reports exact
+state, Replay, report, RNG, command, milestone, blocker, wait, and performance evidence.
+
+The canonical baseline completes at tick 30,270 with matched Replay and unchanged RNG. It completes
+the first finite Task between ticks 1,780 and 1,790, records the first persistent blocker between
+3,560 and 3,570, saves the first Blueprint at tick 7,620, crosses 1947 and 1948 exactly at ticks
+12,000 and 24,000, passes both Benchmarks, and completes Transistor Theory between ticks 30,260 and
+30,270. Maximum forced deadtime is 2,990 ticks. The approved Task 15.7 balance corrections and the
+audited i7-2600 evidence are recorded in `docs/diagnostics/MILESTONE_BOT.md`.
+
+Task 15 closes the Phase 1 headless simulator. UI, save repositories, workers, analytics, and other
+Phase 2 work remain separate.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

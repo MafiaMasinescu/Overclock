@@ -175,6 +175,19 @@ export function validateContent(raw: RawContentPack): ContentBundle {
     throw new ContentValidationError(issues);
   }
 
+  const ticksPerYearNumerator = balancingFile.campaign.secondsPerYear * 1000;
+  const ticksPerYear = ticksPerYearNumerator / balancingFile.tickMilliseconds;
+  if (
+    !Number.isSafeInteger(ticksPerYearNumerator) ||
+    !Number.isSafeInteger(ticksPerYear) ||
+    ticksPerYear <= 0
+  ) {
+    issues.push({
+      path: "balancing.campaign.secondsPerYear",
+      message: "must produce a positive safe integer ticksPerYear",
+    });
+  }
+
   const versionedFiles = [modulesFile, tasksFile, researchFile, eraFile, balancingFile];
   versionedFiles.forEach((file, index) => {
     if (file.contentVersion !== "0.1.0") {

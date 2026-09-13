@@ -12,6 +12,7 @@ import { createOverclockTickSystems } from "../overclock/facilityOverclock.ts";
 import { createComputeTickSystems } from "../compute/facilityCompute.ts";
 import { createTaskBenchmarkTickSystems } from "../tasks/facilityTasks.ts";
 import { createResearchTickSystems } from "../research/facilityResearch.ts";
+import { createCampaignTickSystems } from "../campaign/facilityCampaign.ts";
 import { SimCore, type SimCoreCommandHandlerRegistry, type SimCoreOptions } from "./simCore.ts";
 import type { TickSystemRegistry } from "./tickSystems.ts";
 import type { GameState } from "./types.ts";
@@ -54,9 +55,11 @@ export function createProductionSimCore({
     createComputeTickSystems(content),
     createTaskBenchmarkTickSystems(content),
     createResearchTickSystems(content),
+    createCampaignTickSystems(content),
   ]);
   const options: SimCoreOptions = {
     initialState,
+    content,
     commandHandlers,
     tickSystems,
   };

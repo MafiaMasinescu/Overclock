@@ -15,6 +15,8 @@ import {
   type CommandHandlerRejection,
 } from "./commandHandlers.ts";
 import { CommandQueue } from "./commandQueue.ts";
+import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
+import { assertValidCampaignState } from "../campaign/campaignDomain.ts";
 
 export const SIMULATOR_INVARIANT_VIOLATION = "SIMULATOR_INVARIANT_VIOLATION" as const;
 
@@ -33,6 +35,7 @@ export class SimulatorInvariantError extends Error {
 
 export interface CommandProcessorOptions {
   initialState: GameState;
+  content?: ContentBundle | undefined;
   handlers?: CommandHandlerRegistry;
 }
 
@@ -50,12 +53,14 @@ function validateCandidateState(
   expectedTick: number,
   minimumModuleInstanceSequence: number,
   minimumRouteSequence: number,
+  content?: ContentBundle,
 ): void {
   assertCanonicalSerializable(candidate);
   if (candidate.tick !== expectedTick) {
     throw new Error("Command handlers must not advance or replace the current simulation tick.");
   }
   assertValidInventoryEconomyState(candidate);
+  if (content !== undefined) assertValidCampaignState(candidate.campaign, content);
   assertValidDesignModeState(candidate, minimumModuleInstanceSequence, minimumRouteSequence);
   assertValidStoredTaskState(candidate);
   assertValidStoredResearchState(candidate);
@@ -92,12 +97,15 @@ export class CommandProcessor {
   private readonly state: AuthoritativeState;
   private readonly handlers: CommandHandlerRegistry;
   private readonly queue: CommandQueue;
+  private readonly content: ContentBundle | undefined;
 
   constructor(
-    { initialState, handlers = {} }: CommandProcessorOptions,
+    { initialState, content, handlers = {} }: CommandProcessorOptions,
     dependencies: CommandProcessorDependencies = {},
   ) {
+    this.content = content;
     assertValidInventoryEconomyState(initialState);
+    if (content !== undefined) assertValidCampaignState(initialState.campaign, content);
     assertValidDesignModeState(initialState);
     assertValidStoredTaskState(initialState);
     assertValidStoredResearchState(initialState);
@@ -161,6 +169,7 @@ export class CommandProcessor {
         currentTick,
         authoritativeState.facility.nextModuleInstanceSequence,
         authoritativeState.facility.nextRouteSequence,
+        this.content,
       );
       this.state.commitOwned(candidate);
 

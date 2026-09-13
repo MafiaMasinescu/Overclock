@@ -24,7 +24,7 @@
         {
           "id": "phase-trajectory-run",
           "nameKey": "tasks.task-ballistic-table-verification.phase-trajectory-run",
-          "operations": 430000,
+          "operations": 100000,
           "tags": ["serial", "cpu", "time-sensitive"],
           "memoryCapacityMinBytes": 256,
           "memoryCapacityRecommendedBytes": 512,
@@ -101,7 +101,7 @@
       "periodicPayoutSeconds": null,
       "abandonPenaltyUsd": 250,
       "reputationReward": 5,
-      "researchDataReward": 34,
+      "researchDataReward": 112,
       "evidenceTagRewards": ["evidence-layout-study"],
       "prerequisiteResearchIds": ["research-stable-power-distribution"]
     },
@@ -128,7 +128,7 @@
         {
           "id": "phase-iterative-solve",
           "nameKey": "tasks.task-reactor-diffusion-study.phase-iterative-solve",
-          "operations": 2100000,
+          "operations": 1300000,
           "tags": ["parallel", "cpu", "thermal", "high-precision"],
           "memoryCapacityMinBytes": 1024,
           "memoryCapacityRecommendedBytes": 4096,
@@ -159,7 +159,7 @@
         {
           "id": "phase-load-cases",
           "nameKey": "tasks.task-aerodynamic-load-matrix.phase-load-cases",
-          "operations": 2400000,
+          "operations": 700000,
           "tags": ["parallel", "burst", "time-sensitive", "thermal"],
           "memoryCapacityMinBytes": 1024,
           "memoryCapacityRecommendedBytes": 4096,
