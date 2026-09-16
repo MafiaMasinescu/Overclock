@@ -258,6 +258,7 @@ export function verifyReplayAndCreateResumeArtifact(
 
   let coreState: GameState;
   try {
+    assertCanonicalSerializable(options.initialState);
     coreState = structuredClone(options.initialState) as GameState;
     const core = createProductionSimCore({
       content: options.content,

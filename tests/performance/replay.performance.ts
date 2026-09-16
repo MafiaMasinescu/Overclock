@@ -1,4 +1,4 @@
-import { cpus, release } from "node:os";
+import { arch, cpus, release } from "node:os";
 
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
 import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
@@ -31,6 +31,10 @@ import {
   resumeReplay,
   verifyReplayAndCreateResumeArtifact,
 } from "../../src/sim/replay/replayResume.ts";
+import {
+  classifyReplayDiagnosticHost,
+  type ReplayDiagnosticHost,
+} from "./replayHostClassification.ts";
 
 const content = loadContentBundle();
 const WARMUPS = 100;
@@ -578,11 +582,21 @@ const cold = measure(
   5,
 );
 
-console.log("Task 14 Replay performance diagnostic (Intel i7-2600 target-hardware run)");
-console.log(`CPU=${cpus()[0]?.model ?? "unknown"}`);
+const host: ReplayDiagnosticHost = {
+  cpuModels: cpus().map((cpu) => cpu.model),
+  platform: process.platform,
+  architecture: arch(),
+  osRelease: release(),
+  nodeVersion: process.version,
+};
+const hostClassification = classifyReplayDiagnosticHost(host);
+
+console.log("Task 14 Replay performance diagnostic");
+console.log(`CPU=${host.cpuModels[0] ?? "unknown"}`);
 console.log(
-  `OS=${process.platform} ${release()}, Node=${process.version}, build=development TypeScript`,
+  `OS=${host.platform} ${host.osRelease}, architecture=${host.architecture}, Node=${host.nodeVersion}, build=development TypeScript`,
 );
+console.log(`target classification=${hostClassification}`);
 console.log(
   `warm-up: ${WARMUPS} iterations unless stated; fixture construction excluded from timed samples`,
 );
@@ -612,4 +626,9 @@ console.log(`resumed remaining execution: ${format(resumed)}`);
 console.log(`cold production SimCore construction: ${format(cold)}`);
 console.log(
   "hard target references: direct <4 ms p95; recording <5 ms p95; playback <5 ms p95 on Intel i7-2600",
+);
+console.log(
+  hostClassification === "verified-target"
+    ? "gate evidence: verified target profile; background load and isolation are reported execution conditions, not hardware-detection guarantees"
+    : "gate evidence: non-gating host; measurements are diagnostic and do not certify the Intel i7-2600 target",
 );

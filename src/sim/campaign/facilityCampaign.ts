@@ -1,6 +1,7 @@
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
 import {
-  assertValidCampaignState,
+  assertTrustedCampaignTimelineCoherent,
+  assertValidCampaignBranchStructure,
   calculateCampaignYearForCompletedTick,
 } from "./campaignDomain.ts";
 import type { GameState } from "../core/types.ts";
@@ -12,20 +13,22 @@ import type {
 
 function runCampaignTick(state: Readonly<GameState>, content: ContentBundle): GameState {
   const completedTick = state.tick + 1;
-  const nextYear = calculateCampaignYearForCompletedTick(
-    state.campaign.currentYear,
-    completedTick,
-    content,
-  );
+  assertTrustedCampaignTimelineCoherent(state, content);
+  const nextYear = calculateCampaignYearForCompletedTick(completedTick, content);
   if (nextYear === state.campaign.currentYear) return state;
 
-  return {
+  const candidate = {
     ...state,
     campaign: {
       ...state.campaign,
       currentYear: nextYear,
     },
   };
+  assertValidCampaignBranchStructure(candidate.campaign, content);
+  if (candidate.campaign.currentYear !== nextYear) {
+    throw new Error("Campaign output does not match the prospective completed tick.");
+  }
+  return candidate;
 }
 
 function createCampaignRuntime(content: ContentBundle): StructuralSharingTickSystemRuntime {
@@ -35,7 +38,7 @@ function createCampaignRuntime(content: ContentBundle): StructuralSharingTickSys
       return runCampaignTick(state, content);
     },
     validateLifecycleState(state: Readonly<GameState>): void {
-      assertValidCampaignState(state.campaign, content);
+      assertValidCampaignBranchStructure(state.campaign, content);
     },
   };
 }

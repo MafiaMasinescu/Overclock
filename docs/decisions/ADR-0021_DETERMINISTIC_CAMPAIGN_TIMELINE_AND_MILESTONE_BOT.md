@@ -2,6 +2,10 @@
 
 Status: accepted
 
+Supersession note (2026-09-15): ADR-0022 supersedes only the rule that retained an arbitrary
+in-era `campaign.currentYear`. The year is now an exact projection of completed ticks. All other
+Task ordering, milestone-bot, balance, and evidence decisions in this ADR remain accepted.
+
 ## Context
 
 The vertical slice needs a deterministic 1946–1948 campaign clock and a
@@ -87,7 +91,7 @@ performed as part of those tasks.
 
 The 1947 and 1948 boundaries are completed ticks 12,000 and 24,000. The
 campaign ends at 1948 for this vertical slice; later technology, UI, saves,
-workers, analytics, and Task 16 remain outside this decision.
+workers, analytics, and the reconciled Phase 2+ roadmap remain outside this decision.
 
 ## Final evidence and approved balance correction
 

@@ -4,7 +4,7 @@ import { createProductionSimCore } from "../core/productionSimCore.ts";
 import { TickSystemInvariantError } from "../core/simCore.ts";
 import type { SimCore } from "../core/simCore.ts";
 import type { GameState } from "../core/types.ts";
-import { hashCanonicalState } from "./canonicalState.ts";
+import { assertCanonicalSerializable, hashCanonicalState } from "./canonicalState.ts";
 import {
   DEFAULT_REPLAY_MAX_ENTRIES,
   DEFAULT_REPLAY_MAX_TICKS,
@@ -743,6 +743,7 @@ export function runReplay(options: ReplayRunnerOptions): ReplayVerificationRepor
   let initialState: GameState;
   let core: SimCore;
   try {
+    assertCanonicalSerializable(options.initialState);
     initialState = structuredClone(options.initialState) as GameState;
     core = createProductionSimCore({
       content: options.content,

@@ -6,11 +6,15 @@ Versiune: 1.0
 
 Data: 15 august 2026
 
-Status: Ready for implementation
+Status: Active reconciled contract; Phase 1 implemented and closed
 
 Public: dezvoltatorul proiectului și Codex
 
 Document asociat: `docs/GDD.md`, versiunea 1.1
+
+Precedence note (2026-09-15): accepted ADRs and this reconciled Markdown TDD govern current
+implementation. Both Word documents in `docs/` are byte-identical archival references and are not
+kept in binary synchronization with later accepted decisions.
 
 ## 1. Scopul documentului
 
@@ -218,6 +222,29 @@ PixiJS controlează:
 - zoom, pan și transformarea coordonatelor.
 
 PixiJS emite `GridIntent`. Bridge-ul îl transformă în comenzi. Renderer-ul nu importă reducers sau mutatori ai simulatorului.
+
+### 7.6 Implementation status and roadmap ownership
+
+Implemented production behavior includes the deterministic command queue and 100 ms `SimCore`,
+inventory/economy transactions, grid and Design Mode, Power, Thermal, Overclock/Stability, Useful
+Compute, Task/Benchmark, Research, Blueprint, Replay, Campaign, and the development-only milestone
+bot. Seven production domain registries currently occupy eight stage slots: Power; Thermal heat
+generation and Thermal update; Overclock/Stability; Compute; combined Task/Benchmark; Research; and
+Campaign. Unregistered tuple positions are deliberate no-op slots, not hidden implementations.
+
+Code-level foundations exist for `GameClient`, worker messages, UI snapshots, save envelopes, and
+simulation events, but only the fake client is wired. `SimWorkerHost`, a real client/store,
+selectors, patch/event transport semantics, IndexedDB/autosave/migrations, and durable recovery are
+TDD designs rather than production implementations. Phase 2 owns their detailed contracts and
+implementation. In-memory verified Replay resume is not persistence, autosave, migration, or worker
+recovery.
+
+Phase 3 owns auto-connect/A* routing, renderer consumption of snapshots/patches, and heatmap UI.
+Phase 4 owns gameplay alerts/event semantics and UI, achievements/tutorial behavior, and any future
+contracts for workload-dependent Power/Heat and automatic energy/economy settlement retained from
+the original design. Those simulation changes are roadmap commitments awaiting explicit gameplay
+contracts, not implemented behavior. Phase 5 owns cross-browser and release hardening. Tauri is a
+separate post-RC phase.
 
 ## 8. Structura repository-ului
 
@@ -1121,14 +1148,14 @@ Acceptarea verifică cerințele minime și un slot liber. Jucătorul poate accep
 
 ### 22.1.1 Contract autoritativ Task 10
 
-`tasks.activeSlotCount` este capacitatea de sloturi, nu numÄƒrul ocupat. `nextTaskInstanceSequence`
-porneÈ™te la `1`, nu se reutilizeazÄƒ È™i formeazÄƒ `task-instance-00000001` cu minimum opt cifre.
-`campaign.reputation` porneÈ™te la `0`. O instanÈ›Äƒ Service nonterminalÄƒ pÄƒstreazÄƒ boolean-ul
-`serviceWindowCompliant`; câmpul este `null` pentru non-Service È™i Service terminale. Offer-urile sunt
-doar definition IDs; nu au instanÈ›e, sunt distincte de instanÈ›e È™i rÄƒmân ordonate stabil din content.
-Accepted/active/hold ocupÄƒ slot; accepted nu are allocation, active are allocation, hold o reÈ›ine, iar
-terminalele pÄƒstreazÄƒ istoricul final. Contractul complet de validare, deadline, rewards È™i SLA este
-ADR-0016; Task 10.1 nu proceseazÄƒ lifecycle, progress, deadline sau bani.
+`tasks.activeSlotCount` este capacitatea de sloturi, nu numărul ocupat. `nextTaskInstanceSequence`
+pornește la `1`, nu se reutilizează și formează `task-instance-00000001` cu minimum opt cifre.
+`campaign.reputation` pornește la `0`. O instanță Service nonterminală păstrează boolean-ul
+`serviceWindowCompliant`; câmpul este `null` pentru non-Service și Service terminale. Offer-urile sunt
+doar definition IDs; nu au instanțe, sunt distincte de instanțe și rămân ordonate stabil din content.
+Accepted/active/hold ocupă slot; accepted nu are allocation, active are allocation, hold o reține, iar
+terminalele păstrează istoricul final. Contractul complet de validare, deadline, rewards și SLA este
+ADR-0016; Task 10.1 nu procesează lifecycle, progress, deadline sau bani.
 
 The completed Task 10 contract is deterministic. `activeSlotCount` is slot capacity;
 `nextTaskInstanceSequence` starts at `1`, never reuses a value, and generates
@@ -1268,9 +1295,10 @@ production `advance-research` stage, atomic rollback, Compute-cache projection, 
 guards, compatibility vectors, and determinism rules are implemented through the existing
 `CommandProcessor` and `SimCore` path. The permanent audited Research diagnostic is
 `corepack pnpm performance:research`; its fixture and results are recorded in
-`docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md`. Task 12, Benchmark runners, is the exact next
-Phase 1 task. Research UI, events, additional benchmark behavior, saves/replay, workers,
-achievements, and later Phase 1 scope remain deferred.
+`docs/diagnostics/RESEARCH_LIFECYCLE_PERFORMANCE.md`. At that historical checkpoint, Task 12
+Benchmark runners was next. Research UI, events, durable persistence, workers, and achievements
+remain assigned to later reconciled phases; Benchmark and Replay domain behavior are now
+implemented.
 
 Final checkpoint verification passed all Task 11 hard gates. The unchanged Task 8 diagnostic had
 one explicitly accepted target-host irregularity: pure p95 `0.2605 ms` against its nominal
@@ -1309,7 +1337,8 @@ hardening, compatibility verification, permanent documentation, and the final di
 permanent Benchmark diagnostic is `corepack pnpm performance:benchmarks`, with its fixture,
 sample counts, gates, and audited results recorded in
 `docs/diagnostics/BENCHMARK_LIFECYCLE_PERFORMANCE.md`. Workload-dependent Power/Heat, random
-failures, UI, events, leaderboards, saves/replay, workers, and later Task 13 scope remain deferred.
+failures, UI, events, leaderboards, durable persistence, and workers were outside Task 12. Task 13
+Blueprint and Task 14 Replay domain behavior were subsequently implemented.
 
 ## 24. Blueprint system
 
@@ -1342,15 +1371,15 @@ Validarea verifică:
 
 Exportul de blueprint este posibil ulterior. În 0.1, salvăm blueprint-ul în save și îl putem instanția în același run.
 
-Task 13 trateazÄƒ `BlueprintState` ca stare autoritativÄƒ serializabilÄƒ È™i profund imutabilÄƒ.
-`SAVE_BLUEPRINT` creeazÄƒ mereu un record nou, iar `RENAME_BLUEPRINT` schimbÄƒ doar numele
-normalizat. `INSTANTIATE_BLUEPRINT` este o operaÈ›ie atomicÄƒ de Design Mode: materializeazÄƒ numai
-draft-ul cu ID-uri noi, rezervÄƒ implicit inventarul draft-ului È™i pÄƒstreazÄƒ secvenÈ›ele Facility
-fÄƒrÄƒ reutilizare. OperaÈ›ia `instantiate-blueprint` reÈ›ine datele exacte necesare pentru Undo È™i
-Redo; aceste operaÈ›ii restaureazÄƒ obiectele originale, nu alocÄƒ ID-uri noi È™i nu inverseazÄƒ
-secvenÈ›ele. Cash, consumul inventarului, downtime-ul, revision-ul live È™i invalidarea Power/
-Overclock apar numai prin `APPLY_DESIGN`. InstanÈ›ierea este permisÄƒ în timpul unui Benchmark,
-dar Apply rÄƒmâne exclusiv.
+Task 13 tratează `BlueprintState` ca stare autoritativă serializabilă și profund imutabilă.
+`SAVE_BLUEPRINT` creează mereu un record nou, iar `RENAME_BLUEPRINT` schimbă doar numele
+normalizat. `INSTANTIATE_BLUEPRINT` este o operație atomică de Design Mode: materializează numai
+draft-ul cu ID-uri noi, rezervă implicit inventarul draft-ului și păstrează secvențele Facility
+fără reutilizare. Operația `instantiate-blueprint` reține datele exacte necesare pentru Undo și
+Redo; aceste operații restaurează obiectele originale, nu alocă ID-uri noi și nu inversează
+secvențele. Cash, consumul inventarului, downtime-ul, revision-ul live și invalidarea Power/
+Overclock apar numai prin `APPLY_DESIGN`. Instanțierea este permisă în timpul unui Benchmark,
+dar Apply rămâne exclusiv.
 
 ## 25. Benchmark system
 
@@ -2029,8 +2058,8 @@ is allowed during an active Benchmark, while Apply remains exclusive.
 
 Task 13 is complete at its single checkpoint-neutral implementation boundary. The permanent
 Blueprint contract, diagnostic, compatibility evidence, and deferred scope are recorded in
-ADR-0019 and `docs/diagnostics/BLUEPRINT_PERFORMANCE.md`. The roadmap proceeds from Task 13 to
-Task 14 Replay recording and verification, then Task 15 milestone-timing bot.
+ADR-0019 and `docs/diagnostics/BLUEPRINT_PERFORMANCE.md`. Historical sequence: Task 14 Replay and
+Task 15 milestone timing followed and are now implemented.
 
 ### Task 13 final verification and ownership details
 
@@ -2135,16 +2164,34 @@ hard target references are direct p95 below 4 ms and recorder/playback p95 below
 checkpoint hashing, fingerprinting, parsing, finalization, cold construction, resume, and complete
 Replay have no ordinary-tick gate and remain separately visible.
 
-Task 14 does not implement Task 15, UI, events, analytics, leaderboards, save repositories,
-migrations, JSON/file transport, IndexedDB, workers, remote verification, or export/import.
+Historical scope note: Task 14 did not implement the then-future Task 15. Task 15 is now
+implemented; UI, events, analytics, leaderboards, save repositories, migrations, JSON/file
+transport, IndexedDB, workers, remote verification, and export/import remain later-phase work.
 
 ## 51. Task 15 campaign timeline and milestone bot
 
 Task 15 adds the deterministic 1946–1948 campaign timeline and a development-only
 milestone bot. The calendar contract adds `campaign.secondsPerYear: 1200`; with
 the fixed 100 ms tick this produces exactly 12,000 ticks per year. The campaign stage
-uses the completed tick (`state.tick + 1`), runs after Task/Research as specified by the
-fixed registry, and leaves Task offers to reconcile on the following tick.
+uses the prospective completed tick (`state.tick + 1`), runs after Task/Research as specified by
+the fixed registry, and leaves Task offers to reconcile on the following tick. Under ADR-0022,
+committed `campaign.currentYear` is an exact redundant projection of completed `state.tick`: ticks
+0–11,999 map to 1946, 12,000–23,999 to 1947, and 24,000 and later valid ticks to 1948.
+`validateCampaignBranchStructure` validates only the Campaign branch;
+`validateCampaignTimelineCoherence` safely validates canonical ownership plus the current full-state
+tick/year relation. `validateTrustedCampaignTimelineCoherence` is used only after the complete state
+has already crossed an ownership boundary, avoiding recursive serialization on the warm tick path.
+Construction, replacement, detached save output, Replay recording/playback/resume boundaries, and
+every committed tick enforce the latter. The internal Campaign candidate is checked against its
+prospective completed tick before the host increments `tick`, avoiding a false rejection at the
+12,000 and 24,000 boundaries. Direct simulator construction resolves the bundled validated content
+when no explicit bundle is supplied, so content-backed Campaign validation is never optional.
+Replay validates caller-owned state before cloning, and save/replacement lifecycle checks use
+their established targeted validation. Replacement validates fresh candidate runtimes, discards
+them on rejection, and promotes that already validated set on success so neither rejected input nor
+the first following tick can observe incorrect private evidence. Retired runtimes receive
+best-effort cleanup only after detachment; cleanup callback failures cannot alter the promoted state
+or runtime.
 
 The bot is isolated under `src/devtools/milestoneBot`. It uses the production simulator,
 ordinary public commands, and the existing Replay recorder. Bot runtime state, templates,
@@ -2153,8 +2200,9 @@ save data, Replay protocol contracts, or production imports. The three fixed tem
 `starter-serial`, `expanded-balanced`, and `cooled-benchmark`; baseline, conservative, and
 aggressive policies share one deterministic engine. See ADR-0021 for the complete contract.
 
-Task 15 does not implement Task 16, UI, events, analytics, leaderboards, save repositories,
-migrations, workers, or export/import.
+Task 15 does not implement Phase 2 persistence/worker/client work, UI, events, analytics,
+leaderboards, save repositories, migrations, or export/import. Phase 1 closes after ADR-0022;
+there is no active Task 16 implementation.
 
 The fixed template chain is `starter-serial`, `expanded-balanced`, and `cooled-benchmark`.
 Templates use fixed geometry, explicit routes, and symbolic cluster roles. The Replay-backed

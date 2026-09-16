@@ -1,4 +1,5 @@
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
+import { createCampaignTickSystems } from "../../src/sim/campaign/facilityCampaign.ts";
 import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
 import { SimCore } from "../../src/sim/core/simCore.ts";
 import type { TickSystemRegistry } from "../../src/sim/core/tickSystems.ts";
@@ -14,7 +15,11 @@ const content = loadContentBundle();
 function createCore(label: string, tickSystems?: TickSystemRegistry): SimCore {
   return new SimCore({
     initialState: createInitialGameState({ content, seed: `performance-${label}` }),
-    tickSystems: tickSystems ?? {},
+    tickSystems: {
+      ...tickSystems,
+      ...createCampaignTickSystems(content),
+    },
+    content,
   });
 }
 

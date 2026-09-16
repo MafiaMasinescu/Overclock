@@ -1528,67 +1528,55 @@ Vertical slice trece testul dacă:
 
 # 47. Roadmap de producție
 
-## Faza 0, Design Lock
+> Reconciliere 2026-09-16: numerotarea activă urmează fazele Git și ADR-0022. Această notă
+> înlocuiește numai vechea împărțire a roadmap-ului; restul designului GDD rămâne neschimbat.
 
-- finalizează acest GDD;
-- definește nomenclatura;
-- creează schema JSON;
-- stabilește stilul UI;
-- face prototipuri pentru grilă, heatmap și Telemetry.
+## Faza 0, Project foundations
 
-## Faza 1, Headless Simulator
+- repository, toolchain și quality gates;
+- contracte inițiale, loader strict și shell UI placeholder;
+- direcția tehnică și vizuală de bază.
 
-- resource model;
-- task allocation;
-- power și thermal;
-- overclock;
-- research;
-- economie;
-- save schema;
-- bot simplu pentru balans.
+## Faza 1, Headless deterministic simulator
 
-## Faza 2, Build Workspace
+- resource model, economie, grid, Power, Thermal, Overclock și Useful Compute;
+- Task, Research, Benchmark, Blueprint, Replay și Campaign;
+- milestone bot și baseline determinist pentru balans;
+- închiderea contractelor simulatorului fără UI de gameplay sau persistență durabilă.
 
-- Pixi grid;
-- drag-and-drop;
-- routing;
-- inspector;
-- heatmap;
-- blueprint;
-- undo și redo.
+## Faza 2, Content baseline integration, persistence și worker bridge
 
-## Faza 3, Vertical Slice Content
+- păstrarea conținutului și milestone baseline-ului Phase 1 ca regression evidence;
+- save/persistence, migrare și recovery contracts;
+- worker bridge, client/store, selectori și transport pentru snapshot/event delivery.
 
-- prolog;
-- 12 module;
-- task-uri;
-- research;
-- tutorial;
-- audio;
-- achievements;
-- Museum snapshot.
+## Faza 3, Build Workspace
 
-## Faza 4, Browser Release Candidate
+- Pixi grid, drag-and-drop, routing, inspector și heatmap;
+- Blueprint UI, undo/redo și Design Mode;
+- auto-connect și A* routing;
+- consumul snapshoturilor și patchurilor de către renderer.
 
-- optimizare;
-- localizare;
-- save migration;
-- browser compatibility;
-- itch.io page;
-- playtest extern.
+## Faza 4, Playable Loop și session content
 
-## Faza 5, Desktop Package
+- prolog, tutorial, Task/Research/Benchmark workspaces și telemetry;
+- gameplay alerts/events, achievements, Museum și finalul vertical slice;
+- contracte viitoare pentru workload-dependent Power/Heat și settlement automat, dacă sunt păstrate.
 
-- integrare Tauri;
-- Windows installer;
-- file export;
-- setări grafice;
-- test pe hardware slab;
-- update flow.
+## Faza 5, Browser Release Candidate
 
-## Faza 6, Extinderea campaniei
+- optimizare, accesibilitate și localizare;
+- cross-browser și responsive hardening;
+- save migration rehearsal, itch.io și playtest extern.
 
-Capitolele se adaugă numai după validarea buclei. Fiecare capitol trebuie să aducă o problemă nouă, nu doar numere mai mari.
+## Fază separată post-RC, Desktop Package
+
+- integrare Tauri și installer;
+- setări desktop, file integration și update flow;
+- testare desktop pe hardware-ul țintă.
+
+Extinderea campaniei începe numai după validarea buclei și a RC-ului. Fiecare capitol trebuie să
+aducă o problemă nouă, nu doar numere mai mari.
 
 # 48. Balansare și debug
 

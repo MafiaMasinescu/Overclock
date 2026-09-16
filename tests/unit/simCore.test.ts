@@ -169,6 +169,7 @@ describe("fixed-step SimCore", () => {
     const state = createState();
     state.tick = Number.MAX_SAFE_INTEGER;
     state.clock.simulatedSeconds = Number.MAX_SAFE_INTEGER / 10;
+    state.campaign.currentYear = 1948;
     const core = new SimCore({ initialState: state, commandHandlers: recordingCommandHandlers() });
     core.enqueue(guidanceCommand(IDS.first, Number.MAX_SAFE_INTEGER));
 

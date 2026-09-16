@@ -12,20 +12,21 @@ Construiește simulatorul determinist fără gameplay UI.
 4. Tick pipeline de 100 ms.
 5. Inventory și economy de bază.
 6. Grid occupancy, footprint rotation și port graph.
-6. Power delivery.
-7. Thermal model cu double buffering.
-8. Overclock profiles și stability.
-9. Useful Compute și `ComputeBreakdown`.
-10. Task lifecycle și allocation.
-11. Research lifecycle.
-12. Benchmark runners.
-13. Blueprint save și instantiate la nivel de domeniu.
-14. Replay recording, verification și determinism tests.
-15. Bot simplu pentru milestone timings.
+7. Power delivery.
+8. Thermal model cu double buffering.
+9. Overclock profiles și stability.
+10. Useful Compute și `ComputeBreakdown`.
+11. Task lifecycle și allocation.
+12. Research lifecycle.
+13. Benchmark runners.
+14. Blueprint save și instantiate la nivel de domeniu.
+15. Replay recording, verification, Campaign timeline și milestone bot, păstrând ID-urile
+    publicate ale taskurilor detaliate 12–15 de mai jos.
 
 ## Task 2: Command pipeline foundation
 
-Status: implemented, pending final verification and approval.
+Status: implemented and historically checkpointed. Later tasks added production handlers without
+changing the accepted Task 2 queue/processor contract.
 
 Task 2 includes only:
 
@@ -44,7 +45,8 @@ fixed by `docs/decisions/ADR-0002_COMMAND_PIPELINE_FOUNDATION.md`.
 
 ## Task 3: 100 ms tick pipeline
 
-Status: implemented, pending final review and approval.
+Status: implemented and historically checkpointed. Later tasks populated the fixed production
+registry without changing the accepted Task 3 host/tick contract.
 
 Task 3 includes only:
 
@@ -58,9 +60,11 @@ Task 3 includes only:
 - detached save-state snapshots;
 - focused tick, clock, determinism, and diagnostic performance coverage.
 
-Task 3 registers no production gameplay system. Host scheduling, timers, catch-up, workers, replay,
-save/load, snapshots, events, and the later Phase 1 gameplay domains remain deferred. Compatibility
-details are fixed by `docs/decisions/ADR-0003_DETERMINISTIC_TICK_PIPELINE.md`.
+At its historical checkpoint, Task 3 registered no production gameplay system. The current Phase 1
+composition now registers Power, Thermal, Overclock/Stability, Compute, Task/Benchmark, Research,
+and Campaign stages. Host scheduling, timers, catch-up, workers, durable save/load, transport
+snapshots, and events remain owned by later phases. Compatibility details are fixed by
+`docs/decisions/ADR-0003_DETERMINISTIC_TICK_PIPELINE.md` and later accepted ADRs.
 
 ## Task 4: Inventory transactions and basic economy
 
@@ -534,9 +538,10 @@ Direct warm production p95 targets below 4 ms and recording/playback p95 targets
 reported separately from checkpoint hashing, parsing/finalization, end-to-end Replay, resume, and
 cold construction. No sample filtering or threshold weakening is permitted.
 
-Task 14 does not implement Task 15, save repositories, migration/file transport, IndexedDB,
-workers, UI, events, analytics, leaderboards, remote verification, or export/import. Task 14 is a
-complete checkpoint-neutral Replay boundary.
+Historical scope note: Task 14 did not implement the then-future Task 15. Task 15 is now
+implemented. Save repositories, migration/file transport, IndexedDB, workers, UI, events,
+analytics, leaderboards, remote verification, and export/import remain outside the Replay boundary.
+Task 14 is a complete checkpoint-neutral Replay boundary.
 
 ## Task 15: Campaign timeline and milestone bot
 
@@ -559,5 +564,12 @@ The approved Task 15.7 correction uses measured progression evidence and adds no
 The canonical baseline completes at tick 30,270 with matched Replay and unchanged RNG. Its first
 finite Task, persistent blocker, Blueprint, year transitions, Benchmarks, Transistor reveal,
 completion, and maximum forced deadtime all satisfy the contract. The permanent diagnostic is
-`corepack pnpm balance:milestones` and enforces these gates directly. Task 15 closes Phase 1;
-Task 16 and Phase 2 remain deferred.
+`corepack pnpm balance:milestones` and enforces these gates directly. Task 15 plus ADR-0022's
+timeline-coherence repair close Phase 1. There is no active Task 16 implementation; Phase 2 begins
+only after a separately approved contract.
+
+The Task 15.8 checkpoint retains two pure Benchmark p95 misses (`0.1035 ms` and `0.1559 ms`
+against `<0.10 ms`) as failed measurements. The project owner accepted a temporary, checkpoint-only
+exception on 2026-09-16 because the target PC was concurrently loaded with multiple applications.
+The threshold is unchanged, host-load causation is not technically proven, and an isolated rerun
+remains follow-up evidence. No other performance gate inherits this exception.

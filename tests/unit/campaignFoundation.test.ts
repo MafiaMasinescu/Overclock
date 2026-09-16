@@ -5,7 +5,8 @@ import { createRawContentPack } from "../../src/content/loader/rawContentPack.ts
 import {
   calculateCampaignTicksPerYear,
   calculateCampaignYearForCompletedTick,
-  validateCampaignState,
+  validateCampaignBranchStructure,
+  validateCampaignTimelineCoherence,
 } from "../../src/sim/campaign/campaignDomain.ts";
 import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
 import {
@@ -33,12 +34,17 @@ describe("Task 15 campaign foundations", () => {
     [45_000, 1948],
   ])("derives the canonical year at completed tick %i", (tick, expectedYear) => {
     const content = loadContentBundle();
-    expect(calculateCampaignYearForCompletedTick(1946, tick, content)).toBe(expectedYear);
+    expect(calculateCampaignYearForCompletedTick(tick, content)).toBe(expectedYear);
   });
 
-  test("never decreases an already advanced valid year", () => {
+  test("rejects a forward year that is not the exact tick projection", () => {
     const content = loadContentBundle();
-    expect(calculateCampaignYearForCompletedTick(1948, 0, content)).toBe(1948);
+    const state = createInitialGameState({ content, seed: "campaign-forward-year" });
+    state.campaign.currentYear = 1948;
+    expect(validateCampaignTimelineCoherence(state, content)).toContainEqual({
+      path: "campaign.currentYear",
+      message: "must equal 1946 for completed tick 0",
+    });
   });
 
   test("validates campaign state against the current era without mutation", () => {
@@ -46,8 +52,39 @@ describe("Task 15 campaign foundations", () => {
     const state = createInitialGameState({ content, seed: "campaign-foundation" });
     const before = structuredClone(state.campaign);
 
-    expect(validateCampaignState(state.campaign, content)).toEqual([]);
+    expect(validateCampaignBranchStructure(state.campaign, content)).toEqual([]);
+    expect(validateCampaignTimelineCoherence(state, content)).toEqual([]);
     expect(state.campaign).toEqual(before);
+  });
+
+  test("reports a missing Campaign branch without dereferencing malformed input", () => {
+    const content = loadContentBundle();
+    const state = createInitialGameState({ content, seed: "campaign-missing-branch" });
+    const malformed = { ...state } as Partial<typeof state>;
+    delete malformed.campaign;
+
+    expect(() => validateCampaignTimelineCoherence(malformed as never, content)).not.toThrow();
+    expect(validateCampaignTimelineCoherence(malformed as never, content)).toEqual([
+      { path: "campaign", message: "must be a canonical plain serializable object" },
+    ]);
+  });
+
+  test("rejects a Campaign accessor without executing it through the public full-state validator", () => {
+    const content = loadContentBundle();
+    const state = createInitialGameState({ content, seed: "campaign-public-accessor" });
+    let reads = 0;
+    Object.defineProperty(state, "campaign", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return createInitialGameState({ content, seed: "unreachable" }).campaign;
+      },
+    });
+
+    expect(validateCampaignTimelineCoherence(state, content)).toEqual([
+      { path: "state", message: "must be a canonical plain serializable object" },
+    ]);
+    expect(reads).toBe(0);
   });
 
   test.each([
@@ -64,7 +101,7 @@ describe("Task 15 campaign foundations", () => {
     const state = createInitialGameState({ content, seed: "invalid-campaign" });
     const invalid = { ...state.campaign, [field]: value };
 
-    const issues = validateCampaignState(invalid, content);
+    const issues = validateCampaignBranchStructure(invalid, content);
     expect(
       issues.some((issue) => issue.path === `campaign.${field}` || issue.path === "campaign"),
     ).toBe(true);
@@ -82,9 +119,9 @@ describe("Task 15 campaign foundations", () => {
       eraId: state.campaign.eraId,
     };
 
-    expect(validateCampaignState(reordered, content)).toEqual([]);
+    expect(validateCampaignBranchStructure(reordered, content)).toEqual([]);
     expect(
-      validateCampaignState({ ...reordered, eraId: "wrong-era" } as never, content),
+      validateCampaignBranchStructure({ ...reordered, eraId: "wrong-era" } as never, content),
     ).toContainEqual({ path: "campaign.eraId", message: "must match the current content era" });
   });
 

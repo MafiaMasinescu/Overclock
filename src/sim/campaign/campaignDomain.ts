@@ -7,13 +7,6 @@ export interface CampaignStateIssue {
   readonly message: string;
 }
 
-type CampaignInput = Readonly<CampaignState> | Pick<Readonly<GameState>, "campaign">;
-
-function getCampaignState(input: CampaignInput): Readonly<CampaignState> {
-  if ("campaign" in input) return input.campaign;
-  return input;
-}
-
 function isNonnegativeSafeInteger(value: unknown): value is number {
   return (
     typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0)
@@ -44,37 +37,34 @@ export function calculateCampaignTicksPerYear(content: ContentBundle): number {
 }
 
 export function calculateCampaignYearForCompletedTick(
-  currentYear: number,
   completedTick: number,
   content: ContentBundle,
 ): number {
   if (!isNonnegativeSafeInteger(completedTick)) {
     throw new RangeError("completedTick must be a nonnegative safe integer.");
   }
+  const { startYear, endYear } = content.era;
+  const eraSpan = endYear - startYear;
   if (
-    !Number.isSafeInteger(currentYear) ||
-    currentYear < content.era.startYear ||
-    currentYear > content.era.endYear ||
-    Object.is(currentYear, -0)
+    !Number.isSafeInteger(startYear) ||
+    !Number.isSafeInteger(endYear) ||
+    !Number.isSafeInteger(eraSpan) ||
+    eraSpan < 0
   ) {
-    throw new RangeError("currentYear must be a valid year in the current era.");
+    throw new RangeError("Campaign era years must define a safe nonnegative span.");
   }
-
   const elapsedYears = Math.floor(completedTick / calculateCampaignTicksPerYear(content));
-  const derivedYear = Math.min(content.era.endYear, content.era.startYear + elapsedYears);
-  return Math.max(currentYear, derivedYear);
+  return startYear + Math.min(eraSpan, elapsedYears);
 }
 
-export function validateCampaignState(
-  input: CampaignInput,
+export function validateCampaignBranchStructure(
+  campaign: Readonly<CampaignState>,
   content: ContentBundle,
 ): readonly CampaignStateIssue[] {
   const issues: CampaignStateIssue[] = [];
-  let campaign: Readonly<CampaignState>;
 
   try {
-    assertCanonicalSerializable(input);
-    campaign = getCampaignState(input);
+    assertCanonicalSerializable(campaign);
   } catch {
     return [{ path: "campaign", message: "must be a canonical plain serializable object" }];
   }
@@ -111,8 +101,70 @@ export function validateCampaignState(
   return Object.freeze(issues.map((issue) => Object.freeze(issue)));
 }
 
-export function assertValidCampaignState(input: CampaignInput, content: ContentBundle): void {
-  const issues = validateCampaignState(input, content);
+export function assertValidCampaignBranchStructure(
+  campaign: Readonly<CampaignState>,
+  content: ContentBundle,
+): void {
+  const issues = validateCampaignBranchStructure(campaign, content);
+  if (issues.length > 0) {
+    throw new Error(issues.map(({ path, message }) => `${path}: ${message}`).join("\n"));
+  }
+}
+
+export function validateTrustedCampaignTimelineCoherence(
+  state: Readonly<GameState>,
+  content: ContentBundle,
+): readonly CampaignStateIssue[] {
+  const issues = [...validateCampaignBranchStructure(state.campaign, content)];
+  if (!isNonnegativeSafeInteger(state.tick)) {
+    issues.push({ path: "tick", message: "must be a nonnegative safe integer" });
+    return Object.freeze(issues.map((issue) => Object.freeze(issue)));
+  }
+  if (issues.length > 0) {
+    return Object.freeze(issues.map((issue) => Object.freeze(issue)));
+  }
+  const expectedYear = calculateCampaignYearForCompletedTick(state.tick, content);
+  if (state.campaign.currentYear !== expectedYear) {
+    issues.push({
+      path: "campaign.currentYear",
+      message: `must equal ${expectedYear} for completed tick ${state.tick}`,
+    });
+  }
+  return Object.freeze(issues.map((issue) => Object.freeze(issue)));
+}
+
+export function validateCampaignTimelineCoherence(
+  state: Readonly<GameState>,
+  content: ContentBundle,
+): readonly CampaignStateIssue[] {
+  try {
+    assertCanonicalSerializable(state);
+  } catch {
+    return Object.freeze([
+      Object.freeze({
+        path: "state",
+        message: "must be a canonical plain serializable object",
+      }),
+    ]);
+  }
+  return validateTrustedCampaignTimelineCoherence(state, content);
+}
+
+export function assertCampaignTimelineCoherent(
+  state: Readonly<GameState>,
+  content: ContentBundle,
+): void {
+  const issues = validateCampaignTimelineCoherence(state, content);
+  if (issues.length > 0) {
+    throw new Error(issues.map(({ path, message }) => `${path}: ${message}`).join("\n"));
+  }
+}
+
+export function assertTrustedCampaignTimelineCoherent(
+  state: Readonly<GameState>,
+  content: ContentBundle,
+): void {
+  const issues = validateTrustedCampaignTimelineCoherence(state, content);
   if (issues.length > 0) {
     throw new Error(issues.map(({ path, message }) => `${path}: ${message}`).join("\n"));
   }

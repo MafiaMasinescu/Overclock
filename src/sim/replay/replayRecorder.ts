@@ -2,6 +2,7 @@ import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
 import { SimulatorInvariantError } from "../commands/commandProcessor.ts";
 import { createProductionSimCore } from "../core/productionSimCore.ts";
 import { createInitialGameState } from "../core/createInitialGameState.ts";
+import { assertCanonicalSerializable } from "./canonicalState.ts";
 import { TickSystemInvariantError } from "../core/simCore.ts";
 import type { SimCore } from "../core/simCore.ts";
 import type { GameState } from "../core/types.ts";
@@ -263,6 +264,7 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
   if (initialState === undefined && seed === undefined) {
     throw new TypeError("Replay recording requires an initialState or seed.");
   }
+  if (initialState !== undefined) assertCanonicalSerializable(initialState);
   if (initialState !== undefined && seed !== undefined && initialState.seed !== seed) {
     throw new TypeError("Replay recording seed must match the supplied initial state.");
   }

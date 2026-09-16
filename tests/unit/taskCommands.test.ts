@@ -136,12 +136,12 @@ describe("Task command handlers", () => {
 
   test("rejects offer-year, prerequisite, existing-instance, and slot-capacity acceptance failures", () => {
     const early = createState();
-    early.campaign.currentYear = 1945;
+    early.tasks.offers = ["task-reactor-diffusion-study"];
     const earlyCore = createCore(early);
     expect(
       process(earlyCore, 3, {
         kind: "ACCEPT_TASK",
-        definitionId: "task-ballistic-table-verification",
+        definitionId: "task-reactor-diffusion-study",
       }),
     ).toMatchObject({ code: "TASK_REQUIREMENT_MISSING", parameters: { reason: "offer-year" } });
 

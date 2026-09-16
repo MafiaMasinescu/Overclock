@@ -105,6 +105,12 @@ seed, and queue position, then constructs a cold independent production core and
 remaining entries. Fatal or pending-queue boundaries cannot resume. Caches, witnesses, registries,
 pending commands, and scratch data are never serialized.
 
+Verified in-memory resume is not durable persistence, autosave, migration, save integrity, or
+worker recovery. Phase 2 must define queue ownership, persistence, compatibility, and recovery
+boundaries before implementing those systems. Canonical FNV hashes diagnose determinism and
+compatibility; they are not the future SHA-256 integrity envelope, and SHA-256 alone would not
+authenticate an envelope against an adversary able to rewrite it.
+
 ### Trusted data, ownership, and performance
 
 Replay-owned inputs are checked for canonical serializability before strict parsing. Exact object

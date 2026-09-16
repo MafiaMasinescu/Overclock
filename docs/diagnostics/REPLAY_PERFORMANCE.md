@@ -47,8 +47,14 @@ serialized log. The production recorder and runner never accept arbitrary replac
 - Timing source: `process.hrtime.bigint()`.
 - Environment: Node development TypeScript execution; fixture construction excluded.
 - Reported fields: median, p95, maximum, and sample count.
+- Runtime metadata: every run prints the actual CPU model, OS release, architecture, Node version,
+  and build mode. A run is labelled `verified-target` only when every reported logical CPU has the
+  precisely normalized Intel Core i7-2600 CPU @ 3.40GHz model and the host is Windows x64.
+  Unknown, mixed, virtualized, mismatched, or ambiguous metadata is `non-gating-host`.
+- Host classification identifies hardware only. It cannot prove background-load isolation; record
+  execution conditions separately and retain every final run, including misses.
 
-## Latest measured run
+## Latest measured target-host run
 
 Environment:
 
@@ -62,21 +68,21 @@ Environment:
 
 | Path | Median | p95 | Maximum | Samples |
 | --- | ---: | ---: | ---: | ---: |
-| Direct production `step(1)` | 1.9134 ms | 3.2388 ms | 17.0506 ms | 200 |
-| Recording production `step(1)`, no checkpoint | 1.9752 ms | 3.5094 ms | 37.7337 ms | 200 |
-| Playback production trace | 1.5553 ms | 2.4196 ms | 39.3546 ms | 200 |
-| Enqueue recording | 0.0555 ms | 0.1013 ms | 0.5076 ms | 1,000 |
-| Clock recording | 0.0654 ms | 0.1103 ms | 2.6800 ms | 1,000 |
-| Command-only processing | 1.0938 ms | 2.1626 ms | 4.1821 ms | 200 |
-| Full-state checkpoint serialization/hash | 45.8550 ms | 60.9550 ms | 74.8011 ms | 200 |
-| Simulation-content fingerprint (`hashSimulationContent`) | 4.8723 ms | 7.0430 ms | 11.5007 ms | 200 |
-| Strict Replay parsing | 1.1426 ms | 1.9777 ms | 3.0406 ms | 200 |
-| Normal Replay finalization | 14.9664 ms | 19.8375 ms | 30.0898 ms | 200 |
-| Normal end-to-end Replay | 105.9737 ms | 134.5951 ms | 215.3439 ms | 200 |
-| Expected-fatal Replay | 37.5477 ms | 48.5775 ms | 61.1756 ms | 200 |
-| Resume artifact verification/construction | 124.0967 ms | 151.2408 ms | 223.3291 ms | 200 |
-| Resumed remaining execution | 48.5795 ms | 59.7033 ms | 72.0545 ms | 200 |
-| Cold production `SimCore` construction | 30.0061 ms | 40.5402 ms | 50.8269 ms | 200 |
+| Direct production `step(1)` | 1.9410 ms | 3.3762 ms | 23.1686 ms | 200 |
+| Recording production `step(1)`, no checkpoint | 1.6456 ms | 3.0821 ms | 45.3486 ms | 200 |
+| Playback production trace | 1.4629 ms | 2.4299 ms | 42.9997 ms | 200 |
+| Enqueue recording | 0.0469 ms | 0.1028 ms | 3.3401 ms | 1,000 |
+| Clock recording | 0.0582 ms | 0.1104 ms | 1.4483 ms | 1,000 |
+| Command-only processing | 1.2638 ms | 2.0618 ms | 3.7767 ms | 200 |
+| Full-state checkpoint serialization/hash | 42.3369 ms | 56.9143 ms | 66.2480 ms | 200 |
+| Simulation-content fingerprint (`hashSimulationContent`) | 4.4622 ms | 6.7192 ms | 8.0119 ms | 200 |
+| Strict Replay parsing | 0.8987 ms | 1.6045 ms | 2.2094 ms | 200 |
+| Normal Replay finalization | 13.1661 ms | 16.4418 ms | 24.2424 ms | 200 |
+| Normal end-to-end Replay | 93.4739 ms | 105.5317 ms | 113.4280 ms | 200 |
+| Expected-fatal Replay | 33.0164 ms | 40.9194 ms | 46.5849 ms | 200 |
+| Resume artifact verification/construction | 111.9854 ms | 124.1457 ms | 153.2572 ms | 200 |
+| Resumed remaining execution | 42.5266 ms | 50.1989 ms | 60.0014 ms | 200 |
+| Cold production `SimCore` construction | 30.2879 ms | 38.8901 ms | 45.0485 ms | 200 |
 
 ## Gate interpretation
 
@@ -86,7 +92,7 @@ The Task 14 hard references on an i7-2600 are:
 - recording warm production p95 `<5 ms`;
 - playback warm production p95 `<5 ms`.
 
-The latest unfiltered run measured `3.2388 ms`, `3.5094 ms`, and `2.4196 ms`, respectively, so all
+The latest unfiltered run measured `3.3762 ms`, `3.0821 ms`, and `2.4299 ms`, respectively, so all
 three hard references passed. No formula, gameplay threshold, fixture complexity, sample count,
 assertion, or Replay semantic was changed for this final rerun. Checkpoint hashing, content
 fingerprinting, parsing/finalization, complete Replay, resume, and cold construction have no
@@ -94,6 +100,11 @@ ordinary-tick hard reference and remain separate measurements.
 
 The preferred wrapper overhead reference is direct p95 plus 1 ms. The measured wrapper lines are
 reported honestly; the hard references take precedence over the preferred overhead guideline.
+
+Runs on a `non-gating-host` still execute and report every unchanged sample, fixture, percentile,
+and threshold, but they do not certify or fail the documented i7-2600 target gate. The diagnostic
+does not retry until a favorable sample appears and does not put host labels into authoritative
+state, Replay logs, or canonical gameplay hashes.
 
 ## Audit rules
 

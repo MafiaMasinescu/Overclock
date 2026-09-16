@@ -16,7 +16,8 @@ import {
 } from "./commandHandlers.ts";
 import { CommandQueue } from "./commandQueue.ts";
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
-import { assertValidCampaignState } from "../campaign/campaignDomain.ts";
+import { assertTrustedCampaignTimelineCoherent } from "../campaign/campaignDomain.ts";
+import { resolveSimulatorContent } from "../core/simulatorContent.ts";
 
 export const SIMULATOR_INVARIANT_VIOLATION = "SIMULATOR_INVARIANT_VIOLATION" as const;
 
@@ -53,14 +54,14 @@ function validateCandidateState(
   expectedTick: number,
   minimumModuleInstanceSequence: number,
   minimumRouteSequence: number,
-  content?: ContentBundle,
+  content: ContentBundle,
 ): void {
   assertCanonicalSerializable(candidate);
   if (candidate.tick !== expectedTick) {
     throw new Error("Command handlers must not advance or replace the current simulation tick.");
   }
   assertValidInventoryEconomyState(candidate);
-  if (content !== undefined) assertValidCampaignState(candidate.campaign, content);
+  assertTrustedCampaignTimelineCoherent(candidate, content);
   assertValidDesignModeState(candidate, minimumModuleInstanceSequence, minimumRouteSequence);
   assertValidStoredTaskState(candidate);
   assertValidStoredResearchState(candidate);
@@ -97,15 +98,16 @@ export class CommandProcessor {
   private readonly state: AuthoritativeState;
   private readonly handlers: CommandHandlerRegistry;
   private readonly queue: CommandQueue;
-  private readonly content: ContentBundle | undefined;
+  private readonly content: ContentBundle;
 
   constructor(
     { initialState, content, handlers = {} }: CommandProcessorOptions,
     dependencies: CommandProcessorDependencies = {},
   ) {
-    this.content = content;
+    this.content = resolveSimulatorContent(content);
+    assertCanonicalSerializable(initialState);
     assertValidInventoryEconomyState(initialState);
-    if (content !== undefined) assertValidCampaignState(initialState.campaign, content);
+    assertTrustedCampaignTimelineCoherent(initialState, this.content);
     assertValidDesignModeState(initialState);
     assertValidStoredTaskState(initialState);
     assertValidStoredResearchState(initialState);

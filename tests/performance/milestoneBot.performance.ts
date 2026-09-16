@@ -197,14 +197,8 @@ function main(): void {
     return { core, entry: fixture.entry };
   });
   const measurements = {
-    campaignWarmNoChange: measure(
-      () => calculateCampaignYearForCompletedTick(1946, 1, content),
-      1_000,
-    ),
-    campaignTransition: measure(
-      () => calculateCampaignYearForCompletedTick(1946, 12_000, content),
-      200,
-    ),
+    campaignWarmNoChange: measure(() => calculateCampaignYearForCompletedTick(1, content), 1_000),
+    campaignTransition: measure(() => calculateCampaignYearForCompletedTick(12_000, content), 200),
     policyDecision: measure(
       () =>
         selectBaselineDecision({

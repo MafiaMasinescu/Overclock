@@ -25,7 +25,11 @@ import {
 } from "./tickSystems.ts";
 import type { GameState } from "./types.ts";
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
-import { assertValidCampaignState } from "../campaign/campaignDomain.ts";
+import {
+  assertTrustedCampaignTimelineCoherent,
+  assertValidCampaignBranchStructure,
+} from "../campaign/campaignDomain.ts";
+import { resolveSimulatorContent } from "./simulatorContent.ts";
 
 const UINT32_MAX = 0xffff_ffff;
 
@@ -74,7 +78,7 @@ function assertValidRngState(rngState: number): void {
 }
 
 function assertValidClockAndTick(state: GameState): void {
-  if (!Number.isSafeInteger(state.tick) || state.tick < 0) {
+  if (!Number.isSafeInteger(state.tick) || state.tick < 0 || Object.is(state.tick, -0)) {
     throw new Error("Simulation tick must be a nonnegative safe integer.");
   }
   if (!Number.isFinite(state.clock.simulatedSeconds) || state.clock.simulatedSeconds < 0) {
@@ -271,11 +275,12 @@ function createQueuedCommandHandlers(
 }
 
 export class SimCore {
-  private readonly content: ContentBundle | undefined;
+  private readonly content: ContentBundle;
   private readonly authoritativeState: AuthoritativeState;
   private readonly commandQueue: CommandQueue;
   private readonly commandProcessor: CommandProcessor;
-  private readonly tickSystems: TickSystemRuntimeRegistry;
+  private tickSystems: TickSystemRuntimeRegistry;
+  private readonly tickSystemRegistrations: TickSystemRegistry;
   private readonly runsTickSystems: boolean;
   private readonly runsMutableTickSystems: boolean;
 
@@ -286,24 +291,28 @@ export class SimCore {
     tickSystems = {},
     initialCommandQueueSequence = 0,
   }: SimCoreOptions) {
-    this.content = content;
+    this.content = resolveSimulatorContent(content);
+    assertCanonicalSerializable(initialState);
     assertValidClockAndTick(initialState);
-    if (content !== undefined) assertValidCampaignState(initialState.campaign, content);
+    assertTrustedCampaignTimelineCoherent(initialState, this.content);
     assertValidStoredComputeState(initialState);
     assertValidDesignModeState(initialState);
     assertValidStoredTaskState(initialState);
     assertValidStoredResearchState(initialState);
     assertValidStoredBenchmarkState(initialState);
     assertValidBlueprintState(initialState.blueprints);
-    assertCanonicalSerializable(initialState);
-
     this.authoritativeState = new AuthoritativeState(initialState);
     this.commandQueue = new CommandQueue(initialCommandQueueSequence);
     this.commandProcessor = new CommandProcessor(
-      { initialState, content, handlers: createQueuedCommandHandlers(commandHandlers ?? {}) },
+      {
+        initialState,
+        content: this.content,
+        handlers: createQueuedCommandHandlers(commandHandlers ?? {}),
+      },
       { state: this.authoritativeState, queue: this.commandQueue },
     );
-    this.tickSystems = createTickSystemRuntimes(Object.freeze({ ...tickSystems }));
+    this.tickSystemRegistrations = Object.freeze({ ...tickSystems });
+    this.tickSystems = createTickSystemRuntimes(this.tickSystemRegistrations);
     this.runsTickSystems = hasRegisteredSystem(this.tickSystems);
     this.runsMutableTickSystems = TICK_SYSTEM_STAGE_ORDER.some(
       (stage) => this.tickSystems[stage]?.executionMode === "mutable-clone",
@@ -390,7 +399,7 @@ export class SimCore {
     const snapshot = this.authoritativeState.snapshot();
     try {
       assertValidClockAndTick(snapshot);
-      if (this.content !== undefined) assertValidCampaignState(snapshot.campaign, this.content);
+      assertTrustedCampaignTimelineCoherent(snapshot, this.content);
       assertValidStoredComputeState(snapshot);
       assertValidStoredTaskState(snapshot);
       assertValidStoredResearchState(snapshot);
@@ -412,11 +421,9 @@ export class SimCore {
     if (this.commandProcessor.pendingCommandCount !== 0) {
       throw new Error("Cannot replace simulator state while commands are pending.");
     }
-    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
-      this.tickSystems[stage]?.clearDerivedState?.();
-    }
+    assertCanonicalSerializable(state);
     assertValidClockAndTick(state);
-    if (this.content !== undefined) assertValidCampaignState(state.campaign, this.content);
+    assertTrustedCampaignTimelineCoherent(state, this.content);
     assertValidStoredComputeState(state);
     assertValidInventoryEconomyState(state);
     assertValidDesignModeState(state);
@@ -424,11 +431,18 @@ export class SimCore {
     assertValidStoredResearchState(state);
     assertValidStoredBenchmarkState(state);
     assertValidBlueprintState(state.blueprints);
-    assertCanonicalSerializable(state);
-    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
-      this.tickSystems[stage]?.validateLifecycleState?.(state);
-    }
+    const replacementTickSystems = this.createValidatedReplacementRuntimes(state);
+    const retiredTickSystems = this.tickSystems;
     this.authoritativeState.replaceSnapshot(state);
+    this.tickSystems = replacementTickSystems;
+    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
+      try {
+        retiredTickSystems[stage]?.clearDerivedState?.();
+      } catch {
+        // The old runtime is already detached. Cleanup diagnostics cannot roll back the promoted
+        // authoritative state or poison the replacement runtime.
+      }
+    }
   }
 
   private executeTickSystemsAndCommit(): void {
@@ -497,11 +511,8 @@ export class SimCore {
             "Later tick stages must preserve the Task/Benchmark-owned Benchmark branch.",
           );
         }
-        if (
-          this.content !== undefined &&
-          (this.runsMutableTickSystems || candidate.campaign !== validatedCampaign)
-        ) {
-          assertValidCampaignState(candidate.campaign, this.content);
+        if (this.runsMutableTickSystems || candidate.campaign !== validatedCampaign) {
+          assertValidCampaignBranchStructure(candidate.campaign, this.content);
           validatedCampaign = candidate.campaign;
         }
         if (
@@ -609,7 +620,7 @@ export class SimCore {
     };
     assertValidClockAndTick(completed);
     if (!computeAlreadyValidated) assertValidStoredComputeState(completed);
-    if (this.content !== undefined) assertValidCampaignState(completed.campaign, this.content);
+    assertTrustedCampaignTimelineCoherent(completed, this.content);
     assertValidStoredTaskState(completed);
     assertValidStoredResearchState(completed);
     if (!benchmarkAlreadyValidated) assertValidStoredBenchmarkState(completed);
@@ -627,5 +638,15 @@ export class SimCore {
     ) {
       throw new Error("Tick systems must not alter host-controlled clock fields.");
     }
+  }
+
+  private createValidatedReplacementRuntimes(
+    state: Readonly<GameState>,
+  ): TickSystemRuntimeRegistry {
+    const validationRuntimes = createTickSystemRuntimes(this.tickSystemRegistrations);
+    for (const stage of TICK_SYSTEM_STAGE_ORDER) {
+      validationRuntimes[stage]?.validateLifecycleState?.(state);
+    }
+    return validationRuntimes;
   }
 }

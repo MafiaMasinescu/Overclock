@@ -2,7 +2,9 @@
 
 Acest pachet transformă viziunea din GDD într-un plan executabil pentru vertical slice 0.1.
 
-Versiunea Word a documentului tehnic se află în `docs/OVERCLOCK_TDD_Vertical_Slice_v1.0.docx`. Versiunea Markdown din `docs/TDD_VERTICAL_SLICE.md` rămâne sursa potrivită pentru Codex și versionare Git.
+Versiunile Word din `docs/` sunt referințe arhivale byte-identice cu build pack-ul inițial. ADR-urile
+acceptate și contractele Markdown reconciliate guvernează implementarea curentă; fișierele Word nu
+sunt sincronizate binar cu evoluția proiectului.
 
 ## Ce construim acum
 
@@ -243,8 +245,9 @@ reported separately without an ordinary-tick gate. See
 `docs/diagnostics/REPLAY_PERFORMANCE.md` for the permanent contract and latest diagnostic evidence.
 
 Task 14 Replay remains an in-memory diagnostic layer over the real production `SimCore`. It does not
-implement Task 15, save repositories, workers, UI, events, leaderboards, remote verification, or
-export/import.
+implement durable save repositories, migrations, autosave, worker recovery, UI, events,
+leaderboards, remote verification, or export/import. Task 15 and the milestone bot are implemented;
+they do not turn Replay resume into persistence.
 
 ## Task 15 milestone bot diagnostic
 
@@ -267,8 +270,9 @@ the first finite Task between ticks 1,780 and 1,790, records the first persisten
 30,270. Maximum forced deadtime is 2,990 ticks. The approved Task 15.7 balance corrections and the
 audited i7-2600 evidence are recorded in `docs/diagnostics/MILESTONE_BOT.md`.
 
-Task 15 closes the Phase 1 headless simulator. UI, save repositories, workers, analytics, and other
-Phase 2 work remain separate.
+Task 15 closes the Phase 1 headless simulator. Phase 2 owns persistence, workers, the real client
+and selectors; Build Workspace UI is Phase 3, gameplay UI is Phase 4, and release hardening is
+Phase 5.
 
 ## Regula de calitate
 

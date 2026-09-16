@@ -1,10 +1,10 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-12
+Updated: 2026-09-16
 
 ## Current phase
 
-- Phase 1: Headless Simulator, complete through Task 15.
+- Phase 1: Headless Simulator, closed through Task 15 and the ADR-0022 Campaign coherence repair.
 - Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
   `8e80b00` and explicitly approved on 18 August 2026.
 - Completed checkpoint: Task 5.1, deterministic grid geometry, occupancy, footprint rotation, port
@@ -58,8 +58,7 @@ Updated: 2026-09-12
   `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`, `ACCEPT_TASK`, `ALLOCATE_TASK`, `SET_TASK_HOLD`,
   `ABANDON_TASK`, `START_RESEARCH`, `CANCEL_RESEARCH`, `SAVE_BLUEPRINT`,
   `INSTANTIATE_BLUEPRINT`, `RENAME_BLUEPRINT`, `START_BENCHMARK`, and `CANCEL_BENCHMARK`.
-  Production
-  gameplay tick systems are Task 6's `calculate-power-demand-and-delivery`, Task 7's
+  Production gameplay tick systems are Task 6's `calculate-power-demand-and-delivery`, Task 7's
   `calculate-heat-generation` and `update-thermal-state`, Task 8's
   `apply-throttling-stability-and-shutdown`, Task 9's `calculate-theoretical-and-useful-compute`, and
   Task 12's canonical combined `advance-tasks-and-benchmarks` stage and Task 11's
@@ -89,10 +88,9 @@ Updated: 2026-09-12
 - `CommandHandlerRegistry` is partial and preserves kind-specific command payload typing through
   `Extract<SimCommand, { kind: K }>`.
 - Exhaustive dispatch makes a new `SimCommand` kind a compile-time error until dispatch is updated.
-- Task 2 registered no production handlers. Task 4 adds an explicit content-injected factory for
-  the two inventory commands, and Task 5.2/5.3 add one for the eight available Design Mode commands.
-  All other
-  queued gameplay commands remain unavailable unless tests inject a private handler.
+- Historical Task 2 registered no production handlers. The current production-handler list is the
+  complete list in `Current phase` above; later tasks populated that same command processor without
+  adding a second execution path.
 
 ## Phase 1 Task 3 implementation
 
@@ -111,8 +109,10 @@ Updated: 2026-09-12
   expected-tick checks and idempotent acceptance, without consuming queue sequence.
 - `SimCore` statically excludes clock handlers from its queued-handler registry and removes them
   from unsafe runtime injection, preserving queued `COMMAND_NOT_AVAILABLE` behavior.
-- The complete 15-stage TDD order is an explicit tuple. Production registers none of the 13 later
-  gameplay stages; private tests may inject a narrow typed partial registry.
+- The complete 15-stage TDD order is an explicit tuple. Historical Task 3 registered none of the
+  later gameplay stages; seven current production domain registries occupy eight stage slots
+  because Thermal owns separate generation and update stages. Remaining tuple slots are explicit
+  no-ops until their owning phases define them.
 - Tick systems run against an isolated candidate and seeded RNG. State, resulting RNG, completed
   tick, and derived time commit together only after every stage succeeds.
 - Candidate invariants are checked after each executed stage for accurate diagnostics. Successful
@@ -751,10 +751,9 @@ and the permanent Research diagnostic; Task 7/8 behavioral projections remain un
 
 Task 6.1 is checkpointed at `06f6e7893fe8b6ef181375ee1a159f8b11aa2afc`; Task 7, Task 8, and Task 9.1
 through Task 9.5 are complete. Task 10 is complete under ADR-0016 at its single final checkpoint
-boundary. Task 11 is complete at its single checkpoint-neutral boundary under ADR-0017. Task 12 is
-complete at its single checkpoint-neutral boundary under ADR-0018. Task 13 is complete at its
-single checkpoint-neutral boundary under ADR-0019; Task 14 Replay recording and verification is
-complete, and Task 15 milestone-timing bot remains deferred.
+boundary. Task 11 is complete under ADR-0017, Task 12 under ADR-0018, Task 13 under ADR-0019,
+Task 14 under ADR-0020, and Task 15 under ADR-0021. ADR-0022 repairs Campaign admission/output
+coherence and reconciles Phase 1 closure without beginning Phase 2.
 
 ## Phase 1 Task 6 implementation
 
@@ -859,21 +858,20 @@ not alter that implementation, fixture, threshold, sample count, warm-up, or sem
 Task 12 does not add workload-dependent Power/Heat, random failures, UI, events, leaderboards,
 saves/replay, workers, or Task 13 behavior; Task 13.1 is documented in the following section.
 
-## Explicitly deferred
+## Explicitly deferred after Phase 1 closure
 
 - Real-time tick scheduling, timers, catch-up, pause/speed host scheduling, and worker integration.
-- Every production gameplay command handler except `BUY_MODULE`, `SELL_INVENTORY_ITEM`,
-  `ENTER_DESIGN_MODE`, `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`,
-  `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`,
-  `CANCEL_DESIGN`, `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`, `ACCEPT_TASK`,
-  `ALLOCATE_TASK`, `SET_TASK_HOLD`, `ABANDON_TASK`, `START_RESEARCH`, and `CANCEL_RESEARCH`.
 - Automatic energy deductions, power capacity purchases, labor and relocation costs, Research
   staffing or maintenance beyond the approved lifecycle, inflation, market events, scarcity,
   financing, interest, insolvency, bailout, bankruptcy, and financial game over.
 - Installed-module sales, auto-connect, auto-route, pathfinding, rerouting, and route preview.
-- Replay execution, balancing bot, Research UI, Research events, and later progression features
-  outside the approved lifecycle boundaries.
-- React/Pixi integration, IndexedDB, save/load, migrations, export, and import.
+- Phase 2: worker host, durable persistence/recovery, real client/store and selectors,
+  transport-level snapshots/events, IndexedDB, autosave, migrations, export, and import.
+- Phase 3: React/Pixi Build Workspace, auto-connect/A* routing, renderer patch consumption, and
+  heatmap UI.
+- Phase 4: gameplay UI/events/alerts, achievements/tutorial behavior, and future contracts for
+  workload-dependent Power/Heat and automatic energy settlement if retained.
+- Phase 5: cross-browser, accessibility, asset, packaging, and release-candidate hardening.
 
 ## Task 13.1: Deterministic Blueprint contracts and authoritative state
 
@@ -892,9 +890,9 @@ changes serialized compatibility hashes; the explicit old/new initial-state vect
 Task 7/8/10 vectors are recorded in ADR-0019 and tests. `saveVersion`, `contentVersion`,
 `balancing.json`, and module numeric content are unchanged.
 
-Task 13.6 adds the permanent Blueprint diagnostic and closes the compatibility/documentation
-boundary. Task 13 has one final checkpoint, and the active roadmap proceeds from Task 13 to Task 14
-Replay recording and verification, then Task 15 milestone-timing bot.
+Historical planning note: Task 13.6 added the permanent Blueprint diagnostic and closed the
+compatibility/documentation boundary; Task 14 Replay and Task 15 milestone timing were subsequently
+implemented.
 
 ## Task 13.5: INSTANTIATE_BLUEPRINT and atomic Design Mode history
 
@@ -912,9 +910,9 @@ IDs without allocating again. Operation parsing rejects malformed or tampered fr
 route endpoint ownership, and reservation payloads. The implementation preserves active Benchmark
 allowance for draft edits and the existing Benchmark exclusivity guard on Apply.
 
-Task 13.6 adds the permanent Blueprint diagnostic and closes the compatibility/documentation
-boundary. The roadmap proceeds from Task 13 to Task 14 Replay recording and verification, then
-Task 15 milestone-timing bot.
+Historical planning note: Task 13.6 added the permanent Blueprint diagnostic and closed the
+compatibility/documentation boundary; Task 14 Replay and Task 15 milestone timing were subsequently
+implemented.
 
 ## Task 13.6: Blueprint performance and permanent documentation
 
@@ -947,8 +945,8 @@ from `1ac5a1d2a3739390` to `539d230076b51eda`, while the prior Blueprint-exclude
 `1ac5a1d2a3739390`. Existing Task 7, Task 8, and Task 10 vectors retain their prior behavioral
 projections. `saveVersion`, `contentVersion`, balancing data, and module numeric content are
 unchanged. Export/import, nested Blueprints, definition editing, propagation, facility-zone
-instantiation, premiums, automation, UI/events, save/replay transport, workers, provenance
-enforcement, and Task 15 remain deferred.
+instantiation, premiums, automation, UI/events, durable save transport, workers, and provenance
+enforcement remain deferred to their owning later phases. Task 15 is implemented.
 
 ## Task 14: Deterministic Replay recording, verification, and resume
 
@@ -997,8 +995,9 @@ ms` over 200 samples, passing the hard references of `<4/<5/<5 ms`. The run filt
 changed no thresholds, fixture work, formulas, or Replay semantics. Metadata, checkpoint, parsing,
 finalization, complete Replay, resume, and cold construction costs remain reported separately.
 
-Task 14 excludes the Task 15 bot implementation, save repositories, migrations, JSON/file transport,
-IndexedDB, workers, UI, events, analytics, leaderboards, remote verification, and export/import.
+Historically, Task 14 excluded the then-future Task 15 bot. Task 15 is now implemented. Durable save
+repositories, migrations, JSON/file transport, IndexedDB, workers, UI, events, analytics,
+leaderboards, remote verification, and export/import remain outside Task 14.
 Task 14 and its Task 14.7 post-checkpoint hardening are complete at a checkpoint-neutral Replay
 boundary. Task 15 is documented in the following section.
 
@@ -1038,11 +1037,54 @@ The permanent diagnostic is `corepack pnpm balance:milestones`, with detailed ev
 `docs/diagnostics/MILESTONE_BOT.md`. The canonical baseline completes at tick 30,270 with fresh
 Replay `matched`, unchanged RNG, first Task `(1,780, 1,790]`, blocker `(3,560, 3,570]`, Blueprint
 tick 7,620, exact 1947/1948 ticks 12,000/24,000, both Benchmarks passed, Transistor reveal and
-completion `(30,260, 30,270]`, and maximum forced deadtime 2,990. Task 15 closes Phase 1. Task 16,
-UI, save repositories, workers, analytics, and Phase 2 remain deferred.
+completion `(30,260, 30,270]`, and maximum forced deadtime 2,990. Task 15 closes Phase 1. UI,
+save repositories, workers, analytics, and the reconciled Phase 2+ roadmap remain deferred.
 
 The final unchanged-fixture diagnostic was run twice in separate clean processes. Both runs
 reproduced all campaign and compatibility hashes. The first missed the direct-production and Replay
 recording p95 limits at `4.0002 ms` and `5.3677 ms`; the second passed every hard gate at
 `3.5477 ms` direct, `3.4560 ms` recording, and `4.0512 ms` playback p95. No results were averaged
 and no fixture, sample, warm-up, threshold, or simulation behavior changed.
+
+## Task 15.8: Campaign coherence and Phase 1 closure
+
+ADR-0022 makes `campaign.currentYear` an exact redundant projection of completed `tick`. Structural
+Campaign validation is separate from full-state timeline validation. Production construction,
+replacement, detached save output, Replay recording/playback/resume boundaries, and every committed
+tick reject impossible tick/year pairs. The Campaign stage validates its prospective completed tick
+before host-owned tick advancement, and the final committed candidate is certified afterward.
+Task/Benchmark still precedes Campaign, so year-gated offers retain their established one-tick
+visibility delay. Direct simulator construction resolves bundled validated content when explicit
+content is omitted. Replay checks external ownership before cloning, the public full-state validator
+is accessor-safe, and replacement lifecycle checks use isolated candidate runtimes. Rejected input
+cannot poison live evidence; an accepted replacement promotes the validated candidate runtimes so
+the first following tick has evidence for the new state. Retired runtime cleanup is best-effort
+after detachment, so a throwing callback cannot corrupt retained authority. Save retains its
+targeted lifecycle validation. Valid milestone hashes and RNG behavior are unchanged.
+
+The active roadmap is now Phase 2 persistence/worker/client integration, Phase 3 Build Workspace,
+Phase 4 Playable Loop, and Phase 5 Browser RC. Tauri remains a separate post-RC phase. This ownership
+assignment does not implement or technically solve those deferred systems.
+
+The Phase 1 closure candidate passed two independent complete runs of 1,220 unit and 22 determinism
+tests, `pnpm validate`, and all six pinned Chromium E2E cases. The initial 16-diagnostic matrix ran
+on the verified i7-2600 target; Replay p95 was `3.3762/3.0821/2.4299 ms` for direct, recording, and
+playback. The baseline and duplicate baseline retained completion tick 30,270, year ticks
+12,000/24,000, RNG `1853565737`, and hashes `43f71088b7b8afe6`, `a1a59919e8295897`,
+`f2be68edc3374681`, and `957959d2decef0e1`. Review corrected six Important admission/ownership
+issues: clone-before-validation in Replay, optional content in direct simulator construction,
+rejected replacement validation mutating live runtime evidence, accepted replacement losing the
+new runtime evidence, throwing retirement cleanup corrupting the retained runtime, and
+accessor-unsafe direct use of the public full-state Campaign validator. Final verification also made
+the unrelated high-tick pipeline
+diagnostic coherent by registering Campaign without changing its sample counts or thresholds.
+
+After the accepted-replacement correction, the affected Blueprint diagnostic passed. Two retained
+Benchmark runs missed only the unchanged pure p95 `<0.10 ms` gate at `0.1035 ms` and `0.1559 ms`;
+their combined and complete-production gates passed. No diagnostic or Benchmark semantics were
+changed. On 2026-09-16, the project owner accepted those two misses as a temporary Task 15.8
+checkpoint exception because the target PC was concurrently loaded with multiple applications.
+That explanation is plausible but not technically proven by host detection. The threshold remains
+unchanged, the measurements remain failures rather than technical passes, and the exception does
+not apply to any other gate or future run. Phase 1 checkpoint publication is authorized with an
+isolated target-host rerun retained as follow-up evidence.
