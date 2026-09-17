@@ -423,14 +423,14 @@ Updated: 2026-09-16
   `2.1939 ms` across 200 samples on the i7-2600. Cold/rebuild/transition paths remain separately
   reported; the preferred integrated `< 1 ms` p95 headroom remains a future opportunity.
 
-| Audited Task 7.4 path | Median | p95 | Maximum | Samples |
-| --- | ---: | ---: | ---: | ---: |
-| Cold thermal topology construction | 0.2109 ms | 0.4703 ms | 1.0104 ms | 200 |
-| Warm pure heat generation plus update | 0.2215 ms | 0.4173 ms | 1.2694 ms | 500 |
-| Warm complete Power plus thermal production tick | 1.0960 ms | 2.1939 ms | 4.1767 ms | 200 |
-| Dirty-layout rebuild production tick | 3.0399 ms | 4.7943 ms | 12.6301 ms | 200 |
-| Startup Power-transition production tick | 1.4260 ms | 2.2970 ms | 3.1257 ms | 200 |
-| Forced thermal validation path | 0.1263 ms | 0.1516 ms | 0.2333 ms | 200 |
+| Audited Task 7.4 path                            |    Median |       p95 |    Maximum | Samples |
+| ------------------------------------------------ | --------: | --------: | ---------: | ------: |
+| Cold thermal topology construction               | 0.2109 ms | 0.4703 ms |  1.0104 ms |     200 |
+| Warm pure heat generation plus update            | 0.2215 ms | 0.4173 ms |  1.2694 ms |     500 |
+| Warm complete Power plus thermal production tick | 1.0960 ms | 2.1939 ms |  4.1767 ms |     200 |
+| Dirty-layout rebuild production tick             | 3.0399 ms | 4.7943 ms | 12.6301 ms |     200 |
+| Startup Power-transition production tick         | 1.4260 ms | 2.2970 ms |  3.1257 ms |     200 |
+| Forced thermal validation path                   | 0.1263 ms | 0.1516 ms |  0.2333 ms |     200 |
 
 The measurement used Node `v24.11.0`, V8 JIT/type stripping, Windows `10.0.19045` x64, and an Intel
 i7-2600. Each direct path had 100 unmeasured warm-up iterations; fixture construction and state
@@ -1118,4 +1118,37 @@ full current-content/GameState admission into public encode and decode, closes p
 accounting, rejects concatenated gzip members, stabilizes domain error mapping, preserves valid
 negative-cash previews, and keeps parser output unadmitted until full verification. Exact-100 codec
 determinism, real Chromium none/gzip round-trip, full validation, and the dense target-host diagnostic
-are permanent gates. Task 17 is the next roadmap group; Worker, UI, autosave and recovery remain later.
+are permanent gates. Task 17 builds the durable repository on this boundary; Worker, UI, autosave
+scheduling and recovery remain later roadmap work.
+
+## Phase 2 Task 17: Atomic durable repository
+
+Task 17.1 through 17.4 are complete at the CP17 checkpoint-neutral boundary on the repaired CP16
+base `40955ee1cc258c297cf4cda025efe3d76eb48490`. The independent audit found and corrected two
+Critical and six Important defects in codec integration, cross-tab mutation ownership, the frozen
+IndexedDB schema, upgrade atomicity, preview ordering, external-data parsing, browser evidence and
+performance-fixture fidelity. No Critical or Important finding remains. Task 18 is not part of this
+checkpoint.
+
+The `overclock` version-1 database carries `saves`, `autosaves`, `slotMeta`,
+`settings`, `reports`, and a reserved empty `blueprints` store. Every
+mutation checks writer ownership before revision inside one transaction and
+resolves only on transaction completion. Manual saves and autosaves share a
+monotonic capture sequence; the autosave store uses native compound keys and rotation retains the
+newest three autosaves;
+recovery orders by sequence, never by wall clock. Writer sessions bind Web
+Lock ownership (`overclock-slot:<slotId>`) to fresh writer epochs. Import
+previews fully validate once (checksum, migration, exact content
+fingerprint, fresh-core admission) behind one expiring bound token;
+confirmation acquires the destination Web Lock, rebinds with a fresh checksum and commits slot plus
+optional settings atomically. Inactive-slot deletion uses the same lock ownership boundary. Export
+reads metadata plus bytes atomically and re-verifies them read-only; load admission returns isolated
+admitted candidates. Exact parsers reject accessors, prototype-bearing values, unknown keys, unsafe
+counters, overflow and malformed locators before cloning or arithmetic.
+
+Decisions live in ADR-0024 through ADR-0026. The independent finding record is
+`docs/diagnostics/PHASE_2_TASK_17_AUDIT.md`; target-host and Chromium evidence is in
+`docs/diagnostics/PHASE_2_REPOSITORY.md`. Final verification passed 139 focused tests, two complete
+runs of 1,359 unit plus 23 determinism tests, 19 Chromium tests, validation/build/scans and every
+mandatory i7-2600 save/repository budget. Temporary Task 17 handoffs and execution logs were removed
+after permanent evidence was merged. The exact next group is Phase 2 Task 18.

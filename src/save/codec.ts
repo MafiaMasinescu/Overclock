@@ -1,6 +1,6 @@
 import { canonicalSerialize } from "../sim/replay/canonicalState.ts";
 import type { ContentBundle } from "../content/schemas/contentSchemas.ts";
-import type { SaveEnvelope, SavePayloadV1 } from "./contracts.ts";
+import type { SaveEnvelope, SavePayloadV1, UnadmittedSavePayloadV1 } from "./contracts.ts";
 import { migrateSavePayload } from "./migrations.ts";
 import { PersistenceError } from "./persistenceErrors.ts";
 import {
@@ -39,6 +39,11 @@ export interface DecodeSaveOptions {
   readonly signal?: AbortSignal;
 }
 
+export interface InspectSaveEnvelopeOptions {
+  readonly adapters?: SaveCodecAdapters;
+  readonly signal?: AbortSignal;
+}
+
 export interface EncodedSave {
   readonly envelope: SaveEnvelope;
   readonly bytes: Uint8Array;
@@ -48,6 +53,16 @@ export interface EncodedSave {
 
 export interface DecodedSave {
   readonly payload: SavePayloadV1;
+  readonly sourceSchemaVersion: number;
+  readonly migrated: boolean;
+  readonly canonicalPayload: string;
+  readonly canonicalPayloadBytes: Uint8Array;
+  readonly compressedBytes: number;
+  readonly uncompressedBytes: number;
+}
+
+export interface InspectedSaveEnvelope {
+  readonly payload: UnadmittedSavePayloadV1;
   readonly sourceSchemaVersion: number;
   readonly migrated: boolean;
   readonly canonicalPayload: string;
@@ -720,6 +735,16 @@ export async function sha256Hex(bytes: Uint8Array, signal?: AbortSignal): Promis
   return getAdapters(undefined).sha256(bytes, signal);
 }
 
+// Serializes an already verified stored envelope to its canonical bytes.
+// Single rule shared by export and load admission so both verify the exact
+// committed generation instead of re-encoding it through divergent paths.
+// Parsing reuses the envelope safety limits (the payload string alone is a
+// legitimate multi-kilobyte string) and returns owned detached data.
+export function encodeEnvelopeBytes(envelope: SaveEnvelope): Uint8Array {
+  const owned = parseSaveEnvelope(envelope);
+  return new TextEncoder().encode(canonicalSerialize(owned));
+}
+
 export async function encodeSaveEnvelope(
   payload: SavePayloadV1,
   options: EncodeSaveOptions,
@@ -759,10 +784,15 @@ export async function encodeSaveEnvelope(
   return { envelope, bytes, canonicalPayload, canonicalPayloadBytes };
 }
 
-export async function decodeSaveEnvelope(
+// Import preview needs to verify and migrate hostile external bytes before it
+// knows whether current content can admit the embedded GameState. This narrow
+// boundary deliberately keeps gameState typed as unknown. Only the import
+// service may turn it into a preview after independent full-state admission;
+// ordinary decode remains the public admitted path below.
+export async function inspectSaveEnvelopeForImport(
   input: Uint8Array,
-  options: DecodeSaveOptions,
-): Promise<DecodedSave> {
+  options: InspectSaveEnvelopeOptions = {},
+): Promise<InspectedSaveEnvelope> {
   const signal = options.signal;
   checkCancelled(signal);
   const bytes = new Uint8Array(input);
@@ -810,14 +840,10 @@ export async function decodeSaveEnvelope(
       "Save payload schema version is unavailable.",
     );
   const migratedPayload = migrateSavePayload(parsedPayload);
-  const payload = admitSavePayloadForContent({
-    payload: migratedPayload,
-    content: options.content,
-  });
   return {
-    payload,
+    payload: migratedPayload,
     sourceSchemaVersion,
-    migrated: sourceSchemaVersion !== payload.schemaVersion,
+    migrated: sourceSchemaVersion !== migratedPayload.schemaVersion,
     canonicalPayload,
     canonicalPayloadBytes,
     compressedBytes:
@@ -826,4 +852,16 @@ export async function decodeSaveEnvelope(
         : decodeBase64(envelope.payload).length,
     uncompressedBytes: canonicalPayloadBytes.length,
   };
+}
+
+export async function decodeSaveEnvelope(
+  input: Uint8Array,
+  options: DecodeSaveOptions,
+): Promise<DecodedSave> {
+  const inspected = await inspectSaveEnvelopeForImport(input, options);
+  const payload = admitSavePayloadForContent({
+    payload: inspected.payload,
+    content: options.content,
+  });
+  return { ...inspected, payload };
 }

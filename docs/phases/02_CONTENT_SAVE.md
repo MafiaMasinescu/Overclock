@@ -72,6 +72,16 @@ admission. The codec enforces bounded canonical bytes, exactly one gzip member, 
 errors and copy-only migration. Native Chromium none/gzip round-trip and target-host dense-fixture
 diagnostics are permanent regression evidence. Task 17 owns durable repository behavior.
 
+Task 17 is complete at its checkpoint-neutral boundary. The version-1 `overclock` IndexedDB schema
+stores manual saves, compound-key autosave generations, slot metadata, settings, reports and the
+reserved Blueprint store. Atomic transactions enforce revision and writer-epoch fencing; Web Locks
+provide same-origin writer exclusion and guard import overwrite and inactive-slot deletion. Exactly
+three newest autosaves are retained. Import preview/confirmation, read-only export and load admission
+compose the repaired Task 16 codec and full current-content admission. Permanent contracts are
+ADR-0024 through ADR-0026; audit and target-host/browser evidence are in the Phase 2 repository
+diagnostics. Task 18 owns snapshot/selectors and must reuse these durable boundaries rather than
+reimplementing them.
+
 The original outline sentence below is archival wording and is superseded by the Task 16 status above;
 the detailed Phase 2 contract is now the normative roadmap for the remaining work.
 

@@ -967,6 +967,33 @@ export interface GameStateAdmissionOptions {
   readonly expectedStateHash?: string;
 }
 
+export interface ImportPreviewStateFields {
+  readonly contentVersion: string;
+  readonly tick: number;
+  readonly currentYear: number;
+  readonly cashUsd: number;
+  readonly verticalSliceCompleted: boolean;
+}
+
+/**
+ * Extracts only immutable scalar fields that an import preview may display
+ * before current-content compatibility is known. This boundary proves the
+ * complete GameState structure first, but deliberately does not claim that
+ * historical content identifiers are valid against the current bundle.
+ */
+export function inspectGameStateForImportPreview(state: unknown): ImportPreviewStateFields {
+  assertStructurallyAdmissibleGameState(state);
+  const owned = cloneOwnedExternalData(state);
+  assertStructurallyAdmissibleGameState(owned);
+  return deepFreeze({
+    contentVersion: owned.contentVersion,
+    tick: owned.tick,
+    currentYear: owned.campaign.currentYear,
+    cashUsd: owned.economy.cashUsd,
+    verticalSliceCompleted: owned.campaign.verticalSliceCompleted,
+  });
+}
+
 type OwnedGameStateAdmissionOptions = GameStateAdmissionOptions;
 
 function admitOwnedGameStateForSave(options: OwnedGameStateAdmissionOptions): GameState {

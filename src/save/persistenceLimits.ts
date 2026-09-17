@@ -14,6 +14,7 @@ export const MAX_OBJECT_ENTRIES = 100_000;
 export const MAX_OBJECT_KEY_UTF16_UNITS = 256;
 export const MAX_STRING_UTF16_UNITS = 16_384;
 export const MAX_ORDINARY_SLOT_COUNT = 20;
+export const MAX_AUTOSAVE_ROTATIONS = 3;
 export const MAX_REPORT_BYTES = 64 * 1024;
 export const MAX_REPORT_COUNT = 20;
 export const MAX_IMPORT_CANDIDATE_MINUTES = 5;

@@ -290,6 +290,22 @@ The permanent contract and execution prompts are in
 in `docs/diagnostics/PHASE_2_SAVE_CODEC.md`. IndexedDB, Worker transport, scheduler, client/store,
 autosave, recovery, import confirmation, and UI remain later Phase 2 work.
 
+## Phase 2 Task 17: atomic local repository
+
+Task 17 adds the frozen version-1 IndexedDB repository, revision and writer-epoch fencing, same-origin
+Web Lock ownership, newest-three autosave rotation, verified import/export, and isolated load
+admission. Run its permanent diagnostics with:
+
+```powershell
+corepack pnpm performance:save-repository
+corepack pnpm test:e2e
+```
+
+The repository does not enter deterministic `GameState`, Replay hashes, or the production simulator
+bundle. Autosave scheduling, Worker recovery, real client/store integration and UI remain later
+Phase 2 work. Contracts and evidence are in ADR-0024 through ADR-0026 and
+`docs/diagnostics/PHASE_2_REPOSITORY.md`.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.

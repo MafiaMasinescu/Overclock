@@ -1685,6 +1685,11 @@ Object stores:
 - `blueprints`, rezervat pentru export separat ulterior;
 - `reports`, playtest reports locale.
 
+Task 17 freezes the concrete version-1 schema: `autosaves` uses the native compound key
+`[slotId, captureSequence]`, and `slotMeta` is keyed by `slotId` and owns revision, writer epoch,
+next capture sequence, and the recovery locator. The earlier shorthand above is superseded by this
+implemented contract.
+
 Autosave-ul păstrează trei rotații. Declanșatori:
 
 - la fiecare 60 secunde reale dacă state-ul este dirty;
@@ -1719,6 +1724,13 @@ Flow de import:
 9. scrie un slot nou sau cere confirmare pentru overwrite.
 
 Originalul importat nu se modifică.
+
+Task 17 implements the frozen stores, atomic revision/writer-epoch fencing, Web Lock ownership,
+newest-three rotation, verified import/export, and isolated load admission. The timer and lifecycle
+triggers listed above remain Task 20 host work; Task 17 provides the atomic operation they will call
+but does not schedule it. Import overwrite and inactive-slot deletion acquire the same nonblocking
+slot lock as writer sessions. The repository remains outside deterministic `GameState` and Replay
+hashes. See ADR-0024 through ADR-0026 and the Phase 2 repository diagnostics.
 
 ## 34. Localizare
 
@@ -2210,9 +2222,10 @@ aggressive policies share one deterministic engine. See ADR-0021 for the complet
 
 Task 15 does not implement Phase 2 worker/client work, UI, events, analytics, leaderboards, durable
 repositories, or export/import. Phase 1 closes after ADR-0022. Task 16 now supplies the detached
-persistence schema, full-state admission, canonical codec, and copy-only migration documented below;
-IndexedDB, Workers, scheduler, client/store, autosave, recovery, and import confirmation remain later
-Phase 2 work.
+persistence schema, full-state admission, canonical codec, and copy-only migration documented below.
+Task 17 now supplies the atomic IndexedDB repository, newest-three rotation, writer exclusion,
+verified import/export, and load admission. Workers, scheduler, client/store, autosave triggers,
+recovery orchestration, and UI remain later Phase 2 work.
 
 The fixed template chain is `starter-serial`, `expanded-balanced`, and `cooled-benchmark`.
 Templates use fixed geometry, explicit routes, and symbolic cluster roles. The Replay-backed
