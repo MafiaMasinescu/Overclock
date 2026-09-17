@@ -30,8 +30,8 @@ const placeholderSnapshot: UiSnapshot = deepFreeze({
       phaseIndex: 0,
       phaseCount: 2,
       deadlineTick: 2_100,
-      projectedCompletionTick: 1_840,
-      deadlineRisk: "low",
+      projectedCompletionTick: null,
+      deadlineRisk: null,
       allocatedUsefulComputeFlops: 0,
     },
   ],
@@ -43,13 +43,13 @@ const placeholderSnapshot: UiSnapshot = deepFreeze({
     },
   ],
   telemetry: {
-    memoryCapacityBytes: 0,
-    memoryUsedBytes: 0,
-    memoryBandwidthBytesPerSecond: 0,
-    memoryBandwidthUsedBytesPerSecond: 0,
+    memoryCapacityBytes: null,
+    memoryUsedBytes: null,
+    memoryBandwidthBytesPerSecond: null,
+    memoryBandwidthUsedBytesPerSecond: null,
     researchData: 10,
     reputation: 0,
-    retryRate: 0,
+    retryRate: null,
     powerHeadroomWatts: 24_000,
     bottleneck: null,
     seriesRevision: 0,
@@ -71,7 +71,7 @@ const placeholderSnapshot: UiSnapshot = deepFreeze({
   build: {
     designMode: false,
     draftRevision: null,
-    inventoryRevision: 0,
+    inventoryUnitCount: 0,
     availableDefinitionIds: [
       "module-power-distribution",
       "module-vacuum-tube-logic",
@@ -89,6 +89,7 @@ const placeholderSnapshot: UiSnapshot = deepFreeze({
 
 const placeholderGrid: GridViewModel = deepFreeze({
   revision: 0,
+  mode: "live",
   layoutRevision: 0,
   thermalRevision: 0,
   gridSize: { width: 24, height: 16 },

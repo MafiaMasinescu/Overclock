@@ -4,7 +4,7 @@ import type {
   CommandHandlerRejection,
   CommandHandlerRegistry,
 } from "../commands/commandHandlers.ts";
-import type { TaskAllocationState, TaskInstanceState } from "../core/types.ts";
+import type { GameState, TaskAllocationState, TaskInstanceState } from "../core/types.ts";
 import { rejectIfBenchmarkConfigurationLocked } from "../benchmarks/benchmarkGuards.ts";
 import { addMicrodollars, microdollarsToUsd, usdToMicrodollars } from "../economy/money.ts";
 import { formatTaskInstanceId, secondsToTaskTicks } from "./taskState.ts";
@@ -41,6 +41,28 @@ function occupiedSlotCount(instances: Readonly<Record<string, TaskInstanceState>
     }
   }
   return occupied;
+}
+
+/** Conservative payload-free admission hint shared by presentation only. */
+export function hasPotentialTaskAcceptance(
+  state: Readonly<GameState>,
+  content: ContentBundle,
+): boolean {
+  if (occupiedSlotCount(state.tasks.instances) >= state.tasks.activeSlotCount) return false;
+  return state.tasks.offers.some((definitionId) => {
+    const definition = resolveTask(content, definitionId);
+    if (definition === undefined || definition.offerYear > state.campaign.currentYear) return false;
+    if (
+      Object.values(state.tasks.instances).some(
+        (instance) => instance.definitionId === definition.id,
+      )
+    ) {
+      return false;
+    }
+    return definition.prerequisiteResearchIds.every(
+      (researchId) => state.research.statuses[researchId] === "completed",
+    );
+  });
 }
 
 function activeSharesRemainAvailable(

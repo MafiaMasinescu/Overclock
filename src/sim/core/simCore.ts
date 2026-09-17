@@ -25,6 +25,10 @@ import {
 } from "./tickSystems.ts";
 import type { GameState } from "./types.ts";
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
+import type { PresentationContext, ProjectedPresentation } from "../selectors/presentationTypes.ts";
+import { parsePresentationContext } from "../selectors/presentationTypes.ts";
+import { createPresentationProjector, type PresentationProjector } from "../selectors/projector.ts";
+import { registerProjectedThermalTiles } from "../selectors/ownedPlainData.ts";
 import {
   assertTrustedCampaignTimelineCoherent,
   assertValidCampaignBranchStructure,
@@ -283,6 +287,7 @@ export class SimCore {
   private readonly tickSystemRegistrations: TickSystemRegistry;
   private readonly runsTickSystems: boolean;
   private readonly runsMutableTickSystems: boolean;
+  private presentationProjector: PresentationProjector;
 
   constructor({
     initialState,
@@ -292,6 +297,7 @@ export class SimCore {
     initialCommandQueueSequence = 0,
   }: SimCoreOptions) {
     this.content = resolveSimulatorContent(content);
+    this.presentationProjector = createPresentationProjector();
     assertCanonicalSerializable(initialState);
     assertValidClockAndTick(initialState);
     assertTrustedCampaignTimelineCoherent(initialState, this.content);
@@ -395,6 +401,27 @@ export class SimCore {
     };
   }
 
+  // Narrow owned presentation read boundary (Phase 2 §4). Invokes the
+  // pure projector internally against the current authoritative state and
+  // returns detached, deeply frozen VMs. Exposes no mutable GameState
+  // reference, never calls getStateForSave, and accepts no callbacks, so
+  // no external code can capture authoritative references. The private
+  // projector comparison cache of §4 lives at the 18.2 publication
+  // boundary (where acknowledgements exist); this read stays side-effect
+  // free and preserves Phase 1 behavior, hashes and RNG exactly.
+  getPresentation(context: PresentationContext): ProjectedPresentation {
+    const parsed = parsePresentationContext(context);
+    const state = this.authoritativeState.readInternal();
+    registerProjectedThermalTiles(state.facility.thermalTiles);
+    const presentation = this.presentationProjector.projectPresentation(
+      state,
+      this.content,
+      parsed,
+    );
+    registerProjectedThermalTiles(presentation.thermalTiles);
+    return presentation;
+  }
+
   getStateForSave(): GameState {
     const snapshot = this.authoritativeState.snapshot();
     try {
@@ -435,6 +462,7 @@ export class SimCore {
     const retiredTickSystems = this.tickSystems;
     this.authoritativeState.replaceSnapshot(state);
     this.tickSystems = replacementTickSystems;
+    this.presentationProjector = createPresentationProjector();
     for (const stage of TICK_SYSTEM_STAGE_ORDER) {
       try {
         retiredTickSystems[stage]?.clearDerivedState?.();

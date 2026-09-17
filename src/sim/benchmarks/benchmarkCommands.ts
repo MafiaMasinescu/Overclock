@@ -110,8 +110,32 @@ function allocateRunId(
   return { sequence, runId };
 }
 
-function hasActiveTask(state: Readonly<GameState>): boolean {
+export function hasActiveBenchmarkTask(state: Readonly<GameState>): boolean {
   return Object.values(state.tasks.instances).some((task) => task.status === "active");
+}
+
+/** Conservative payload-free admission hint shared by presentation only. */
+export function hasPotentialBenchmarkStart(
+  state: Readonly<GameState>,
+  content: ContentBundle,
+): boolean {
+  if (
+    state.benchmarks.active !== null ||
+    state.research.active !== null ||
+    hasActiveBenchmarkTask(state)
+  ) {
+    return false;
+  }
+  const hasDefinition = content.era.benchmarkDefinitions.some((definition) =>
+    definition.requiredFeatureIds.every((featureId) =>
+      isFeatureUnlocked(featureId, state.research, content),
+    ),
+  );
+  if (!hasDefinition) return false;
+  return Object.keys(state.facility.modules).some((moduleId) => {
+    const result = validateCluster(state, content, [moduleId]);
+    return !("code" in result);
+  });
 }
 
 export function createBenchmarkCommandHandlers(content: ContentBundle): BenchmarkCommandHandlers {
@@ -131,7 +155,7 @@ export function createBenchmarkCommandHandlers(content: ContentBundle): Benchmar
         return requirementMissing("feature-locked");
       }
       if (state.research.active !== null) return requirementMissing("active-research");
-      if (hasActiveTask(state)) return requirementMissing("active-task");
+      if (hasActiveBenchmarkTask(state)) return requirementMissing("active-task");
 
       const cluster = validateCluster(state, content, command.clusterModuleIds);
       if ("code" in cluster) return cluster;

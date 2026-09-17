@@ -1,9 +1,10 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-16
+Updated: 2026-09-23
 
 ## Current phase
 
+- Phase 2: Task 18 owned presentation pipeline is documented; Task 19 remains deferred.
 - Phase 1: Headless Simulator, closed through Task 15 and the ADR-0022 Campaign coherence repair.
 - Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
   `8e80b00` and explicitly approved on 18 August 2026.
@@ -1152,3 +1153,27 @@ Decisions live in ADR-0024 through ADR-0026. The independent finding record is
 runs of 1,359 unit plus 23 determinism tests, 19 Chromium tests, validation/build/scans and every
 mandatory i7-2600 save/repository budget. Temporary Task 17 handoffs and execution logs were removed
 after permanent evidence was merged. The exact next group is Phase 2 Task 18.
+
+## Phase 2 Task 18: Owned presentation pipeline
+
+Task 18 is rooted at the approved public CP17 commit
+`c998378286b3e5bda6013636c615fdeee5d22063`. Neutral `UiSnapshot` and
+`GridViewModel` contracts live in `src/sim/selectors`, with app re-exports.
+`SimCore.getPresentation` returns frozen, detached view models and an owned
+thermal read boundary without calling save serialization. The projector
+explains authoritative values conservatively and memoizes route warnings
+only inside one SimCore instance. The publisher generates revision-aware
+full/delta grid and thermal patches against acknowledged state. The store
+validates admission, owns an atomic immutable snapshot/grid pair, fences
+epochs and isolates subscriber failures. No Task 19 Worker/host integration
+or Phase 3 rendering was added.
+
+The independent Task 18 audit identified ten findings. R1-R5 close the
+descriptor-safe context/admission, epoch, ownership, pending ACK, command
+availability, heatmap coverage, inventory and diagnostic gaps. ADR-0027
+defines the final in-process contract. The historical finding record and
+repair contract remain preserved as separate artifacts. The target-host
+diagnostic uses an admitted dense fixture and executable hard gates; its
+latest measured values and path definitions are in
+`docs/diagnostics/PHASE_2_PROJECTION.md`. Phase 1 simulation formulas,
+content, RNG, hashes and save/Replay protocols remain unchanged.

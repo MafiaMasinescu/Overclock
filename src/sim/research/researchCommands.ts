@@ -117,6 +117,27 @@ function validateStartRequirements(
   return node;
 }
 
+/** Conservative payload-free admission hint shared by presentation only. */
+export function hasPotentialResearchStart(
+  state: Readonly<GameState>,
+  content: ContentBundle,
+): boolean {
+  if (state.research.active !== null || state.benchmarks.active !== null) return false;
+  return Object.values(content.research).some((node) => {
+    const requirement = validateStartRequirements(
+      state,
+      content,
+      node.id,
+      node.minimumComputeShare,
+    );
+    return (
+      !("code" in requirement) &&
+      state.economy.cashUsd >= node.cashCostUsd &&
+      state.research.researchData >= node.researchDataCost
+    );
+  });
+}
+
 function applyStart(
   state: GameState,
   node: NonNullable<ReturnType<typeof resolveResearchNode>>,
