@@ -1646,12 +1646,20 @@ Shortcut-urile nu se execută când utilizatorul scrie într-un input. Toate ac�
 
 ```ts
 interface SavePayloadV1 {
+  schemaVersion: 1;
   saveVersion: 1;
   contentVersion: string;
+  simulationContentHash: string;
   createdAtIso: string;
   savedAtIso: string;
   slotId: string;
   gameState: GameState;
+  execution: {
+    simulatorProtocolVersion: 1;
+    nextQueueSequence: number;
+    pendingCommandCount: 0;
+    stateHash: string;
+  };
   settings: PlayerSettings;
   localStats: LocalStats;
 }
@@ -2200,9 +2208,11 @@ save data, Replay protocol contracts, or production imports. The three fixed tem
 `starter-serial`, `expanded-balanced`, and `cooled-benchmark`; baseline, conservative, and
 aggressive policies share one deterministic engine. See ADR-0021 for the complete contract.
 
-Task 15 does not implement Phase 2 persistence/worker/client work, UI, events, analytics,
-leaderboards, save repositories, migrations, or export/import. Phase 1 closes after ADR-0022;
-there is no active Task 16 implementation.
+Task 15 does not implement Phase 2 worker/client work, UI, events, analytics, leaderboards, durable
+repositories, or export/import. Phase 1 closes after ADR-0022. Task 16 now supplies the detached
+persistence schema, full-state admission, canonical codec, and copy-only migration documented below;
+IndexedDB, Workers, scheduler, client/store, autosave, recovery, and import confirmation remain later
+Phase 2 work.
 
 The fixed template chain is `starter-serial`, `expanded-balanced`, and `cooled-benchmark`.
 Templates use fixed geometry, explicit routes, and symbolic cluster roles. The Replay-backed
@@ -2250,3 +2260,20 @@ performance evidence, compatibility notes, and variant outcomes.
 Hard-lock progress tracking anchors a newly changed progress hash at the completed end tick of the
 interval where it was observed. An interval whose before/after hashes are equal begins at its start
 tick. The 600-tick threshold is therefore exact rather than up to one decision cadence early.
+
+## Phase 2 persistence refinement
+
+The detailed Phase 2 persistence contract is maintained in
+`docs/phases/OVERCLOCK_Phase_2_Contract_and_Prompts.md`. Task 16 refines the original save sketch
+without changing the deterministic `GameState` or Replay protocol. The outer persistence payload has
+`schemaVersion: 1`, the current simulation `contentVersion` and fingerprint, and an exact empty-queue
+execution boundary containing `simulatorProtocolVersion: 1`, `nextQueueSequence`,
+`pendingCommandCount: 0`, and the existing FNV state hash.
+
+External save data is admitted through descriptor-safe bounded traversal, exact recursive state shape
+validation, current Phase 1 validators, and fresh production-core construction before it can be used.
+The codec rejects duplicate JSON keys, malformed UTF-8/base64/gzip, noncanonical bytes, checksum
+mismatch, unsafe prototypes/accessors, and resource-limit violations. SHA-256 covers the exact
+uncompressed canonical UTF-8 payload; gzip is an encoding option only. Synthetic schema 0 is a
+teaching/test format migrated on a copy by adding zero-valued local statistics. Wall-clock metadata,
+settings, local statistics, and codec/host data remain outside `GameState` and Replay hashes.

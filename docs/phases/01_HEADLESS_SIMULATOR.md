@@ -565,8 +565,9 @@ The canonical baseline completes at tick 30,270 with matched Replay and unchange
 finite Task, persistent blocker, Blueprint, year transitions, Benchmarks, Transistor reveal,
 completion, and maximum forced deadtime all satisfy the contract. The permanent diagnostic is
 `corepack pnpm balance:milestones` and enforces these gates directly. Task 15 plus ADR-0022's
-timeline-coherence repair close Phase 1. There is no active Task 16 implementation; Phase 2 begins
-only after a separately approved contract.
+timeline-coherence repair close Phase 1. Phase 2 Task 16 is the separately tracked detached
+persistence foundation; its later Worker, IndexedDB, client/store, scheduler, autosave, recovery,
+and UI groups remain outside this Phase 1 boundary.
 
 The Task 15.8 checkpoint retains two pure Benchmark p95 misses (`0.1035 ms` and `0.1559 ms`
 against `<0.10 ms`) as failed measurements. The project owner accepted a temporary, checkpoint-only

@@ -1,5 +1,14 @@
 import type { GameState } from "../sim/core/types.ts";
 
+import type { PersistenceErrorCode } from "./persistenceErrors.ts";
+
+export interface SaveExecution {
+  simulatorProtocolVersion: 1;
+  nextQueueSequence: number;
+  pendingCommandCount: 0;
+  stateHash: string;
+}
+
 export interface PlayerSettings {
   language: "ro" | "en";
   telemetryPreset: "compact" | "standard" | "diagnostics";
@@ -25,14 +34,30 @@ export interface LocalStats {
 }
 
 export interface SavePayloadV1 {
+  schemaVersion: 1;
   saveVersion: 1;
   contentVersion: string;
+  simulationContentHash: string;
   createdAtIso: string;
   savedAtIso: string;
   slotId: string;
   gameState: GameState;
+  execution: SaveExecution;
   settings: PlayerSettings;
   localStats: LocalStats;
+}
+
+export interface SyntheticSavePayloadV0 {
+  schemaVersion: 0;
+  saveVersion: 1;
+  contentVersion: string;
+  simulationContentHash: string;
+  createdAtIso: string;
+  savedAtIso: string;
+  slotId: string;
+  gameState: GameState;
+  execution: SaveExecution;
+  settings: PlayerSettings;
 }
 
 export interface SaveEnvelope {
@@ -44,16 +69,24 @@ export interface SaveEnvelope {
 }
 
 export interface SavePreview {
-  slotId: string;
+  sourceSchemaVersion: number;
+  sourceSaveVersion: number;
   contentVersion: string;
-  saveVersion: number;
-  savedAtIso: string;
   simulatedYear: number;
   tick: number;
   cashUsd: number;
   verticalSliceCompleted: boolean;
+  savedAtIso: string;
   migrationRequired: boolean;
+  compatibility: "compatible" | PersistenceErrorCode;
+  destinationSuggestion: SaveDestinationSuggestion;
+  compressedBytes: number;
+  uncompressedBytes: number;
+  slotId: string;
 }
+
+export type SaveDestinationSuggestion =
+  { kind: "new-slot" } | { kind: "overwrite"; slotId: string };
 
 export interface SaveRepository {
   list(): Promise<SavePreview[]>;

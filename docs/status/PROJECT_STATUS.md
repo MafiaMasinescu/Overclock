@@ -1088,3 +1088,31 @@ That explanation is plausible but not technically proven by host detection. The 
 unchanged, the measurements remain failures rather than technical passes, and the exception does
 not apply to any other gate or future run. Phase 1 checkpoint publication is authorized with an
 isolated target-host rerun retained as follow-up evidence.
+
+## Phase 2 Task 16: Persistence contract, admission, codec, and migration
+
+Phase 2 has started from the approved Phase 1 checkpoint `00acd280d195f23e6f0beca9560998090b117a5c`.
+The complete Phase 2 contract and copy-ready prompts are stored in
+`docs/phases/OVERCLOCK_Phase_2_Contract_and_Prompts.md`. The contract preserves the Phase 1
+GameState, Replay, RNG, fixed-tick, and compatibility boundaries and assigns Task 16 to detached
+durable save bytes before IndexedDB, Worker, client/store, and browser recovery work.
+
+Task 16.1 is complete in the Phase 2 Task 16 implementation. `SavePayloadV1` now has a separate outer
+`schemaVersion: 1`, `simulationContentHash`, and exact empty-queue execution metadata. Strict
+runtime schemas cover settings, local statistics, envelope metadata, previews, and sanitized local
+reports. External values are descriptor-checked before cloning, with exact keys, no coercion,
+bounded strings/arrays, valid UTC metadata, safe integer rules, and stable persistence error codes.
+The synthetic schema-0 input is documented as a teaching/test format only; its migration is required
+to add zero-valued local stats on an owned copy without normalizing or repairing GameState.
+
+Task 16.2 through 16.4 complete the detached persistence foundation. Full-state admission validates
+all current GameState branches through descriptor-safe bounded traversal and a fresh production core;
+the codec produces canonical UTF-8 payload bytes, SHA-256 envelopes, bounded none/gzip variants, and
+copy-only synthetic schema-0 migration. Frozen ASCII, Romanian, and Unicode vectors, adversarial
+parser/decompression tests, exact-100 encoding determinism, and the N/L save-codec diagnostic preserve
+the boundary. Browser-native Web Crypto and Compression Streams are used through injectable adapters;
+Worker, IndexedDB, UI, scheduler, autosave, recovery, and import confirmation remain deferred.
+
+Task 16.1 through 16.4 are complete in the Phase 2 Task 16 implementation. CP16 is the next
+independent checkpoint review. The temporary working handoff is
+`docs/status/PHASE_2_TASK_16_WORKING_STATUS.md`.

@@ -274,6 +274,21 @@ Task 15 closes the Phase 1 headless simulator. Phase 2 owns persistence, workers
 and selectors; Build Workspace UI is Phase 3, gameplay UI is Phase 4, and release hardening is
 Phase 5.
 
+## Phase 2 Task 16: detached save codec
+
+Task 16 implements the detached persistence foundation before storage integration: strict save
+schemas, descriptor-safe full-state admission, canonical UTF-8 payloads, SHA-256 envelopes, bounded
+`none`/`gzip` encoding, and synthetic schema-0 copy-only migration. Run the diagnostic with:
+
+```powershell
+corepack pnpm performance:save-codec
+```
+
+The permanent contract and execution prompts are in
+`docs/phases/OVERCLOCK_Phase_2_Contract_and_Prompts.md`; the diagnostic and latest host evidence are
+in `docs/diagnostics/PHASE_2_SAVE_CODEC.md`. IndexedDB, Worker transport, scheduler, client/store,
+autosave, recovery, import confirmation, and UI remain later Phase 2 work.
+
 ## Regula de calitate
 
 O fază nu este terminată doar pentru că aplicația pornește. Trebuie să treacă testele, verificarea TypeScript, lint-ul, build-ul și criteriile de acceptare ale fazei.
