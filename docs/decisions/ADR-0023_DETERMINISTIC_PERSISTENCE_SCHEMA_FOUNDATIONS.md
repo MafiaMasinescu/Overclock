@@ -75,15 +75,40 @@ current `GameState` branch and the existing Phase 1 validators. A fresh producti
 the admitted state and captured queue sequence. Historical Benchmark, Blueprint, Replay, and Campaign
 data are validated according to their existing contracts and are never recomputed or repaired.
 
-The codec parses JSON with duplicate-key detection and depth/node accounting, encodes canonical UTF-8,
-checks SHA-256 before payload parsing, supports `none` and bounded native `gzip`, and requires the
-received uncompressed bytes to equal their canonical reserialization. Synthetic schema 0 migrates only
-on an owned copy by adding zero-valued local stats. No migration runs in storage transactions, and no
-codec operation mutates a source artifact or live simulator state.
+The schema coverage is explicit:
+
+| `GameState` branch | Exact-shape and semantic admission |
+| --- | --- |
+| root, clock, Campaign, economy | persistence exact-key checks plus production clock/Campaign/economy invariants |
+| facility modules, routes, Thermal, Power, Overclock and Compute | kind-specific persistence shapes plus the existing geometry, lifecycle and stored-Compute validators |
+| Design Mode draft, Undo and Redo | exact draft shape plus `parseDesignDraftOperation` for every operation variant |
+| inventory | exact stack shape plus `assertValidInventoryEconomyState` |
+| Tasks and Research | exact current/history shapes plus stored lifecycle validators |
+| Benchmarks | exact active/history/best-result shapes plus stored Benchmark validation |
+| Blueprints | exact record/local-ID shapes plus `assertValidBlueprintState`; historical content versions remain structural history |
+| tutorial, Museum and achievements | exact branch and historical snapshot shapes plus production-core validation |
+
+The runtime payload parser intentionally returns an unadmitted payload type while `gameState` is
+still `unknown`. Only `admitSavePayloadForContent` produces `SavePayloadV1`. Public encode and decode
+both compose content fingerprint verification, execution-state hash verification and fresh production
+admission. Domain failures are translated to stable persistence errors.
+
+The codec parses JSON with duplicate-key detection and depth/value/object/array accounting, encodes
+canonical UTF-8, checks SHA-256 before payload parsing, supports `none` and bounded native `gzip`,
+requires exactly one gzip member, and requires the received uncompressed bytes to equal their
+canonical reserialization. Decompressed output is capped even for injected adapters, and cancellation
+is rechecked after asynchronous compression, decompression and hashing boundaries. Synthetic schema 0
+migrates only on an owned copy by adding zero-valued local stats. No migration runs in storage
+transactions, and no codec operation mutates a source artifact or live simulator state.
+
+The simulation-content fingerprint is cached in a private `WeakMap` keyed by the validated immutable
+`ContentBundle`. The cache is derived-only, cannot enter authoritative state or serialization, and
+does not change content compatibility semantics.
 
 ## Verification
 
 Task 16 coverage includes strict discriminants, exact keys, ranges, timestamps, defaults, ownership,
 version agreement, full-state corruption admission, canonical-byte and checksum vectors, gzip
-round-trip, cancellation/error boundaries, and 100-run deterministic encoding. Target-host timing is
-recorded separately by `corepack pnpm performance:save-codec`; it is not a claim about this host.
+round-trip, decompression limits, cancellation/error boundaries, and 100-run deterministic encoding.
+Chromium exercises the real codec with native Web Crypto and Compression Streams. Target-host timing
+is recorded separately by `corepack pnpm performance:save-codec`.

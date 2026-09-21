@@ -11,6 +11,7 @@ import {
 } from "../../src/save/schema.ts";
 import { PersistenceError } from "../../src/save/persistenceErrors.ts";
 import { PERSISTENCE_SCHEMA_VERSION } from "../../src/save/persistenceLimits.ts";
+import { assertSafeExternalData } from "../../src/save/inputSafety.ts";
 
 const validExecution = {
   simulatorProtocolVersion: 1,
@@ -37,6 +38,27 @@ const validPreview = {
 };
 
 describe("Phase 2 persistence schema foundations", () => {
+  test("counts primitive values and primitive depth at the in-memory trust boundary", () => {
+    expect(() => {
+      assertSafeExternalData([1, 2], { maxVisitedValues: 2 });
+    }).toThrow(expect.objectContaining({ code: "LIMIT_EXCEEDED" }));
+    expect(() => {
+      assertSafeExternalData([1], { maxDepth: 0 });
+    }).toThrow(expect.objectContaining({ code: "LIMIT_EXCEEDED" }));
+  });
+
+  test("bounds object maps and rejects non-enumerable array entries before cloning", () => {
+    expect(() => {
+      assertSafeExternalData({ a: 1, b: 2, c: 3 }, { maxObjectEntries: 2 });
+    }).toThrow(expect.objectContaining({ code: "LIMIT_EXCEEDED" }));
+
+    const array = [1];
+    Object.defineProperty(array, "0", { value: 1, enumerable: false });
+    expect(() => {
+      assertSafeExternalData(array);
+    }).toThrow(expect.objectContaining({ code: "INVALID_FORMAT" }));
+  });
+
   test("provides the approved default settings", () => {
     expect(DEFAULT_PLAYER_SETTINGS).toEqual({
       language: "en",
@@ -79,6 +101,10 @@ describe("Phase 2 persistence schema foundations", () => {
 
   test("validates exact UTC ISO metadata and preview fields", () => {
     expect(parseSavePreview(validPreview)).toEqual(validPreview);
+    expect(parseSavePreview({ ...validPreview, cashUsd: -1 })).toEqual({
+      ...validPreview,
+      cashUsd: -1,
+    });
     expect(() =>
       parseSavePreview({ ...validPreview, savedAtIso: "2026-02-29T12:00:00.000Z" }),
     ).toThrow(PersistenceError);
@@ -156,6 +182,13 @@ describe("Phase 2 persistence schema foundations", () => {
       },
     };
     expect(parseLocalReport(report)).toEqual(report);
+    expect(parseLocalReport({ ...report, errorCode: "INVALID_STATE" })).toEqual({
+      ...report,
+      errorCode: "INVALID_STATE",
+    });
+    expect(() => parseLocalReport({ ...report, errorCode: "unsafe free text" })).toThrow(
+      PersistenceError,
+    );
     expect(() => parseLocalReport({ ...report, seed: "must-not-be-stored" })).toThrow(
       PersistenceError,
     );

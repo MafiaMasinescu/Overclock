@@ -10,6 +10,7 @@ export const MAX_ENVELOPE_DEPTH = 4;
 export const MAX_PAYLOAD_DEPTH = 64;
 export const MAX_VISITED_VALUES = 1_000_000;
 export const MAX_ARRAY_ENTRIES = 100_000;
+export const MAX_OBJECT_ENTRIES = 100_000;
 export const MAX_OBJECT_KEY_UTF16_UNITS = 256;
 export const MAX_STRING_UTF16_UNITS = 16_384;
 export const MAX_ORDINARY_SLOT_COUNT = 20;

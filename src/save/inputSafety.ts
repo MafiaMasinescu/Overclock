@@ -1,5 +1,6 @@
 import {
   MAX_ARRAY_ENTRIES,
+  MAX_OBJECT_ENTRIES,
   MAX_OBJECT_KEY_UTF16_UNITS,
   MAX_PAYLOAD_DEPTH,
   MAX_STRING_UTF16_UNITS,
@@ -11,6 +12,7 @@ export interface ExternalDataLimits {
   readonly maxDepth?: number;
   readonly maxVisitedValues?: number;
   readonly maxArrayEntries?: number;
+  readonly maxObjectEntries?: number;
   readonly maxObjectKeyUnits?: number;
   readonly maxStringUnits?: number;
 }
@@ -56,19 +58,19 @@ function assertValue(
   limits: Required<ExternalDataLimits>,
   state: TraversalState,
 ): void {
+  if (depth > limits.maxDepth) failLimit(`depth exceeds ${limits.maxDepth}`, path);
+  state.visitedValues += 1;
+  if (state.visitedValues > limits.maxVisitedValues) {
+    failLimit(`visited-value count exceeds ${limits.maxVisitedValues}`, path);
+  }
+
   if (typeof value === "string") {
     assertString(value, path, limits);
     return;
   }
   if (value === null || typeof value === "boolean" || typeof value === "number") return;
   if (typeof value !== "object") fail(`unsupported value of type ${typeof value}`, path);
-  if (depth > limits.maxDepth) failLimit(`depth exceeds ${limits.maxDepth}`, path);
   if (state.ancestors.has(value)) fail("contains a cyclic reference", path);
-
-  state.visitedValues += 1;
-  if (state.visitedValues > limits.maxVisitedValues) {
-    failLimit(`visited-value count exceeds ${limits.maxVisitedValues}`, path);
-  }
 
   state.ancestors.add(value);
   try {
@@ -90,7 +92,11 @@ function assertValue(
       }
       for (let index = 0; index < value.length; index += 1) {
         const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-        if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) {
+        if (
+          descriptor === undefined ||
+          !Object.hasOwn(descriptor, "value") ||
+          !descriptor.enumerable
+        ) {
           fail("array contains an accessor or hole", `${path}[${index}]`);
         }
         assertValue(descriptor.value, `${path}[${index}]`, depth + 1, limits, state);
@@ -104,6 +110,9 @@ function assertValue(
     }
     const keys = Reflect.ownKeys(value);
     if (keys.some((key) => typeof key !== "string")) fail("symbols are not allowed", path);
+    if (keys.length > limits.maxObjectEntries) {
+      failLimit(`object exceeds ${limits.maxObjectEntries} entries`, path);
+    }
     for (const key of keys) {
       if (typeof key !== "string") fail("symbols are not allowed", path);
       if (key === "__proto__" || key === "constructor" || key === "prototype") {
@@ -135,11 +144,23 @@ export function assertSafeExternalData(value: unknown, options: ExternalDataLimi
     maxDepth: options.maxDepth ?? MAX_PAYLOAD_DEPTH,
     maxVisitedValues: options.maxVisitedValues ?? MAX_VISITED_VALUES,
     maxArrayEntries: options.maxArrayEntries ?? MAX_ARRAY_ENTRIES,
+    maxObjectEntries: options.maxObjectEntries ?? MAX_OBJECT_ENTRIES,
     maxObjectKeyUnits: options.maxObjectKeyUnits ?? MAX_OBJECT_KEY_UTF16_UNITS,
     maxStringUnits: options.maxStringUnits ?? MAX_STRING_UTF16_UNITS,
   };
   if (!Number.isSafeInteger(limits.maxDepth) || limits.maxDepth < 0) {
     throw new RangeError("External-data maxDepth must be a nonnegative safe integer.");
+  }
+  for (const [name, value] of [
+    ["maxVisitedValues", limits.maxVisitedValues],
+    ["maxArrayEntries", limits.maxArrayEntries],
+    ["maxObjectEntries", limits.maxObjectEntries],
+    ["maxObjectKeyUnits", limits.maxObjectKeyUnits],
+    ["maxStringUnits", limits.maxStringUnits],
+  ] as const) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new RangeError(`External-data ${name} must be a nonnegative safe integer.`);
+    }
   }
   assertValue(value, "$", 0, limits, { ancestors: new WeakSet<object>(), visitedValues: 0 });
 }

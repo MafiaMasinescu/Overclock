@@ -1,4 +1,8 @@
-import type { SavePayloadV1, SyntheticSavePayloadV0 } from "./contracts.ts";
+import type {
+  SavePayloadV1,
+  SyntheticSavePayloadV0,
+  UnadmittedSavePayloadV1,
+} from "./contracts.ts";
 import { assertSafeExternalData, cloneOwnedExternalData } from "./inputSafety.ts";
 import { PersistenceError } from "./persistenceErrors.ts";
 import { parseSavePayloadV1, parseSyntheticSavePayloadV0 } from "./schema.ts";
@@ -14,10 +18,10 @@ function zeroLocalStats(): SavePayloadV1["localStats"] {
   };
 }
 
-function migrateSyntheticV0ToV1(input: unknown): SavePayloadV1 {
+function migrateSyntheticV0ToV1(input: unknown): UnadmittedSavePayloadV1 {
   const source = parseSyntheticSavePayloadV0(input);
   const owned = cloneOwnedExternalData(source);
-  const migrated: SavePayloadV1 = {
+  const migrated: UnadmittedSavePayloadV1 = {
     ...owned,
     schemaVersion: 1,
     localStats: zeroLocalStats(),
@@ -31,7 +35,7 @@ export const SAVE_MIGRATIONS: Readonly<Record<number, (input: unknown) => unknow
   },
 );
 
-export function migrateSavePayload(input: unknown): SavePayloadV1 {
+export function migrateSavePayload(input: unknown): UnadmittedSavePayloadV1 {
   assertSafeExternalData(input);
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     throw new PersistenceError("UNSUPPORTED_VERSION", "Save payload version is unavailable.");
@@ -49,7 +53,7 @@ export function migrateSavePayload(input: unknown): SavePayloadV1 {
   if (migration === undefined)
     throw new PersistenceError("MIGRATION_FAILED", "Schema-0 migration is unavailable.");
   try {
-    return migration(input) as SavePayloadV1;
+    return migration(input) as UnadmittedSavePayloadV1;
   } catch (error: unknown) {
     if (error instanceof PersistenceError && error.code === "UNSUPPORTED_VERSION") throw error;
     if (error instanceof PersistenceError && error.code === "INVALID_FORMAT") {
@@ -63,17 +67,18 @@ export function migrateSavePayload(input: unknown): SavePayloadV1 {
 }
 
 export function createSyntheticV0Payload(payload: SavePayloadV1): SyntheticSavePayloadV0 {
+  const owned = cloneOwnedExternalData(payload);
   const withoutStats: Omit<SavePayloadV1, "localStats"> = {
-    schemaVersion: payload.schemaVersion,
-    saveVersion: payload.saveVersion,
-    contentVersion: payload.contentVersion,
-    simulationContentHash: payload.simulationContentHash,
-    createdAtIso: payload.createdAtIso,
-    savedAtIso: payload.savedAtIso,
-    slotId: payload.slotId,
-    gameState: payload.gameState,
-    execution: payload.execution,
-    settings: payload.settings,
+    schemaVersion: owned.schemaVersion,
+    saveVersion: owned.saveVersion,
+    contentVersion: owned.contentVersion,
+    simulationContentHash: owned.simulationContentHash,
+    createdAtIso: owned.createdAtIso,
+    savedAtIso: owned.savedAtIso,
+    slotId: owned.slotId,
+    gameState: owned.gameState,
+    execution: owned.execution,
+    settings: owned.settings,
   };
   return {
     ...withoutStats,

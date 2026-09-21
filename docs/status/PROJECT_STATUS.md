@@ -1113,6 +1113,9 @@ parser/decompression tests, exact-100 encoding determinism, and the N/L save-cod
 the boundary. Browser-native Web Crypto and Compression Streams are used through injectable adapters;
 Worker, IndexedDB, UI, scheduler, autosave, recovery, and import confirmation remain deferred.
 
-Task 16.1 through 16.4 are complete in the Phase 2 Task 16 implementation. CP16 is the next
-independent checkpoint review. The temporary working handoff is
-`docs/status/PHASE_2_TASK_16_WORKING_STATUS.md`.
+Task 16 is complete at a checkpoint-neutral detached persistence boundary. Review hardening composes
+full current-content/GameState admission into public encode and decode, closes primitive/map resource
+accounting, rejects concatenated gzip members, stabilizes domain error mapping, preserves valid
+negative-cash previews, and keeps parser output unadmitted until full verification. Exact-100 codec
+determinism, real Chromium none/gzip round-trip, full validation, and the dense target-host diagnostic
+are permanent gates. Task 17 is the next roadmap group; Worker, UI, autosave and recovery remain later.

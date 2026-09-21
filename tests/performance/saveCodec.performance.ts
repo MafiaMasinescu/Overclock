@@ -1,6 +1,5 @@
 import { cpus } from "node:os";
 
-import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
 import { assertValidBlueprintState } from "../../src/sim/blueprints/blueprintState.ts";
 import {
   createDefaultSaveCodecAdapters,
@@ -8,14 +7,38 @@ import {
   encodeSaveEnvelope,
 } from "../../src/save/codec.ts";
 import type { SavePayloadV1 } from "../../src/save/contracts.ts";
-import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
+import { admitSavePayloadForContent } from "../../src/save/stateAdmission.ts";
+import { createProductionSimCore } from "../../src/sim/core/productionSimCore.ts";
 import { hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
+import { canonicalSerialize } from "../../src/sim/replay/canonicalState.ts";
 import { hashSimulationContent } from "../../src/sim/replay/replayContracts.ts";
+import { createTask9PerformanceFixture, thermalPerformanceContent } from "./thermalFixture.ts";
 
-const content = loadContentBundle();
+const content = thermalPerformanceContent;
+
+function createDenseActiveState(seed: string) {
+  const state = createTask9PerformanceFixture(seed);
+  const service = state.tasks.instances["task-9-bandwidth"];
+  if (service === undefined) throw new Error("Save fixture lacks its active service Task.");
+  state.tasks.instances[service.id] = { ...service, serviceWindowCompliant: true };
+  state.research.researchData = 1_000_000;
+  state.economy.cashUsd = 1_000_000;
+  const core = createProductionSimCore({ content, initialState: state });
+  core.enqueue({
+    commandId: "70000000-0000-4000-8000-000000000001",
+    source: "player",
+    kind: "START_RESEARCH",
+    nodeId: "research-stable-power-distribution",
+    reservedComputeShare: 0.1,
+  });
+  const result = core.processPendingCommands()[0];
+  if (result?.accepted !== true) throw new Error("Save fixture could not start Research.");
+  core.step(1);
+  return core.getStateForSave();
+}
 
 function createPayload(blueprintCount: number): SavePayloadV1 {
-  const state = createInitialGameState({ content, seed: `save-performance-${blueprintCount}` });
+  const state = createDenseActiveState(`save-performance-${blueprintCount}`);
   if (blueprintCount > 0) {
     const records: Record<string, SavePayloadV1["gameState"]["blueprints"]["records"][string]> = {};
     for (let index = 1; index <= blueprintCount; index += 1) {
@@ -60,7 +83,7 @@ function createPayload(blueprintCount: number): SavePayloadV1 {
     gameState: state,
     execution: {
       simulatorProtocolVersion: 1,
-      nextQueueSequence: 0,
+      nextQueueSequence: 1,
       pendingCommandCount: 0,
       stateHash: hashCanonicalState(state),
     },
@@ -96,19 +119,76 @@ async function measureEncode(
   warmup: number,
 ): Promise<void> {
   for (let index = 0; index < warmup; index += 1)
-    await encodeSaveEnvelope(payload, { compression });
+    await encodeSaveEnvelope(payload, { content, compression });
   const values: number[] = [];
   let bytes = 0;
   for (let index = 0; index < samples; index += 1) {
     const start = performance.now();
-    const result = await encodeSaveEnvelope(payload, { compression });
+    const result = await encodeSaveEnvelope(payload, { content, compression });
     values.push(performance.now() - start);
     bytes = result.bytes.byteLength;
   }
   console.log(
     JSON.stringify({
       fixture,
-      operation: `encode-${compression}`,
+      operation: `admit-encode-${compression}`,
+      samples,
+      warmup,
+      bytes,
+      medianMs: percentile(values, 0.5),
+      p95Ms: percentile(values, 0.95),
+      maximumMs: Math.max(...values),
+    }),
+  );
+}
+
+function measureAdmission(
+  payload: SavePayloadV1,
+  fixture: string,
+  samples: number,
+  warmup: number,
+): void {
+  for (let index = 0; index < warmup; index += 1) admitSavePayloadForContent({ payload, content });
+  const values: number[] = [];
+  for (let index = 0; index < samples; index += 1) {
+    const start = performance.now();
+    admitSavePayloadForContent({ payload, content });
+    values.push(performance.now() - start);
+  }
+  console.log(
+    JSON.stringify({
+      fixture,
+      operation: "full-payload-admission",
+      samples,
+      warmup,
+      bytes: new TextEncoder().encode(canonicalSerialize(payload)).byteLength,
+      medianMs: percentile(values, 0.5),
+      p95Ms: percentile(values, 0.95),
+      maximumMs: Math.max(...values),
+    }),
+  );
+}
+
+function measureCanonicalPayloadEncode(
+  payload: SavePayloadV1,
+  fixture: string,
+  samples: number,
+  warmup: number,
+): void {
+  const admitted = admitSavePayloadForContent({ payload, content });
+  const encode = () => new TextEncoder().encode(canonicalSerialize(admitted));
+  for (let index = 0; index < warmup; index += 1) encode();
+  const values: number[] = [];
+  let bytes = 0;
+  for (let index = 0; index < samples; index += 1) {
+    const start = performance.now();
+    bytes = encode().byteLength;
+    values.push(performance.now() - start);
+  }
+  console.log(
+    JSON.stringify({
+      fixture,
+      operation: "canonical-payload-encode",
       samples,
       warmup,
       bytes,
@@ -126,12 +206,13 @@ async function measureDecode(
   samples: number,
   warmup: number,
 ): Promise<void> {
-  const encoded = await encodeSaveEnvelope(payload, { compression });
-  for (let index = 0; index < warmup; index += 1) await decodeSaveEnvelope(encoded.bytes);
+  const encoded = await encodeSaveEnvelope(payload, { content, compression });
+  for (let index = 0; index < warmup; index += 1)
+    await decodeSaveEnvelope(encoded.bytes, { content });
   const values: number[] = [];
   for (let index = 0; index < samples; index += 1) {
     const start = performance.now();
-    await decodeSaveEnvelope(encoded.bytes);
+    await decodeSaveEnvelope(encoded.bytes, { content });
     values.push(performance.now() - start);
   }
   console.log(
@@ -154,7 +235,7 @@ async function measurePrimitive(
   samples: number,
   warmup: number,
 ): Promise<void> {
-  const encoded = await encodeSaveEnvelope(payload, { compression: "none" });
+  const encoded = await encodeSaveEnvelope(payload, { content, compression: "none" });
   const adapters = createDefaultSaveCodecAdapters();
   const compressed = await adapters.gzipEncode(encoded.canonicalPayloadBytes);
   for (let index = 0; index < warmup; index += 1) {
@@ -200,11 +281,15 @@ const host = {
   buildMode: "source",
 };
 console.log(JSON.stringify({ host }));
+measureAdmission(normal, "N", 200, 20);
+measureCanonicalPayloadEncode(normal, "N", 200, 20);
 await measureEncode(normal, "N", "none", 200, 20);
 await measureEncode(normal, "N", "gzip", 200, 20);
 await measureDecode(normal, "N", "none", 200, 20);
 await measureDecode(normal, "N", "gzip", 200, 20);
 await measurePrimitive(normal, "N", 200, 20);
+measureAdmission(large, "L", 50, 5);
+measureCanonicalPayloadEncode(large, "L", 50, 5);
 await measureEncode(large, "L", "none", 50, 5);
 await measureEncode(large, "L", "gzip", 50, 5);
 await measureDecode(large, "L", "none", 50, 5);

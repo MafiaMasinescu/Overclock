@@ -66,6 +66,12 @@ Durable capture is valid only at a detached empty-command-queue boundary and car
 as execution metadata. Wall-clock timestamps, settings, local statistics, compression, checksums, and
 future host epochs remain outside deterministic state.
 
+Task 16 is complete at its checkpoint-neutral boundary. Public encode/decode compose strict payload
+schema parsing, content fingerprint checks, execution-state hash checks and fresh production-core
+admission. The codec enforces bounded canonical bytes, exactly one gzip member, stable persistence
+errors and copy-only migration. Native Chromium none/gzip round-trip and target-host dense-fixture
+diagnostics are permanent regression evidence. Task 17 owns durable repository behavior.
+
 The original outline sentence below is archival wording and is superseded by the Task 16 status above;
 the detailed Phase 2 contract is now the normative roadmap for the remaining work.
 

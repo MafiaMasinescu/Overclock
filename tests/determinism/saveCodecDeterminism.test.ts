@@ -46,11 +46,12 @@ function createPayload(): SavePayloadV1 {
 
 describe("save codec determinism", () => {
   test("repeats canonical bytes, checksum, and envelope exactly 100 times", async () => {
+    const content = loadContentBundle();
     const payload = createPayload();
-    const first = await encodeSaveEnvelope(payload, { compression: "none" });
+    const first = await encodeSaveEnvelope(payload, { content, compression: "none" });
 
     for (let index = 0; index < 100; index += 1) {
-      const current = await encodeSaveEnvelope(payload, { compression: "none" });
+      const current = await encodeSaveEnvelope(payload, { content, compression: "none" });
       expect(current.canonicalPayload).toBe(first.canonicalPayload);
       expect(current.envelope.checksum).toBe(first.envelope.checksum);
       expect(current.bytes).toEqual(first.bytes);

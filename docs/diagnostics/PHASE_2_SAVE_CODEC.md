@@ -19,10 +19,12 @@ cross-browser compatibility guarantee.
 
 ## Fixtures and limits
 
-- **N**: initial valid Phase 1 state with eight valid subassembly Blueprint records and ordinary
-  settings/statistics. The normal sample count is 200 with 20 warm-up iterations.
-- **L**: valid Phase 1 state with 128 valid subassembly Blueprint records. It is report-only and uses
-  50 samples with five warm-up iterations.
+- **N**: the audited 24 by 16 production fixture with more than 75 percent occupied tiles, mixed
+  footprints and rotations, real Power routes, nonuniform Thermal state, Overclock and Compute work,
+  two active Tasks, active Research and eight valid subassembly Blueprint records. The normal sample
+  count is 200 with 20 warm-up iterations.
+- **L**: the same production fixture with 128 valid Blueprint records. It is report-only and uses 50
+  samples with five warm-up iterations.
 - **A**: adversarial inputs covered by unit tests: duplicate keys, malformed UTF-8/base64/gzip,
   noncanonical JSON, checksum mismatch, depth/node/count overflow, cancellation, accessor/prototype
   attacks, and synthetic schema-0 migration. Rejected input is not performance evidence.
@@ -39,20 +41,24 @@ percentile, and the host is the documented Phase 1 target. Rerun after codec or 
 
 | Fixture | Operation | Bytes | Samples | Warm-up | Median | p95 | Maximum |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| N | encode none envelope | 29,460 | 200 | 20 | 16.0177 | 26.1752 | 47.0008 |
-| N | encode gzip envelope | 3,881 | 200 | 20 | 15.5150 | 20.4015 | 24.5792 |
-| N | decode none envelope | 29,460 | 200 | 20 | 21.1900 | 31.3344 | 173.0382 |
-| N | decode gzip envelope | 3,881 | 200 | 20 | 20.9539 | 30.6409 | 40.4400 |
-| N | SHA-256 payload | 25,303 | 200 | 20 | 0.3387 | 1.2175 | 7.2863 |
-| N | gzip encode payload | 25,303 | 200 | 20 | 1.1417 | 3.1717 | 5.7471 |
-| N | gzip decode payload | 25,303 | 200 | 20 | 0.7386 | 2.8124 | 15.0567 |
-| L | encode none envelope | 100,412 | 50 | 5 | 35.6466 | 51.1146 | 52.2354 |
-| L | encode gzip envelope | 5,749 | 50 | 5 | 40.7188 | 67.0517 | 71.2637 |
-| L | decode none envelope | 100,412 | 50 | 5 | 51.8668 | 75.3601 | 114.0586 |
-| L | decode gzip envelope | 5,749 | 50 | 5 | 52.3490 | 75.7712 | 102.6512 |
-| L | SHA-256 payload | 88,095 | 50 | 5 | 0.7546 | 1.3050 | 1.8650 |
-| L | gzip encode payload | 88,095 | 50 | 5 | 1.8740 | 3.4218 | 4.4363 |
-| L | gzip decode payload | 88,095 | 50 | 5 | 1.3967 | 4.4388 | 14.9179 |
+| N | full payload admission | 170,857 | 200 | 20 | 76.6047 | 103.0473 | 127.6817 |
+| N | canonical payload encode | 170,857 | 200 | 20 | 11.7548 | 15.4737 | 22.2015 |
+| N | admission + none envelope | 191,352 | 200 | 20 | 89.9750 | 107.4067 | 185.2011 |
+| N | admission + gzip envelope | 19,329 | 200 | 20 | 92.9978 | 116.6530 | 222.2400 |
+| N | decode + admission, none | 191,352 | 200 | 20 | 133.3105 | 158.3035 | 183.7240 |
+| N | decode + admission, gzip | 19,329 | 200 | 20 | 135.8220 | 154.6503 | 170.4992 |
+| N | SHA-256 payload | 170,857 | 200 | 20 | 1.0285 | 1.6198 | 4.4904 |
+| N | gzip encode payload | 170,857 | 200 | 20 | 2.9310 | 4.3068 | 6.5706 |
+| N | gzip decode payload | 170,857 | 200 | 20 | 3.7269 | 7.9984 | 25.0728 |
+| L | full payload admission | 233,649 | 50 | 5 | 112.1313 | 124.5379 | 126.8600 |
+| L | canonical payload encode | 233,649 | 50 | 5 | 16.3891 | 22.0584 | 26.5096 |
+| L | admission + none envelope | 262,304 | 50 | 5 | 130.4707 | 165.6058 | 169.5585 |
+| L | admission + gzip envelope | 21,213 | 50 | 5 | 133.3447 | 153.7461 | 169.5230 |
+| L | decode + admission, none | 262,304 | 50 | 5 | 189.6114 | 221.4566 | 257.8033 |
+| L | decode + admission, gzip | 21,213 | 50 | 5 | 192.1485 | 230.4273 | 245.2497 |
+| L | SHA-256 payload | 233,649 | 50 | 5 | 1.3233 | 1.9222 | 2.1188 |
+| L | gzip encode payload | 233,649 | 50 | 5 | 3.1348 | 5.1323 | 11.3084 |
+| L | gzip decode payload | 233,649 | 50 | 5 | 4.1041 | 5.9679 | 13.7941 |
 
 These figures are evidence for this host and source build, not a portable browser promise. The Phase 2
 contract targets ordinary canonical encoding below 40 ms p95 and reports large-state paths separately;
@@ -70,11 +76,13 @@ IndexedDB/save/load budgets are owned by later tasks.
 
 - Canonical bytes are sorted and stable, including Romanian and Unicode text.
 - SHA-256 covers exactly the uncompressed canonical UTF-8 payload.
-- Gzip round-trip returns the same canonical bytes; malformed and trailing streams are rejected.
+- Gzip round-trip returns the same canonical bytes; malformed, trailing and concatenated-member
+  streams are rejected.
 - Duplicate JSON keys are rejected before semantic schema parsing.
 - Checksum mismatch is rejected before payload parsing.
 - Schema-0 migration is pure, sequential, bounded, and copy-only.
-- Full-state admission remains a separate boundary that constructs a fresh production core and checks
-  the persisted queue position.
+- Public encode and decode compose full-state admission, validated content fingerprinting, execution
+  state-hash verification, fresh production-core construction and persisted queue-position checks.
+- Real Chromium round-trips both encodings through native Web Crypto and Compression Streams.
 - Existing Phase 1 state, RNG, Replay, Campaign, Blueprint, Benchmark, and compatibility vectors are
   preserved.

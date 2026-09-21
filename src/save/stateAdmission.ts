@@ -13,11 +13,24 @@ import { assertValidStoredTaskState } from "../sim/tasks/taskState.ts";
 import { assertValidStoredResearchState } from "../sim/research/researchState.ts";
 import { assertValidStoredBenchmarkState } from "../sim/benchmarks/benchmarkState.ts";
 import { assertValidBlueprintState } from "../sim/blueprints/blueprintState.ts";
-import { assertCanonicalSerializable, hashCanonicalState } from "../sim/replay/canonicalState.ts";
+import { hashCanonicalState } from "../sim/replay/canonicalState.ts";
 import { createProductionSimCore } from "../sim/core/productionSimCore.ts";
 import type { GameState } from "../sim/core/types.ts";
+import { hashSimulationContent } from "../sim/replay/replayContracts.ts";
+import type { SavePayloadV1 } from "./contracts.ts";
+import { parseSavePayloadV1 } from "./schema.ts";
 
 type UnknownRecord = Record<string, unknown>;
+
+const simulationContentHashCache = new WeakMap<ContentBundle, string>();
+
+function getSimulationContentHash(content: ContentBundle): string {
+  const cached = simulationContentHashCache.get(content);
+  if (cached !== undefined) return cached;
+  const hash = hashSimulationContent(content);
+  simulationContentHashCache.set(content, hash);
+  return hash;
+}
 
 function invalid(path: string, message: string): never {
   throw new PersistenceError("INVALID_STATE", `${path}: ${message}`, path);
@@ -954,7 +967,9 @@ export interface GameStateAdmissionOptions {
   readonly expectedStateHash?: string;
 }
 
-export function admitGameStateForSave(options: GameStateAdmissionOptions): GameState {
+type OwnedGameStateAdmissionOptions = GameStateAdmissionOptions;
+
+function admitOwnedGameStateForSave(options: OwnedGameStateAdmissionOptions): GameState {
   if (
     !Number.isSafeInteger(options.nextQueueSequence) ||
     options.nextQueueSequence < 0 ||
@@ -969,40 +984,34 @@ export function admitGameStateForSave(options: GameStateAdmissionOptions): GameS
       "INVALID_STATE",
       "expectedStateHash must be a canonical state hash.",
     );
-  assertStructurallyAdmissibleGameState(options.state);
-  const owned = cloneOwnedExternalData(options.state);
-  assertStructurallyAdmissibleGameState(owned);
-  if (owned.contentVersion !== options.content.contentVersion)
-    throw new PersistenceError(
-      "INCOMPATIBLE_CONTENT",
-      "GameState contentVersion does not match validated content.",
-    );
-  assertValidInventoryEconomyState(owned);
-  assertValidDesignModeState(owned);
-  assertValidStoredComputeState(owned);
-  assertValidStoredTaskState(owned);
-  assertValidStoredResearchState(owned);
-  assertValidStoredBenchmarkState(owned);
-  assertValidBlueprintState(owned.blueprints);
-  assertCanonicalSerializable(owned);
-  if (
-    options.expectedStateHash !== undefined &&
-    hashCanonicalState(owned) !== options.expectedStateHash
-  )
-    throw new PersistenceError(
-      "CHECKSUM_MISMATCH",
-      "GameState hash does not match execution metadata.",
-    );
   try {
+    assertStructurallyAdmissibleGameState(options.state);
+    const owned = options.state;
+    if (owned.contentVersion !== options.content.contentVersion)
+      throw new PersistenceError(
+        "INCOMPATIBLE_CONTENT",
+        "GameState contentVersion does not match validated content.",
+      );
+    assertValidInventoryEconomyState(owned);
+    assertValidDesignModeState(owned);
+    assertValidStoredComputeState(owned);
+    assertValidStoredTaskState(owned);
+    assertValidStoredResearchState(owned);
+    assertValidStoredBenchmarkState(owned);
+    assertValidBlueprintState(owned.blueprints);
+    const ownedStateHash = hashCanonicalState(owned);
+    if (options.expectedStateHash !== undefined && ownedStateHash !== options.expectedStateHash)
+      throw new PersistenceError(
+        "CHECKSUM_MISMATCH",
+        "GameState hash does not match execution metadata.",
+      );
     const core = createProductionSimCore({
       content: options.content,
       initialState: owned,
       initialCommandQueueSequence: options.nextQueueSequence,
     });
-    const admitted = core.getStateForSave();
-    if (hashCanonicalState(admitted) !== hashCanonicalState(owned))
-      throw new Error("Production admission changed the state.");
-    return deepFreeze(admitted) as GameState;
+    core.getStateForSave();
+    return deepFreeze(owned) as GameState;
   } catch (error: unknown) {
     if (error instanceof PersistenceError) throw error;
     throw new PersistenceError(
@@ -1010,4 +1019,32 @@ export function admitGameStateForSave(options: GameStateAdmissionOptions): GameS
       error instanceof Error ? error.message : "GameState admission failed.",
     );
   }
+}
+
+export function admitGameStateForSave(options: GameStateAdmissionOptions): GameState {
+  assertStructurallyAdmissibleGameState(options.state);
+  const owned = cloneOwnedExternalData(options.state);
+  return admitOwnedGameStateForSave({ ...options, state: owned });
+}
+
+export interface SavePayloadAdmissionOptions {
+  readonly payload: unknown;
+  readonly content: ContentBundle;
+}
+
+export function admitSavePayloadForContent(options: SavePayloadAdmissionOptions): SavePayloadV1 {
+  const parsed = parseSavePayloadV1(options.payload);
+  if (parsed.simulationContentHash !== getSimulationContentHash(options.content)) {
+    throw new PersistenceError(
+      "INCOMPATIBLE_CONTENT",
+      "Save simulationContentHash does not match validated content.",
+    );
+  }
+  const gameState = admitOwnedGameStateForSave({
+    state: parsed.gameState,
+    content: options.content,
+    nextQueueSequence: parsed.execution.nextQueueSequence,
+    expectedStateHash: parsed.execution.stateHash,
+  });
+  return deepFreeze({ ...parsed, gameState }) as SavePayloadV1;
 }

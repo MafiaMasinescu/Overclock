@@ -278,7 +278,8 @@ Phase 5.
 
 Task 16 implements the detached persistence foundation before storage integration: strict save
 schemas, descriptor-safe full-state admission, canonical UTF-8 payloads, SHA-256 envelopes, bounded
-`none`/`gzip` encoding, and synthetic schema-0 copy-only migration. Run the diagnostic with:
+`none`/`gzip` encoding, exact-one-member gzip admission, and synthetic schema-0 copy-only migration.
+Both public codec directions perform current-content and full-state admission. Run the diagnostic with:
 
 ```powershell
 corepack pnpm performance:save-codec

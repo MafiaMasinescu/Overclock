@@ -117,6 +117,26 @@ describe("strict durable GameState admission", () => {
     expect(invoked).toBe(false);
   });
 
+  test("rejects cycles and sparse arrays at the public admission boundary", () => {
+    const { content, state } = createState();
+    const cyclic = structuredClone(state) as unknown as Record<string, unknown>;
+    cyclic["self"] = cyclic;
+    expect(() => {
+      admitGameStateForSave({ state: cyclic, content, nextQueueSequence: 0 });
+    }).toThrow(expect.objectContaining({ code: "INVALID_FORMAT" }));
+
+    const sparse = structuredClone(state) as unknown as Record<string, unknown>;
+    const facility = sparse["facility"] as {
+      thermalTiles: { position: { x: number; y: number } }[];
+    };
+    const sparseThermalTiles = facility.thermalTiles.slice(1);
+    sparseThermalTiles.length = facility.thermalTiles.length;
+    facility.thermalTiles = sparseThermalTiles;
+    expect(() => {
+      admitGameStateForSave({ state: sparse, content, nextQueueSequence: 0 });
+    }).toThrow(expect.objectContaining({ code: "INVALID_FORMAT" }));
+  });
+
   test("enforces bounded external traversal", () => {
     const { content, state } = createState();
     const candidate = structuredClone(state);

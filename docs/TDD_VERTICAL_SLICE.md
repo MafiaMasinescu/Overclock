@@ -2277,3 +2277,10 @@ mismatch, unsafe prototypes/accessors, and resource-limit violations. SHA-256 co
 uncompressed canonical UTF-8 payload; gzip is an encoding option only. Synthetic schema 0 is a
 teaching/test format migrated on a copy by adding zero-valued local statistics. Wall-clock metadata,
 settings, local statistics, and codec/host data remain outside `GameState` and Replay hashes.
+
+Task 16 closes this detached boundary by composing current-content and full-state admission in both
+public codec directions. Runtime parsers retain `gameState` as unknown until admission; stable
+persistence errors wrap semantic failures. Primitive values, map entries and arrays participate in
+resource accounting, gzip input must contain exactly one member, decompressed output remains capped,
+and asynchronous boundaries honor cancellation. Chromium verifies native crypto/compression behavior;
+`docs/diagnostics/PHASE_2_SAVE_CODEC.md` records the dense target-host evidence.

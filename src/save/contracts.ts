@@ -47,6 +47,10 @@ export interface SavePayloadV1 {
   localStats: LocalStats;
 }
 
+export type UnadmittedSavePayloadV1 = Omit<SavePayloadV1, "gameState"> & {
+  gameState: unknown;
+};
+
 export interface SyntheticSavePayloadV0 {
   schemaVersion: 0;
   saveVersion: 1;
@@ -59,6 +63,10 @@ export interface SyntheticSavePayloadV0 {
   execution: SaveExecution;
   settings: PlayerSettings;
 }
+
+export type UnadmittedSyntheticSavePayloadV0 = Omit<SyntheticSavePayloadV0, "gameState"> & {
+  gameState: unknown;
+};
 
 export interface SaveEnvelope {
   format: "overclock-save";

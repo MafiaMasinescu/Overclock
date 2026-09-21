@@ -5,9 +5,9 @@ import type {
   PlayerSettings,
   SaveEnvelope,
   SaveExecution,
-  SavePayloadV1,
   SavePreview,
-  SyntheticSavePayloadV0,
+  UnadmittedSavePayloadV1,
+  UnadmittedSyntheticSavePayloadV0,
 } from "./contracts.ts";
 import { assertSafeExternalData, type ExternalDataLimits } from "./inputSafety.ts";
 import { PersistenceError } from "./persistenceErrors.ts";
@@ -143,7 +143,7 @@ export const savePreviewSchema = z
     contentVersion: z.string().min(1),
     simulatedYear: safeNonnegativeInteger,
     tick: safeNonnegativeInteger,
-    cashUsd: finiteNonNegative,
+    cashUsd: z.number(),
     verticalSliceCompleted: z.boolean(),
     savedAtIso: exactUtcIso,
     migrationRequired: z.boolean(),
@@ -172,7 +172,10 @@ export const localReportSchema = z
     appVersion: z.string().min(1),
     contentVersion: z.string().min(1),
     category: z.enum(["manual", "fatal", "recovery", "storage"]),
-    errorCode: z.string().min(1).nullable(),
+    errorCode: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]{0,63}$/)
+      .nullable(),
     tick: safeNonnegativeInteger.nullable(),
     year: safeNonnegativeInteger.nullable(),
     createdAtIso: exactUtcIso,
@@ -301,14 +304,14 @@ export interface LocalReport {
   };
 }
 
-export function parseSavePayloadV1(value: unknown): SavePayloadV1 {
+export function parseSavePayloadV1(value: unknown): UnadmittedSavePayloadV1 {
   const parsed = parse(savePayloadV1Schema, value, "SavePayloadV1");
   validateGameStateHeader(parsed);
-  return parsed as SavePayloadV1;
+  return parsed;
 }
 
-export function parseSyntheticSavePayloadV0(value: unknown): SyntheticSavePayloadV0 {
+export function parseSyntheticSavePayloadV0(value: unknown): UnadmittedSyntheticSavePayloadV0 {
   const parsed = parse(syntheticSavePayloadV0Schema, value, "Synthetic SavePayloadV0");
   validateGameStateHeader(parsed);
-  return parsed as SyntheticSavePayloadV0;
+  return parsed;
 }
