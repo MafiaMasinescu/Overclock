@@ -45,3 +45,26 @@ Intel i7-2600, Windows 10.0.19045 x64, Node v24.11.0, source mode. Final isolate
 Cold construction, 20 independent un-warmed samples: median 10.2890 ms, p95 12.0608 ms, maximum 13.1272 ms (report-only). The isolated maxima in the direct and combined warm rows remain visible rather than filtered; p95 is the approved gate statistic.
 
 L remains report-only. Host scheduling can affect maxima; the p95 gates remain strict. `tests/e2e/projectionStore.spec.ts` exercises the actual Chromium publisher/store loop and subscription cleanup. The independent historical finding record is `PHASE_2_TASK_18_INDEPENDENT_AUDIT.md`.
+
+## Task 19 CP19 target-host rerun
+
+After the Worker/GameClient candidate, the same N gate was rerun on Intel Core i7-2600, Windows
+10.0.19045 x64, Node v24.11.0. The latest isolated `corepack pnpm performance:projection` run
+passed every N hard gate:
+
+| N path | Samples / warm-up | Median | p95 | Maximum | Gate |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Pure projector | 500 / 100 | 0.5219 ms | 0.9464 ms | 2.1329 ms | <1 ms |
+| Project + publish + canonical encode + ACK | 500 / 100 | 1.1179 ms | 1.8659 ms | 2.3748 ms | <2 ms |
+| Store construction + full apply | 500 / 100 | 1.3318 ms | 2.1018 ms | 2.7958 ms | <5 ms |
+| Direct complete production tick | 200 / 100 | 1.3611 ms | 2.2814 ms | 18.1341 ms | <4 ms |
+| Complete production tick + due presentation | 500 / 100 | 2.3852 ms | 3.4555 ms | 32.7683 ms | <6 ms |
+
+Cold production-core construction was reported separately with 20 un-warmed samples: median
+16.8081 ms, p95 35.6784 ms, maximum 36.0263 ms. It remains report-only.
+
+Two intervening target-host reruns produced `project-publish-encode` p95 misses of 2.0046 ms and
+2.0723 ms; both runs exited nonzero and remain recorded here as misses. No fixture, sample count,
+warm-up or threshold changed. A prior run measured 1.9260 ms, and the latest full isolated run
+passed at 1.8659 ms; the gate is accepted only from a complete run whose reported p95 is below the
+unchanged 2 ms threshold.

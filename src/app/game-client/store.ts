@@ -62,6 +62,7 @@ export interface GameClientStore {
     equality?: (left: T, right: T) => boolean,
   ): SelectorSubscription<T>;
   getSubscriptionCount(): number;
+  dispose(): void;
 }
 
 interface SelectorEntry {
@@ -269,6 +270,7 @@ export function createGameClientStore(): GameClientStore {
   let snapshot: UiSnapshot | null = null;
   let grid: GridViewModel | null = null;
   let gridRevision = 0;
+  let lastGridPublicationSequence: number | null = null;
   let heatTiles: { x: number; y: number; temperatureC: number }[] | null = null;
   let connectionStatus: StoreConnectionStatus = "disconnected";
   const snapshotListeners = new Set<SnapshotListener>();
@@ -315,7 +317,7 @@ export function createGameClientStore(): GameClientStore {
   } {
     const modules = new Map<string, GridViewModel["modules"][number]>();
     const routes = new Map<string, GridViewModel["routes"][number]>();
-    if (grid !== null) {
+    if (grid !== null && !publication.heatmap.full) {
       for (const view of grid.modules) modules.set(view.id, view);
       for (const view of grid.routes) routes.set(view.id, view);
     }
@@ -399,11 +401,40 @@ export function createGameClientStore(): GameClientStore {
         return { applied: false, reason: "stale-epoch" };
       }
       const heatmapFields = readExactDataRecord(gridFields["heatmap"], ["full", "values"]);
-      if (grid === null && heatmapFields["full"] !== true) {
-        return { applied: false, reason: "resync-required" };
+      const publicationSequenceValue = gridFields["publicationSequence"];
+      const nextGridRevision = gridFields["nextGridRevision"];
+      const isFull = heatmapFields["full"] === true;
+      if (
+        !Number.isSafeInteger(publicationSequenceValue) ||
+        (publicationSequenceValue as number) < 0
+      ) {
+        throw new TypeError("Grid publication sequence must be a nonnegative safe integer.");
       }
-      if (grid !== null && gridFields["baseGridRevision"] !== gridRevision) {
-        return { applied: false, reason: "resync-required" };
+      const publicationSequence = publicationSequenceValue as number;
+      if (!Number.isSafeInteger(nextGridRevision) || (nextGridRevision as number) < 0) {
+        throw new TypeError("Grid publication next revision must be a nonnegative safe integer.");
+      }
+      if (grid === null) {
+        if (!isFull || publicationSequence !== 0) {
+          return { applied: false, reason: "resync-required" };
+        }
+      } else {
+        if (
+          lastGridPublicationSequence === null ||
+          publicationSequence <= lastGridPublicationSequence
+        ) {
+          return { applied: false, reason: "resync-required" };
+        }
+        if (isFull) {
+          if ((nextGridRevision as number) < gridRevision) {
+            return { applied: false, reason: "resync-required" };
+          }
+        } else if (
+          publicationSequence !== lastGridPublicationSequence + 1 ||
+          gridFields["baseGridRevision"] !== gridRevision
+        ) {
+          return { applied: false, reason: "resync-required" };
+        }
       }
     }
     assertDeeplyFrozen(incomingSnapshot, new Set());
@@ -411,9 +442,7 @@ export function createGameClientStore(): GameClientStore {
     if (parsedGrid !== null) assertValidGridPublication(parsedGrid);
     if (parsedGrid === null) {
       if (grid === null) return { applied: false, reason: "resync-required" };
-    } else if (grid === null) {
-      if (!parsedGrid.heatmap.full) return { applied: false, reason: "resync-required" };
-    } else if (parsedGrid.baseGridRevision !== gridRevision) {
+    } else if (grid === null && !parsedGrid.heatmap.full) {
       return { applied: false, reason: "resync-required" };
     }
     let nextGrid: GridViewModel;
@@ -424,11 +453,6 @@ export function createGameClientStore(): GameClientStore {
       if (grid === null) return { applied: false, reason: "resync-required" };
       nextGrid = grid;
     } else {
-      if (grid === null) {
-        if (!parsedGrid.heatmap.full) return { applied: false, reason: "resync-required" };
-      } else if (parsedGrid.baseGridRevision !== gridRevision) {
-        return { applied: false, reason: "resync-required" };
-      }
       const builtGrid = buildNextGrid(parsedGrid);
       nextGrid = builtGrid.grid;
       nextHeatTiles = builtGrid.heatTiles;
@@ -481,7 +505,10 @@ export function createGameClientStore(): GameClientStore {
     snapshot = frozenSnapshot;
     grid = nextGrid;
     heatTiles = nextHeatTiles;
-    if (parsedGrid !== null) gridRevision = parsedGrid.nextGridRevision;
+    if (parsedGrid !== null) {
+      gridRevision = parsedGrid.nextGridRevision;
+      lastGridPublicationSequence = parsedGrid.publicationSequence;
+    }
     if (connectionStatus === "disconnected") connectionStatus = "live";
     if (changed) notify();
     return { applied: true };
@@ -549,6 +576,7 @@ export function createGameClientStore(): GameClientStore {
       snapshot = null;
       grid = null;
       gridRevision = 0;
+      lastGridPublicationSequence = null;
       heatTiles = null;
       connectionStatus = "disconnected";
       notify();
@@ -556,5 +584,9 @@ export function createGameClientStore(): GameClientStore {
     subscribe,
     select,
     getSubscriptionCount: () => snapshotListeners.size + selectorEntries.size,
+    dispose: () => {
+      snapshotListeners.clear();
+      selectorEntries.clear();
+    },
   };
 }

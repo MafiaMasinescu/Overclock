@@ -5,6 +5,7 @@ import type {
   ModuleInstanceId,
   ResearchNodeId,
   TaskInstanceId,
+  TaskStatus,
 } from "../core/types.ts";
 import type { CommandRejectionCode } from "../commands/contracts.ts";
 
@@ -95,3 +96,32 @@ export type SimEvent =
       kind: "AUTOSAVE_REQUESTED";
       reason: "interval" | "task" | "research" | "benchmark" | "final";
     });
+
+// Small read-only projection used by the host's post-commit fact observer.
+// It contains only lifecycle transitions that have an exact state witness.
+export interface CommittedFactProjection {
+  readonly tick: number;
+  readonly cashUsd: number;
+  readonly liveLayoutRevision: number;
+  readonly tasks: readonly { readonly taskInstanceId: string; readonly status: TaskStatus }[];
+  readonly activeResearchNodeId: string | null;
+  readonly completedResearchNodeIds: readonly string[];
+  readonly shutdownModules: readonly {
+    readonly moduleInstanceId: string;
+    readonly temperatureC: number | null;
+  }[];
+  readonly blueprintIds: readonly string[];
+  readonly activeBenchmark: {
+    readonly runId: string;
+    readonly benchmarkId: string;
+  } | null;
+  readonly benchmarkHistoryCount: number;
+  readonly latestBenchmarkResult: {
+    readonly runId: string;
+    readonly benchmarkId: string;
+    readonly averageUsefulComputeFlops: number;
+    readonly passed: boolean;
+  } | null;
+  readonly museumSnapshotIds: readonly string[];
+  readonly transistorRevealed: boolean;
+}

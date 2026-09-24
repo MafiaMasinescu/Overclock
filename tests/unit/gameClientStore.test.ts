@@ -198,15 +198,138 @@ describe("store lifecycle", () => {
 
   test("wrong base applies nothing and keeps stable references", () => {
     const pipe = createPipeline("store-wrongbase", "store-epoch-3");
-    const { snapshot, publication } = roundTrip(pipe);
+    roundTrip(pipe);
+    dispatchAccepted(pipe.core, {
+      commandId: commandId(1),
+      source: "player",
+      kind: "ENTER_DESIGN_MODE",
+    });
+    roundTrip(pipe);
+    dispatchAccepted(pipe.core, {
+      commandId: commandId(2),
+      source: "player",
+      kind: "PLACE_MODULE",
+      definitionId: "module-vacuum-tube-logic",
+      position: { x: 0, y: 0 },
+      rotation: 0,
+    });
+    const { snapshot, publication } = projectAndPublish(pipe);
+    const snapshotBefore = pipe.store.getSnapshot();
     const gridBefore = pipe.store.getGridViewModel();
     if (publication === null) throw new Error("Expected a full publication.");
+    expect(publication.heatmap.full).toBe(false);
 
-    const tampered: GridPublication = { ...publication, baseGridRevision: 999 };
+    const tampered: GridPublication = {
+      ...publication,
+      baseGridRevision: 999,
+      publicationSequence: publication.publicationSequence + 1,
+    };
     const result = pipe.store.applyPublication({ epoch: pipe.epoch, snapshot, grid: tampered });
     expect(result).toEqual({ applied: false, reason: "resync-required" });
-    expect(pipe.store.getSnapshot()).toBe(snapshot);
+    expect(pipe.store.getSnapshot()).toBe(snapshotBefore);
     expect(pipe.store.getGridViewModel()).toBe(gridBefore);
+  });
+
+  test("a newer full resync rebases an applied publication whose ACK timed out", () => {
+    const pipe = createPipeline("store-delayed-ack-resync", "store-delayed-ack-resync-epoch");
+    const initial = roundTrip(pipe);
+    if (initial.publication === null) throw new Error("Expected the initial full publication.");
+    const delayedStore = createGameClientStore();
+    expect(
+      delayedStore.applyPublication({
+        epoch: pipe.epoch,
+        snapshot: initial.snapshot,
+        grid: initial.publication,
+      }),
+    ).toEqual({ applied: true });
+
+    pipe.publisher.requestResync();
+    const delayed = projectAndPublish(pipe);
+    if (delayed.publication === null) throw new Error("Expected a delayed full publication.");
+    expect(delayed.publication.heatmap.full).toBe(true);
+    expect(
+      pipe.store.applyPublication({
+        epoch: pipe.epoch,
+        snapshot: delayed.snapshot,
+        grid: delayed.publication,
+      }),
+    ).toEqual({ applied: true });
+
+    pipe.nowMs += 1_001;
+    expect(pipe.publisher.checkTimeout(pipe.nowMs)).toEqual({ degraded: true });
+    const recovery = projectAndPublish(pipe);
+    if (recovery.publication === null) throw new Error("Expected a full resync publication.");
+    expect(recovery.publication.heatmap.full).toBe(true);
+    expect(recovery.publication.publicationSequence).toBeGreaterThan(
+      delayed.publication.publicationSequence,
+    );
+    expect(recovery.publication.baseGridRevision).toBe(delayed.publication.baseGridRevision);
+    expect(recovery.publication.nextGridRevision).toBe(pipe.store.getGridViewModel()?.revision);
+    expect(
+      pipe.store.applyPublication({
+        epoch: pipe.epoch,
+        snapshot: recovery.snapshot,
+        grid: recovery.publication,
+      }),
+    ).toEqual({ applied: true });
+    expect(
+      delayedStore.applyPublication({
+        epoch: pipe.epoch,
+        snapshot: recovery.snapshot,
+        grid: recovery.publication,
+      }),
+    ).toEqual({ applied: true });
+    expect(
+      delayedStore.applyPublication({
+        epoch: pipe.epoch,
+        snapshot: delayed.snapshot,
+        grid: delayed.publication,
+      }),
+    ).toEqual({ applied: false, reason: "resync-required" });
+  });
+
+  test("a full resync removes entities absent from its complete projection", () => {
+    const pipe = createPipeline("store-full-resync-removal", "store-full-resync-removal-epoch");
+    roundTrip(pipe);
+    dispatchAccepted(pipe.core, {
+      commandId: commandId(1),
+      source: "player",
+      kind: "ENTER_DESIGN_MODE",
+    });
+    roundTrip(pipe);
+    dispatchAccepted(pipe.core, {
+      commandId: commandId(2),
+      source: "player",
+      kind: "PLACE_MODULE",
+      definitionId: "module-vacuum-tube-logic",
+      position: { x: 0, y: 0 },
+      rotation: 0,
+    });
+    roundTrip(pipe);
+    const moduleId = pipe.store.getGridViewModel()?.modules[0]?.id;
+    expect(moduleId).toBeDefined();
+    if (moduleId === undefined) throw new Error("Expected a projected module id.");
+
+    dispatchAccepted(pipe.core, {
+      commandId: commandId(3),
+      source: "player",
+      kind: "REMOVE_MODULE",
+      moduleInstanceId: moduleId,
+    });
+    pipe.publisher.requestResync();
+    const recovery = projectAndPublish(pipe);
+    if (recovery.publication === null) throw new Error("Expected a full resync publication.");
+    expect(recovery.publication.heatmap.full).toBe(true);
+    expect(recovery.publication.entities.upsertModules).toEqual([]);
+    expect(recovery.publication.entities.removeModuleIds).toEqual([]);
+    expect(
+      pipe.store.applyPublication({
+        epoch: pipe.epoch,
+        snapshot: recovery.snapshot,
+        grid: recovery.publication,
+      }),
+    ).toEqual({ applied: true });
+    expect(pipe.store.getGridViewModel()?.modules).toEqual([]);
   });
 
   test("stale epoch is rejected at transport and store boundaries", () => {
@@ -588,6 +711,7 @@ describe("section preservation and selectors", () => {
     expect("subscribeEvents" in store).toBe(false);
     expect(Object.keys(store).toSorted()).toEqual([
       "applyPublication",
+      "dispose",
       "getConnectionStatus",
       "getGridViewModel",
       "getSnapshot",

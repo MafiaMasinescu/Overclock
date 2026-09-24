@@ -7,6 +7,7 @@ import type {
   Rotation,
 } from "../../sim/core/types.ts";
 import type { GridViewModel, UiSnapshot } from "./snapshots.ts";
+import type { StoreConnectionStatus } from "./store.ts";
 
 export type SaveReason = "manual" | "autosave" | "checkpoint" | "exit";
 
@@ -17,13 +18,21 @@ export interface SaveMetadata {
   sizeBytes: number;
 }
 
+export type GameClientControlNotice =
+  | { readonly kind: "EVENTS_GAP"; readonly nextEventSequence: number }
+  | { readonly kind: "TRANSPORT_DEGRADED"; readonly publicationSequence: number };
+
 export interface GameClient {
   dispatch(command: SimCommand): Promise<CommandResult>;
   getSnapshot(): UiSnapshot;
   subscribe(listener: () => void): () => void;
   subscribeEvents(listener: (event: SimEvent) => void): () => void;
+  subscribeControl(listener: (notice: GameClientControlNotice) => void): () => void;
   getGridViewModel(): GridViewModel;
   requestSave(reason: SaveReason): Promise<SaveMetadata>;
+  getConnectionStatus(): StoreConnectionStatus;
+  subscribeConnection(listener: () => void): () => void;
+  destroy(): void;
 }
 
 export type GridInteractionMode =

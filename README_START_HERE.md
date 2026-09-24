@@ -270,9 +270,9 @@ the first finite Task between ticks 1,780 and 1,790, records the first persisten
 30,270. Maximum forced deadtime is 2,990 ticks. The approved Task 15.7 balance corrections and the
 audited i7-2600 evidence are recorded in `docs/diagnostics/MILESTONE_BOT.md`.
 
-Task 15 closes the Phase 1 headless simulator. Phase 2 owns persistence, workers, the real client
-and selectors; Build Workspace UI is Phase 3, gameplay UI is Phase 4, and release hardening is
-Phase 5.
+Task 15 closes the Phase 1 headless simulator. Phase 2 Tasks 16–19 provide persistence foundations,
+owned presentation, the Worker host and real GameClient; durable save orchestration/recovery remains
+Task 20. Build Workspace UI is Phase 3, gameplay UI is Phase 4, and release hardening is Phase 5.
 
 ## Phase 2 Task 16: detached save codec
 
@@ -287,8 +287,9 @@ corepack pnpm performance:save-codec
 
 The permanent contract and execution prompts are in
 `docs/phases/OVERCLOCK_Phase_2_Contract_and_Prompts.md`; the diagnostic and latest host evidence are
-in `docs/diagnostics/PHASE_2_SAVE_CODEC.md`. IndexedDB, Worker transport, scheduler, client/store,
-autosave, recovery, import confirmation, and UI remain later Phase 2 work.
+in `docs/diagnostics/PHASE_2_SAVE_CODEC.md`. IndexedDB, Worker transport, scheduler and client/store
+are completed by Tasks 17–19; autosave, recovery, import confirmation and persistence UI remain later
+Phase 2 work.
 
 ## Phase 2 Task 17: atomic local repository
 
@@ -302,9 +303,29 @@ corepack pnpm test:e2e
 ```
 
 The repository does not enter deterministic `GameState`, Replay hashes, or the production simulator
-bundle. Autosave scheduling, Worker recovery, real client/store integration and UI remain later
-Phase 2 work. Contracts and evidence are in ADR-0024 through ADR-0026 and
+bundle. Autosave scheduling, Worker recovery and persistence UI remain later Phase 2 work. Contracts
+and evidence are in ADR-0024 through ADR-0026 and
 `docs/diagnostics/PHASE_2_REPOSITORY.md`.
+
+## Phase 2 Task 19: Worker and GameClient diagnostics
+
+Task 19 runs the production simulator in a dedicated browser Worker and connects the shell through
+the real `GameClient`. Run the real-browser integration fixtures and host scheduler diagnostic with:
+
+```powershell
+corepack pnpm exec playwright test tests/e2e/workerBootstrap.spec.ts tests/e2e/workerParity.spec.ts tests/e2e/workerLifecycle.spec.ts tests/e2e/workerDiagnostics.spec.ts
+corepack pnpm performance:worker-host
+```
+
+The dense-N Chromium diagnostics use 20 warm-up plus 200 idle command samples, 100 warm-up plus 500
+direct tick samples, 100 warm-up plus 500 one-step Worker tick/projection callbacks, and 100 warm-up
+plus 500 actual publication replies. Publication replies are sampled only on one-step callbacks;
+client processing is paired to the Worker reply by `publicationSequence`. On the verified Windows 10
+x64 / Intel Core i7-2600 target, the complete browser run reported p95 5.4 ms idle round-trip,
+1.5 ms direct tick, 3.2 ms combined Worker tick/projection, 4.4 ms client publication, 0.4 ms
+Worker `postMessage`, and 102.7 ms foreground visible command. Host identity, sample method, gates,
+and results are in `docs/diagnostics/PHASE_2_WORKER.md`. Durable save, import and recovery remain
+Task 20 work.
 
 ## Regula de calitate
 

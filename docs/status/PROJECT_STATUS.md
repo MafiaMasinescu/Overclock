@@ -1,10 +1,12 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-23
+Updated: 2026-09-24
 
 ## Current phase
 
-- Phase 2: Task 18 owned presentation pipeline is documented; Task 19 remains deferred.
+- Phase 2: Tasks 16–19 provide persistence foundations, the repository, owned presentation, and the
+  real Worker/GameClient bridge. Task 19 is at its CP19 checkpoint boundary; Task 20 durable save,
+  autosave, load/recovery, and import/export UI work has not begun.
 - Phase 1: Headless Simulator, closed through Task 15 and the ADR-0022 Campaign coherence repair.
 - Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
   `8e80b00` and explicitly approved on 18 August 2026.
@@ -1194,4 +1196,39 @@ This post-checkpoint documentation reconciliation does not amend or replace CP18
 verify that the recorded CP18 commit is an ancestor of the clean, synchronized current
 `HEAD`/`origin/main`/remote `main`. Inspect every intervening commit and allow only this
 documentation reconciliation; record the actual current `HEAD` as the Task 19 implementation
-base in its working status. No Task 19 implementation has begun.
+base in its working status. No Task 19 implementation had begun at that entry.
+
+## Phase 2 Task 19: Worker host, scheduler, and real GameClient
+
+Task 19 implements the strict version-1 Worker wire contract, serial production `SimWorkerHost`,
+25 ms monotonic wake/100 ms fixed-tick scheduler with speed 1/2/4 and a 20-tick burst limit, the
+real Worker-backed GameClient and store, bounded publication ACK/resync, committed-fact delivery,
+localized connection state, and lifecycle teardown. ADR-0028 records the decisions; Task 19 leaves
+durable writes, autosave, live load, import/export UI and durable recovery to Task 20.
+
+Real Chromium evidence compares identical Worker/direct command results and receipts, then captures
+both Campaign boundaries at ticks 12,000 and 24,000. The parity witness is RNG `1720442453`, hashes
+`5f0c57e688e6a693` and `ff38b6a736a2ffb0`, and queue position 11 after 21 commands. Delayed-ACK
+resync, fatal/crash/messageerror, 20 Worker destroy cycles, bootstrap, and the Phase 0 shell are
+covered. Dense-N browser evidence on the verified i7-2600 target reports p95 5.4 ms idle request /
+result, 1.5 ms direct tick, 3.2 ms combined Worker tick/projection, 4.4 ms client publication,
+0.4 ms Worker `postMessage`, and 102.7 ms foreground command visibility. The 500 measured
+publication replies each came from a callback with exactly one `SimCore.step`; client samples pair
+to the same `publicationSequence` values. Exact cohorts, host identity, all p95 results and the
+complete 33/33 Chromium coverage are in `docs/diagnostics/PHASE_2_WORKER.md`. Task 20 is the exact
+next group; no Phase 3 work is included.
+
+The final target-host diagnostics also passed the Worker host scheduler gates: 1,500 no-due wakes
+p95 0.0024 ms, 500 due-tick wakes p95 0.5713 ms, and direct `SimCore.step(1)` p95 0.2593 ms.
+The N projection rerun passed with p95 0.9464 ms pure-project, 1.8659 ms project/publish/encode/ACK,
+2.1018 ms store construction/apply, 2.2814 ms direct complete production tick, and 3.4555 ms
+combined tick/presentation. Two intervening projection runs missed only project/publish/encode/ACK
+at 2.0046 ms and 2.0723 ms; both misses and the passing rerun are recorded without changing the
+2 ms gate in `docs/diagnostics/PHASE_2_PROJECTION.md`. Dense Replay diagnostics passed with p95
+2.7653 ms direct, 2.1153 ms recording, and 1.9743 ms playback against 4/5/5 ms limits.
+`corepack pnpm validate` passed format, lint, typecheck, content validation, 86 unit files / 1,480
+tests, and production build. Two independent final `corepack pnpm test` processes each passed
+86/86 unit files (1,480 tests) and 15/15 determinism files (23 tests); standalone
+`corepack pnpm test:determinism` passed 15/15 files (23 tests). The final full Chromium run passed
+33/33. Production scanning found no Worker test harness strings in `dist`, no app/browser/timer/
+storage imports in `src/sim`, and no production `devtools` imports. Final `git diff --check` passed.

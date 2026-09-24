@@ -103,6 +103,8 @@ const placeholderGrid: GridViewModel = deepFreeze({
 export function createFakeGameClient(): GameClient {
   const snapshotListeners = new Set<() => void>();
   const eventListeners = new Set<Parameters<GameClient["subscribeEvents"]>[0]>();
+  const controlListeners = new Set<Parameters<GameClient["subscribeControl"]>[0]>();
+  const connectionListeners = new Set<() => void>();
 
   return {
     dispatch(command) {
@@ -129,11 +131,32 @@ export function createFakeGameClient(): GameClient {
         eventListeners.delete(listener);
       };
     },
+    subscribeControl(listener) {
+      controlListeners.add(listener);
+      return () => {
+        controlListeners.delete(listener);
+      };
+    },
     getGridViewModel() {
       return placeholderGrid;
     },
     requestSave() {
       return Promise.reject(new Error("Saving is unavailable in Phase 0."));
+    },
+    getConnectionStatus() {
+      return "disconnected";
+    },
+    subscribeConnection(listener) {
+      connectionListeners.add(listener);
+      return () => {
+        connectionListeners.delete(listener);
+      };
+    },
+    destroy() {
+      snapshotListeners.clear();
+      eventListeners.clear();
+      controlListeners.clear();
+      connectionListeners.clear();
     },
   };
 }

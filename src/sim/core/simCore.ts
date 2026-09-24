@@ -34,6 +34,8 @@ import {
   assertValidCampaignBranchStructure,
 } from "../campaign/campaignDomain.ts";
 import { resolveSimulatorContent } from "./simulatorContent.ts";
+import type { CommittedFactProjection } from "../events/contracts.ts";
+import { projectCommittedFactProjection } from "../selectors/projector.ts";
 
 const UINT32_MAX = 0xffff_ffff;
 
@@ -420,6 +422,13 @@ export class SimCore {
     );
     registerProjectedThermalTiles(presentation.thermalTiles);
     return presentation;
+  }
+
+  // Owned, compact state witness for post-commit Worker facts. This avoids
+  // serializing or cloning GameState and keeps the observer outside gameplay
+  // stages, Replay, and persistence.
+  getCommittedFactProjection(): CommittedFactProjection {
+    return projectCommittedFactProjection(this.authoritativeState.readInternal(), this.content);
   }
 
   getStateForSave(): GameState {

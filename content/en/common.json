@@ -213,6 +213,11 @@
     }
   },
   "ui": {
+    "connection-connecting": "Connecting to the simulator…",
+    "connection-failed": "The simulator could not start. Reload the page to try again.",
+    "connection-degraded": "The simulator connection was interrupted. The last action may have an unknown outcome.",
+    "connection-resync-required": "Synchronizing simulator state…",
+    "connection-disconnected": "The simulator is disconnected. Reload the page to start a new session.",
     "build": "Build",
     "operations": "Operations",
     "research": "Research",

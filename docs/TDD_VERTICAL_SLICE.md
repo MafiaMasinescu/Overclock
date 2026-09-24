@@ -163,7 +163,9 @@ export interface SimCore {
 
 ### 7.2 Sim Worker Host
 
-În producție, simulatorul rulează într-un Web Worker. Host-ul:
+În producție, simulatorul rulează într-un Web Worker. ADR-0028 și
+`docs/phases/OVERCLOCK_Phase_2_Contract_and_Prompts.md` definesc contractul implementat; schița
+istorică de mai jos nu înlocuiește schedulerul fixed-step:
 
 - primește comenzi serializabile;
 - menține accumulator-ul pentru fixed ticks;
@@ -171,13 +173,17 @@ export interface SimCore {
 - trimite snapshot-uri UI la maximum 10 Hz;
 - trimite alertele critice imediat după tick;
 - acceptă pause, viteze 1x, 2x și 4x;
-- oprește catch-up-ul când tab-ul revine după o suspendare lungă și delegă progresul către Offline Assist.
+- ține simularea în hold la suspendare lungă sau visibility loss și reia doar de la o origine
+  temporală nouă;
+- exclude mentenanța asincronă din elapsed simulation time.
 
 Testele folosesc `SimCore` direct. Node nu trebuie să emuleze Worker-ul pentru testele de formule și determinism.
 
 ### 7.3 GameClient
 
-`GameClient` este singurul API folosit de UI pentru gameplay:
+`GameClient` este singurul API folosit de UI pentru gameplay. Interfața curentă din
+`src/app/game-client/contracts.ts` păstrează fluxul `requestSave` ca punct public, dar Task 19 încă nu
+implementează operații durabile de save:
 
 ```ts
 export interface GameClient {
@@ -185,8 +191,12 @@ export interface GameClient {
   getSnapshot(): UiSnapshot;
   subscribe(listener: () => void): () => void;
   subscribeEvents(listener: (event: SimEvent) => void): () => void;
+  subscribeControl(listener: (notice: GameClientControlNotice) => void): () => void;
   getGridViewModel(): GridViewModel;
   requestSave(reason: SaveReason): Promise<SaveMetadata>;
+  getConnectionStatus(): StoreConnectionStatus;
+  subscribeConnection(listener: () => void): () => void;
+  destroy(): void;
 }
 ```
 
@@ -232,12 +242,16 @@ bot. Seven production domain registries currently occupy eight stage slots: Powe
 generation and Thermal update; Overclock/Stability; Compute; combined Task/Benchmark; Research; and
 Campaign. Unregistered tuple positions are deliberate no-op slots, not hidden implementations.
 
-Code-level foundations exist for `GameClient`, worker messages, UI snapshots, save envelopes, and
-simulation events, but only the fake client is wired. `SimWorkerHost`, a real client/store,
-selectors, patch/event transport semantics, IndexedDB/autosave/migrations, and durable recovery are
-TDD designs rather than production implementations. Phase 2 owns their detailed contracts and
-implementation. In-memory verified Replay resume is not persistence, autosave, migration, or worker
-recovery.
+Phase 2 Tasks 16–19 implement detached persistence bytes, the IndexedDB repository, owned projection,
+strict Worker protocol, the production host/scheduler and the real `GameClient` store/bridge. The
+production shell waits for the dedicated Worker and exposes its connection state. Task 19 keeps
+durable save orchestration, live load/recovery and import/export controls in Task 20. In-memory
+verified Replay resume is not persistence, autosave, migration, or worker recovery.
+
+Task 19 caps reserved or unacknowledged terminal Worker results at 512; the client releases each
+slot with a one-way `ACK_RESULT`, including after host fatal, and treats later command outcomes as
+unknown without replay. Its verified-target dense-N Chromium run reports the measured gates and
+publication-sequence pairing in `docs/diagnostics/PHASE_2_WORKER.md`.
 
 Phase 3 owns auto-connect/A* routing, renderer consumption of snapshots/patches, and heatmap UI.
 Phase 4 owns gameplay alerts/event semantics and UI, achievements/tutorial behavior, and any future

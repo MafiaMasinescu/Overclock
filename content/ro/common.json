@@ -213,6 +213,11 @@
     }
   },
   "ui": {
+    "connection-connecting": "Se conectează simulatorul…",
+    "connection-failed": "Simulatorul nu a putut porni. Reîncarcă pagina pentru a încerca din nou.",
+    "connection-degraded": "Conexiunea cu simulatorul a fost întreruptă. Rezultatul ultimei acțiuni poate fi necunoscut.",
+    "connection-resync-required": "Se sincronizează starea simulatorului…",
+    "connection-disconnected": "Simulatorul este deconectat. Reîncarcă pagina pentru a porni o sesiune nouă.",
     "build": "Build",
     "operations": "Operations",
     "research": "Research",

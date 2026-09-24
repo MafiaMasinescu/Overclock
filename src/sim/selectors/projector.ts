@@ -9,6 +9,7 @@
 // fail loud because they contradict construction-time validation.
 
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
+import type { CommittedFactProjection } from "../events/contracts.ts";
 import { compareStableStrings } from "../../grid/domain/stableOrdering.ts";
 import { resolveRotatedFootprintSize } from "../../grid/domain/footprintGeometry.ts";
 import { freezeOwned } from "./freezeOwned.ts";
@@ -766,6 +767,74 @@ export interface PresentationProjector {
     content: ContentBundle,
     context: PresentationContext,
   ): ProjectedPresentation;
+}
+
+// Narrow post-commit read for the Worker fact observer. Keep this projection
+// independent of GameState ownership and reuse the presentation temperature
+// mapping for shutdown facts. It deliberately excludes forecast and alert
+// inference.
+export function projectCommittedFactProjection(
+  state: Readonly<GameState>,
+  content: ContentBundle,
+): CommittedFactProjection {
+  const facility = state.facility;
+  const taskIds = Object.keys(state.tasks.instances).toSorted(compareStableStrings);
+  const tasks = taskIds.map((taskInstanceId) => {
+    const task = state.tasks.instances[taskInstanceId];
+    if (task === undefined) throw new Error("Committed fact projection lost a Task instance.");
+    return { taskInstanceId, status: task.status };
+  });
+  const completedResearchNodeIds = Object.keys(state.research.statuses)
+    .filter((nodeId) => state.research.statuses[nodeId] === "completed")
+    .toSorted(compareStableStrings);
+  const shutdownIds = Object.keys(facility.modules)
+    .filter((moduleId) => facility.modules[moduleId]?.operationalState === "shutdown")
+    .toSorted(compareStableStrings);
+  const thermal = shutdownIds.length === 0 ? null : summarizeThermal(facility);
+  const shutdownModules = shutdownIds.map((moduleInstanceId) => {
+    const module = facility.modules[moduleInstanceId];
+    if (module === undefined || thermal === null) {
+      throw new Error("Committed fact projection lost a shutdown module.");
+    }
+    return {
+      moduleInstanceId,
+      temperatureC: meanLiveModuleTemperatureC(module, module.definitionId, content, thermal),
+    };
+  });
+  return freezeOwned({
+    tick: state.tick,
+    cashUsd: state.economy.cashUsd,
+    liveLayoutRevision: facility.liveLayoutRevision,
+    tasks,
+    activeResearchNodeId: state.research.active?.nodeId ?? null,
+    completedResearchNodeIds,
+    shutdownModules,
+    blueprintIds: Object.keys(state.blueprints.records).toSorted(compareStableStrings),
+    activeBenchmark:
+      state.benchmarks.active === null
+        ? null
+        : {
+            runId: state.benchmarks.active.runId,
+            benchmarkId: state.benchmarks.active.benchmarkId,
+          },
+    benchmarkHistoryCount: state.benchmarks.history.length,
+    latestBenchmarkResult:
+      state.benchmarks.history.length === 0
+        ? null
+        : (() => {
+            const result = state.benchmarks.history[state.benchmarks.history.length - 1];
+            if (result === undefined)
+              throw new Error("Committed Benchmark history has a missing tail.");
+            return {
+              runId: result.runId,
+              benchmarkId: result.benchmarkId,
+              averageUsefulComputeFlops: result.averageUsefulComputeFlops,
+              passed: result.passed,
+            };
+          })(),
+    museumSnapshotIds: state.museum.snapshots.map((snapshot) => snapshot.id),
+    transistorRevealed: state.campaign.transistorRevealed,
+  });
 }
 
 export function createPresentationProjector(): PresentationProjector {
