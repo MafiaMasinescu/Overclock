@@ -305,7 +305,7 @@ At a checkpoint, Sol High reviews all group changes independently, reproduces su
 
 Dependency map: `Phase 1 -> 16 -> CP16 -> 17 -> CP17 -> 18 -> CP18 -> 19 -> CP19 -> 20 -> CP20 -> 21 -> CP21 -> closure`. Conceptually 18 depends on Phase 1 and accepted Task16 contracts, while 17 is independent of selectors; use the linear order above to avoid concurrent edits and simplify Luna handoffs. No checkpoint authorizes the next phase.
 
-At Task16.1 copy this artifact into the recommended docs path without rewriting its decisions. Record each successful checkpoint's exact full SHA in permanent status; subsequent prompts derive their base from that verified checkpoint, never an invented future SHA. Maintain one temporary `docs/status/PHASE_2_TASK_<N>_WORKING_STATUS.md` per active group with base SHA, reviewed paths, completed subtasks, tests and exact next subtask. Merge useful evidence and remove that file at its checkpoint.
+At Task16.1 copy this artifact into the recommended docs path without rewriting its decisions. Record each successful checkpoint's exact full SHA in permanent status; subsequent prompts derive their base from that verified checkpoint, never an invented future SHA. A commit cannot contain its own final SHA, so a reviewed documentation-only follow-up may record the prior checkpoint SHA. At the next group entry, require that checkpoint to be an ancestor of clean synchronized HEAD, review and allowlist every intervening commit, and record the actual HEAD as the new group's immutable implementation base. Do not mistake a historical pre-repair audit verdict for the later certified checkpoint. Maintain one temporary `docs/status/PHASE_2_TASK_<N>_WORKING_STATUS.md` per active group with base SHA, reviewed paths, completed subtasks, tests and exact next subtask. Merge useful evidence and remove that file at its checkpoint.
 
 ## 16. Copy-ready implementation prompts
 
@@ -848,7 +848,7 @@ Recommended executor: GPT Luna, reasoning xhigh. One bounded subtask only.
 Read AGENTS.md and the approved docs/phases/OVERCLOCK_Phase_2_Contract_and_Prompts.md (or the attached identical artifact for Task16.1). Contract sections 5.1 are normative for this task. Read current public APIs before editing. Do not silently reinterpret accepted Phase1 ADRs. This artifact explicitly resolves listed Phase0 target-interface refinements; an unrelated new conflict must be reported.
 
 Preflight and diff ownership:
-Require the successful CP18 full SHA recorded in permanent status to match clean HEAD, origin/main and remote main, ahead/behind 0/0. Fetch once. Verify that checkpoint covers all previous group subtasks. Stop on unexplained divergence; never invent a future SHA.
+Require the successful CP18 full SHA recorded in permanent status to be an ancestor of clean, synchronized HEAD, origin/main and remote main, ahead/behind 0/0. Fetch once. Inspect every commit after CP18: only the reviewed documentation-only CP18 entry reconciliation is permitted before Task 19. Verify CP18 covers all Task 18 subtasks and record the actual current HEAD as the immutable Task 19 implementation base in the group working status. A local checkout on a divergent pre-repair branch does not satisfy this preflight. Stop on unexplained divergence; never invent a future SHA.
 Read PROJECT_STATUS and applicable ADRs, then the active group handoff if present. Do not discard, stash, reset or overwrite unrelated work.
 
 Implementation scope:
@@ -1408,7 +1408,7 @@ Perform an independent OVERCLOCK Phase2 Task 19 review and checkpoint.
 Model: GPT Sol, reasoning High. Use a fresh conversation and inspect implementation independently.
 
 Read all applicable AGENTS.md, the complete Phase2 contract at docs/phases/OVERCLOCK_Phase_2_Contract_and_Prompts.md, current status/ADRs and docs/status/PHASE_2_TASK_19_WORKING_STATUS.md.
-Base: the exact approved CP18 SHA in permanent status and the group handoff. Verify it against Git rather than trusting the handoff alone. HEAD must still equal that base; the accumulated uncommitted diff must contain all and only Task 19 approved subtasks. Nothing should already be staged. Preserve unrelated work and stop on unexplained divergence.
+Base: the actual synchronized Task 19 entry HEAD recorded in the group handoff. Verify it against Git rather than trusting the handoff alone. The exact approved CP18 SHA in permanent status must be an ancestor, with only the reviewed documentation-only entry reconciliation between CP18 and the Task 19 base. HEAD must still equal the recorded Task 19 base; the accumulated uncommitted diff must contain all and only Task 19 approved subtasks. Nothing should already be staged. Preserve unrelated work and stop on unexplained divergence.
 
 Review every changed/untracked candidate path and the complete diff from the base. Verify source APIs, dependency directions and public input boundaries, not just the reported test counts. Focus:
 FIFO actual operations, clock command routing, pause/visibility/long-gap/maintenance behavior, fixed ticks and20 cap, strict epochs/sequences, request outcomes on fatal, no replay of unknown commands, ACK backpressure and no production debug entry.

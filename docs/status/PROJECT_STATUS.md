@@ -1177,3 +1177,21 @@ diagnostic uses an admitted dense fixture and executable hard gates; its
 latest measured values and path definitions are in
 `docs/diagnostics/PHASE_2_PROJECTION.md`. Phase 1 simulation formulas,
 content, RNG, hashes and save/Replay protocols remain unchanged.
+
+### CP18 publication and Task 19 entry
+
+The independent audit above was performed on the **pre-repair** Task 18 candidate and its
+`NOT READY` verdict does not describe the published checkpoint. Tasks 18.R1–18.R5 and the
+independent CP18-R review closed its findings. The certified public CP18 commit is
+`a852470735a7a0652215fc39de9ba7a2c85eda5d`, with parent
+`c998378286b3e5bda6013636c615fdeee5d22063` and subject
+`feat: add owned presentation snapshots and revision patches`. The checkpoint passed two
+complete runs of 1,432 unit and 23 determinism tests, 25 Chromium tests, validation/build,
+and all five Task 18 hard p95 gates on the target i7-2600. Exact measurements are in
+`docs/diagnostics/PHASE_2_PROJECTION.md`.
+
+This post-checkpoint documentation reconciliation does not amend or replace CP18. For Task 19,
+verify that the recorded CP18 commit is an ancestor of the clean, synchronized current
+`HEAD`/`origin/main`/remote `main`. Inspect every intervening commit and allow only this
+documentation reconciliation; record the actual current `HEAD` as the Task 19 implementation
+base in its working status. No Task 19 implementation has begun.

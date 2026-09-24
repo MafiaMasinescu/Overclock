@@ -1,5 +1,11 @@
 # Phase 2 Task 18 Independent Audit
 
+> Historical audit of the pre-repair candidate. Its `NOT READY` verdict below was resolved by
+> Tasks 18.R1–18.R5 and the independent CP18-R checkpoint. The certified public CP18 is
+> `a852470735a7a0652215fc39de9ba7a2c85eda5d`; see `PROJECT_STATUS.md`, ADR-0027 and
+> `PHASE_2_PROJECTION.md` for the accepted contract and final verification. Do not use this
+> historical verdict as the Task 19 entry status.
+
 Date: 2026-09-22
 
 ## Verdict
