@@ -101,6 +101,8 @@ export type SimEvent =
 // It contains only lifecycle transitions that have an exact state witness.
 export interface CommittedFactProjection {
   readonly tick: number;
+  readonly campaignYear: number;
+  readonly verticalSliceCompleted: boolean;
   readonly cashUsd: number;
   readonly liveLayoutRevision: number;
   readonly tasks: readonly { readonly taskInstanceId: string; readonly status: TaskStatus }[];

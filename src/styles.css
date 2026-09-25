@@ -66,6 +66,282 @@ body,
   background: #241513;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.persistence-controls {
+  position: fixed;
+  z-index: 900;
+  bottom: calc(var(--tray-height) + 18px);
+  left: calc(var(--rail-width) + 18px);
+  width: min(520px, calc(100vw - var(--rail-width) - var(--ops-width) - 46px));
+  max-height: min(72vh, 680px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  color: var(--paper);
+  background: #101517;
+  box-shadow: 0 16px 42px rgb(0 0 0 / 52%);
+}
+
+.persistence-controls > summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 12px;
+  color: #f0e9dc;
+  background: #161d1f;
+  cursor: pointer;
+  list-style: none;
+}
+
+.persistence-controls > summary::-webkit-details-marker {
+  display: none;
+}
+
+.persistence-controls[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.persistence-indicator {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  background: currentColor;
+}
+
+.persistence-indicator--live {
+  color: var(--green);
+}
+
+.persistence-indicator--resync-required {
+  color: var(--amber);
+}
+
+.persistence-indicator--degraded,
+.persistence-indicator--disconnected {
+  color: var(--oxide);
+}
+
+.persistence-summary {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.persistence-body {
+  max-height: min(calc(72vh - 39px), 641px);
+  padding: 8px 12px 12px;
+  overflow-y: auto;
+  scrollbar-color: #465456 #101517;
+}
+
+.persistence-controls button,
+.persistence-controls select,
+.persistence-controls input {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--paper);
+  background: #0d1112;
+  font: inherit;
+  font-size: 11px;
+}
+
+.persistence-controls button {
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.persistence-controls button:hover:not(:disabled) {
+  border-color: var(--cyan);
+  color: #f0e9dc;
+}
+
+.persistence-controls button:disabled {
+  color: #657071;
+  cursor: not-allowed;
+}
+
+.persistence-controls select {
+  min-width: 0;
+  padding: 4px 7px;
+}
+
+.persistence-controls input[type="file"] {
+  width: 100%;
+  padding: 3px;
+}
+
+.persistence-controls input[type="file"]::file-selector-button {
+  min-height: 22px;
+  margin-right: 8px;
+  border: 1px solid var(--line);
+  color: var(--paper);
+  background: var(--panel-raised);
+  font: inherit;
+  cursor: pointer;
+}
+
+.persistence-toolbar,
+.persistence-slot-row,
+.persistence-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.persistence-toolbar button:first-child,
+.persistence-preview button:first-child {
+  border-color: rgb(99 203 209 / 58%);
+  color: var(--cyan);
+}
+
+.persistence-section {
+  padding: 10px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.persistence-section h2 {
+  margin: 0 0 8px;
+  color: #e5e8e2;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.persistence-slot-row select {
+  flex: 1 1 180px;
+}
+
+.persistence-import-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) auto;
+  align-items: end;
+  gap: 7px;
+}
+
+.persistence-import-row label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.persistence-preview {
+  margin-top: 9px;
+  padding: 8px;
+  border-left: 2px solid var(--amber);
+  background: #171b1b;
+}
+
+.persistence-preview p,
+.persistence-recovery-note,
+.persistence-empty,
+.persistence-local-note,
+.persistence-notice {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.persistence-preview p,
+.persistence-notice {
+  color: var(--paper);
+}
+
+.persistence-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 6px 0 9px;
+  color: var(--paper);
+  font-size: 11px;
+}
+
+.persistence-checkbox input {
+  min-height: auto;
+  accent-color: var(--cyan);
+}
+
+.persistence-section-heading,
+.persistence-report-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+}
+
+.persistence-report-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.persistence-report-list li {
+  min-width: 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.persistence-report-list li > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.persistence-report-actions {
+  flex: 0 0 auto;
+}
+
+.persistence-local-note {
+  margin: 0;
+  color: #82908e;
+}
+
+.persistence-notice {
+  margin-top: 8px;
+  padding: 7px 8px;
+  border-left: 2px solid var(--cyan);
+  background: #141b1c;
+}
+
+@media (max-width: 720px) {
+  .persistence-controls {
+    right: 8px;
+    bottom: 10px;
+    left: 8px;
+    width: auto;
+    max-height: 70vh;
+  }
+
+  .persistence-body {
+    max-height: calc(70vh - 39px);
+  }
+
+  .persistence-import-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 button,
 select {
   font: inherit;

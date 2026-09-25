@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
+import { createInitialGameState } from "../../src/sim/core/createInitialGameState.ts";
+import { hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
 import { createSimWorkerHost } from "../../src/app/worker/simWorkerHost.ts";
 import { parseSimCommand } from "../../src/sim/commands/commandSchema.ts";
 import {
@@ -8,6 +10,11 @@ import {
   type WorkerReply,
   type WorkerRequest,
 } from "../../src/app/worker/protocol.ts";
+import type {
+  WorkerLoadCandidate,
+  WorkerSavePersistence,
+  WorkerSaveSessionInfo,
+} from "../../src/app/worker/savePersistenceTypes.ts";
 import {
   createWorkerGameClient,
   type ClientTimingAdapter,
@@ -95,10 +102,14 @@ class LoopbackWorker implements WorkerPort {
   terminationCount = 0;
   readonly host: ReturnType<typeof createSimWorkerHost>;
 
-  constructor(readonly clock: ManualClock) {
+  constructor(
+    readonly clock: ManualClock,
+    persistence?: WorkerSavePersistence,
+  ) {
     this.host = createSimWorkerHost({
       content,
       timing: clock.adapter,
+      ...(persistence !== undefined ? { persistence } : {}),
       postMessage: (reply) => {
         this.deliver(reply);
       },
@@ -168,8 +179,12 @@ class LoopbackWorker implements WorkerPort {
       kind: "REQUEST_RESULT",
       body: { result: { kind: "snapshot", tick: 0 } },
     });
+    this.injectLateReply(reply);
+  }
+
+  injectLateReply(reply: WorkerReply): void {
     for (const listener of [...this.messageListeners])
-      listener({ data: reply } as MessageEvent<unknown>);
+      listener({ data: structuredClone(reply) } as MessageEvent<unknown>);
   }
 
   injectFatalOnNextCommand(): void {
@@ -215,6 +230,10 @@ class LoopbackWorker implements WorkerPort {
       reply = this.nextCommandResultTransform(reply);
       this.nextCommandResultTransform = null;
     }
+    this.deliverToListeners(reply);
+  }
+
+  private deliverToListeners(reply: WorkerReply): void {
     for (const listener of [...this.messageListeners]) {
       listener({ data: structuredClone(reply) } as MessageEvent<unknown>);
     }
@@ -232,10 +251,13 @@ async function flushMicrotasks(): Promise<void> {
   for (let index = 0; index < 12; index += 1) await Promise.resolve();
 }
 
-async function createHarness(requestTimeoutMs = 5_000): Promise<ClientHarness> {
+async function createHarness(
+  requestTimeoutMs = 5_000,
+  persistence?: WorkerSavePersistence,
+): Promise<ClientHarness> {
   const clock = new ManualClock();
   const visibility = new ManualVisibility();
-  const worker = new LoopbackWorker(clock);
+  const worker = new LoopbackWorker(clock, persistence);
   const client = await createWorkerGameClient({
     content,
     seed: "worker-client-test",
@@ -267,6 +289,258 @@ function rejectedBuyCommand(commandId: string) {
 }
 
 describe("real Worker GameClient transport adapter", () => {
+  test("promotes a loaded run through a new epoch and holds an unpaused save until Continue", async () => {
+    const state = createInitialGameState({ content, seed: "loaded-unpaused-run" });
+    state.clock.paused = false;
+    const savedHash = hashCanonicalState(state);
+    const candidate: WorkerLoadCandidate = {
+      state,
+      nextQueueSequence: 23,
+      createdAtIso: "2026-09-24T12:00:00.000Z",
+      localStats: {
+        realPlayTimeSeconds: 25,
+        taskCompletions: 2,
+        taskAbandons: 0,
+        emergencyShutdowns: 0,
+        benchmarkAttempts: 0,
+        designApplications: 1,
+      },
+      checkpoint: {
+        slotId: "slot-candidate",
+        savedAtIso: "2026-09-24T12:05:00.000Z",
+        tick: state.tick,
+        year: state.campaign.currentYear,
+        captureSequence: 9,
+        sourceKind: "autosave",
+        skippedCorruptRecords: 1,
+      },
+      promote: () =>
+        Promise.resolve({
+          slotId: "slot-candidate",
+          createdAtIso: "2026-09-24T12:00:00.000Z",
+          settings: {
+            language: "en",
+            telemetryPreset: "standard",
+            reducedEffects: false,
+            reducedMotion: false,
+            frameCap: 60,
+            volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+          },
+          localStats: {
+            realPlayTimeSeconds: 25,
+            taskCompletions: 2,
+            taskAbandons: 0,
+            emergencyShutdowns: 0,
+            benchmarkAttempts: 0,
+            designApplications: 1,
+          },
+        }),
+      rollback: () => Promise.resolve(),
+    };
+    const candidateControl: { resolve?: (loaded: WorkerLoadCandidate) => void } = {};
+    const candidatePromise = new Promise<WorkerLoadCandidate>((resolve) => {
+      candidateControl.resolve = resolve;
+    });
+    const persistence: WorkerSavePersistence = {
+      startNewRun: () =>
+        Promise.resolve({
+          slotId: "slot-current",
+          createdAtIso: "2026-09-24T11:00:00.000Z",
+          settings: {
+            language: "en",
+            telemetryPreset: "standard",
+            reducedEffects: false,
+            reducedMotion: false,
+            frameCap: 60,
+            volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+          },
+          localStats: {
+            realPlayTimeSeconds: 0,
+            taskCompletions: 0,
+            taskAbandons: 0,
+            emergencyShutdowns: 0,
+            benchmarkAttempts: 0,
+            designApplications: 0,
+          },
+        }),
+      save: () => Promise.reject(new Error("not used")),
+      updateSettings: (settings) => Promise.resolve(settings),
+      prepareLoad: () => candidatePromise,
+      close: () => Promise.resolve(),
+    };
+    const harness = await createHarness(5_000, persistence);
+
+    const commandId = "76000000-0000-4000-8000-000000000029";
+    const purchase = await harness.client.dispatch(
+      parseSimCommand({
+        commandId,
+        source: "player",
+        kind: "BUY_MODULE",
+        definitionId: "module-vacuum-tube-logic",
+        quantity: 1,
+      }),
+    );
+    expect(purchase.accepted).toBe(true);
+    const oldCommandReply = harness.worker.replies.find(
+      (reply) => reply.kind === "COMMAND_RESULT" && reply.body.commandId === commandId,
+    );
+    expect(oldCommandReply?.kind).toBe("COMMAND_RESULT");
+    if (oldCommandReply?.kind !== "COMMAND_RESULT")
+      throw new Error("Accepted purchase did not produce a command result.");
+
+    const loadPromise = harness.client.loadSlot("slot-candidate");
+    await flushMicrotasks();
+    const queuedCommandId = "76000000-0000-4000-8000-000000000030";
+    const queuedPurchase = harness.client
+      .dispatch(
+        parseSimCommand({
+          commandId: queuedCommandId,
+          source: "player",
+          kind: "BUY_MODULE",
+          definitionId: "module-vacuum-tube-logic",
+          quantity: 1,
+        }),
+      )
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    await flushMicrotasks();
+    const resolveCandidate = candidateControl.resolve;
+    if (resolveCandidate === undefined) throw new Error("Candidate preparation did not start.");
+    resolveCandidate(candidate);
+    const summary = await loadPromise;
+    expect(await queuedPurchase).toMatchObject({ code: "SESSION_REPLACED" });
+    harness.worker.injectLateReply(oldCommandReply);
+    const capture = await harness.worker.host.captureAtBarrier();
+    expect(summary).toMatchObject({
+      slotId: "slot-candidate",
+      sourceKind: "autosave",
+      captureSequence: 9,
+      skippedCorruptRecords: 1,
+    });
+    expect(harness.client.getSnapshot().header.paused).toBe(false);
+    expect(harness.worker.host.getLifecycle()).toBe("READY_HELD");
+    expect(hashCanonicalState(capture.state)).toBe(savedHash);
+    expect(capture.nextQueueSequence).toBe(23);
+    expect(
+      harness.worker.requests.filter(
+        (request) =>
+          request.kind === "COMMAND" &&
+          (request.body.command.commandId === commandId ||
+            request.body.command.commandId === queuedCommandId),
+      ),
+    ).toHaveLength(2);
+    expect(
+      harness.worker.replies.some(
+        (reply) => reply.kind === "COMMAND_RESULT" && reply.body.commandId === queuedCommandId,
+      ),
+    ).toBe(false);
+    expect(harness.client.getConnectionStatus()).toBe("live");
+    expect(harness.worker.requests.some((request) => request.kind === "LOAD_SLOT")).toBe(true);
+
+    await harness.client.continueHost();
+    expect(harness.worker.host.getLifecycle()).toBe("RUNNING");
+    harness.client.destroy();
+  });
+
+  test("a failed candidate keeps the existing epoch and live snapshot", async () => {
+    const persistence: WorkerSavePersistence = {
+      startNewRun: () =>
+        Promise.resolve({
+          slotId: "slot-current",
+          createdAtIso: "2026-09-24T11:00:00.000Z",
+          settings: {
+            language: "en",
+            telemetryPreset: "standard",
+            reducedEffects: false,
+            reducedMotion: false,
+            frameCap: 60,
+            volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+          },
+          localStats: {
+            realPlayTimeSeconds: 0,
+            taskCompletions: 0,
+            taskAbandons: 0,
+            emergencyShutdowns: 0,
+            benchmarkAttempts: 0,
+            designApplications: 0,
+          },
+        }),
+      save: () => Promise.reject(new Error("not used")),
+      updateSettings: (settings) => Promise.resolve(settings),
+      prepareLoad: () => Promise.reject(new Error("corrupt candidate")),
+      close: () => Promise.resolve(),
+    };
+    const harness = await createHarness(5_000, persistence);
+    const before = harness.client.getSnapshot();
+    await expect(harness.client.loadSlot("slot-bad")).rejects.toMatchObject({
+      code: "UNAVAILABLE",
+    });
+    expect(harness.client.getSnapshot()).toBe(before);
+    expect(harness.client.getConnectionStatus()).toBe("live");
+    harness.client.destroy();
+  });
+
+  test("a Worker crash after SESSION_REPLACED settles the waiting load", async () => {
+    const session: WorkerSaveSessionInfo = {
+      slotId: "slot-current",
+      createdAtIso: "2026-09-24T11:00:00.000Z",
+      settings: {
+        language: "en",
+        telemetryPreset: "standard",
+        reducedEffects: false,
+        reducedMotion: false,
+        frameCap: 60,
+        volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+      },
+      localStats: {
+        realPlayTimeSeconds: 0,
+        taskCompletions: 0,
+        taskAbandons: 0,
+        emergencyShutdowns: 0,
+        benchmarkAttempts: 0,
+        designApplications: 0,
+      },
+    };
+    const persistence: WorkerSavePersistence = {
+      startNewRun: () => Promise.resolve(session),
+      save: () => Promise.reject(new Error("not used")),
+      updateSettings: (settings) => Promise.resolve(settings),
+      prepareLoad: () => new Promise<WorkerLoadCandidate>(() => undefined),
+      close: () => Promise.resolve(),
+    };
+    const harness = await createHarness(5_000, persistence);
+    const outcome = harness.client.loadSlot("slot-candidate").then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await flushMicrotasks();
+    const loadRequest = harness.worker.requests.findLast((request) => request.kind === "LOAD_SLOT");
+    if (loadRequest === undefined) throw new Error("Expected a load request.");
+    const lastReply = harness.worker.replies.at(-1);
+    if (lastReply === undefined) throw new Error("Expected an initial Worker reply.");
+    harness.worker.injectLateReply(
+      parseWorkerReply({
+        protocolVersion: 1,
+        epoch: EPOCH,
+        outboundSequence: lastReply.outboundSequence + 1,
+        requestSequence: loadRequest.requestSequence,
+        kind: "SESSION_REPLACED",
+        body: { nextEpoch: "replacement-epoch" },
+      }),
+    );
+    for (const listener of [...harness.worker.errorListeners]) listener(new Event("error"));
+
+    let result: unknown = null;
+    void outcome.then((value) => {
+      result = value;
+    });
+    await flushMicrotasks();
+    expect(result).toMatchObject({ code: "WORKER_ERROR" });
+    harness.client.destroy();
+  });
+
   test("initializes from READY, applies before ACK, and settles each command exactly once", async () => {
     const harness = await createHarness();
     const { client, worker } = harness;
@@ -486,6 +760,18 @@ describe("real Worker GameClient transport adapter", () => {
     expect(maintenance.client.getConnectionStatus()).toBe("degraded");
     expect(maintenance.worker.terminated).toBe(true);
     void held.catch(() => undefined);
+  });
+
+  test("does not combine separate short maintenance operations into one timeout", async () => {
+    const harness = await createHarness();
+    for (let index = 0; index < 8; index += 1) {
+      await harness.worker.host.runMaintenance(() => Promise.resolve());
+      harness.clock.advanceBy(800);
+      await flushMicrotasks();
+    }
+    expect(harness.client.getConnectionStatus()).toBe("live");
+    expect(harness.worker.terminated).toBe(false);
+    harness.client.destroy();
   });
 
   test("destroy removes listeners, timers and the Worker", async () => {

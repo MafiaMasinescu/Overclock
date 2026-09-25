@@ -1,5 +1,5 @@
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
-import type { SavePayloadV1, SavePreview } from "../contracts.ts";
+import type { PlayerSettings, SavePayloadV1, SavePreview } from "../contracts.ts";
 import { encodeSaveEnvelope, inspectSaveEnvelopeForImport, sha256Hex } from "../codec.ts";
 import type { SaveCodecAdapters } from "../codec.ts";
 import { persistenceError } from "../persistenceErrors.ts";
@@ -78,6 +78,9 @@ export interface ConfirmImportResult {
   readonly meta: SlotMetaRecord;
   readonly appliedSettings: boolean;
   readonly settingsRevision: number | null;
+  readonly preview: SavePreview;
+  readonly sizeBytes: number;
+  readonly settingsValue: PlayerSettings;
 }
 
 type ImportPlan =
@@ -359,6 +362,7 @@ export function createImportService(serviceOptions: ImportServiceOptions): Impor
       if (isSlotBusy(lock)) {
         throw persistenceError("SLOT_BUSY", "The destination slot is owned by another tab.");
       }
+      let committed = false;
       try {
         if (candidate.plan.kind === "overwrite") {
           const current = await repository.readSlotMeta(slotId, options.signal);
@@ -407,6 +411,7 @@ export function createImportService(serviceOptions: ImportServiceOptions): Impor
           settingsValue: applySettings ? rebound.settings : null,
           ...(options.signal !== undefined ? { signal: options.signal } : {}),
         });
+        committed = true;
         // Consumed exactly once, only after the durable commit.
         clearPending();
         return {
@@ -414,9 +419,15 @@ export function createImportService(serviceOptions: ImportServiceOptions): Impor
           meta: result.meta,
           appliedSettings: applySettings,
           settingsRevision: result.settings?.revision ?? null,
+          preview: structuredClone(preview),
+          sizeBytes: encoded.bytes.byteLength,
+          settingsValue: structuredClone(rebound.settings),
         };
       } finally {
-        await lock.release();
+        // A transaction already committed cannot be undone by release failure
+        // or presented as a failed import with a reusable token.
+        if (committed) await lock.release().catch(() => undefined);
+        else await lock.release();
       }
     },
   };

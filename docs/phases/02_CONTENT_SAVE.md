@@ -20,8 +20,8 @@ poartă existentă, nu un nou livrabil Phase 2.
 The original outline below predates the detailed Phase 2 contract and is retained as a historical
 checklist. Task 16 completed detached schema validation, full-state admission, the canonical SHA-256
 codec and copy-only migration. Task 17 completed the repository, Task 18 completed owned
-projection/publication, and Task 19 completed the real Worker host and client bridge. Durable Worker
-save orchestration and live load/recovery remain Task 20 work.
+projection/publication, Task 19 completed the real Worker host and client bridge, and Task 20
+connects durable saves, load/recovery, reports and the minimal persistence shell.
 
 1. Worker protocol și `SimWorkerHost` real.
 2. Ownership-ul cozii și recovery boundaries între host, worker și persistence.
@@ -100,12 +100,24 @@ client publication handling, 0.4 ms Worker `postMessage`, and 102.7 ms foregroun
 visibility. Publication measurement discards 100 warm-up messages, measures the next 500 Worker
 replies emitted during one-step callbacks, and pairs client timings by publication sequence.
 
-Task 19 does not implement durable save writes, autosave, load promotion, import/export UI or durable
-recovery. Those boundaries belong to Task 20.
+## Task 20: durable browser loop
 
-The original outline sentence below is archival wording and is superseded by the Task 16 status above;
-the detailed Phase 2 contract is now the normative roadmap for the remaining work.
+Task 20 wires Worker persistence to atomic same-tick manual saves, dirty-generation autosaves,
+coalesced committed transition triggers, verified live load and fresh-Worker recovery. Recovery uses
+the newest valid durable generation and falls back through older autosaves to the manual save; it
+retains damaged records and holds the new session until Continue. The minimal Romanian/English shell
+supports save/load/recovery, explicit import preview and overwrite confirmation, export/delete, and
+bounded local reports. Reports are allowlisted, capped at 20, and have no upload or analytics path.
 
-Obiectivul Phase 2 rămâne un client Worker cu rezultate deterministe și progres durabil. Task 16–19
-au închis contractele de bytes, repository, proiecție și Worker; autosave, load, import/export UI și
-recovery durabil rămân în Task 20, conform contractului Phase 2.
+The Task 20 candidate passed the full unit and determinism suites, content validation, typecheck,
+lint, production build, format check, and its Worker/UI Chromium checks. Slot-list previews are
+explicitly marked unchecked; load and export verify candidates before use. A new unsaved run can
+still list and delete saves when the 20 durable-slot limit is full. Exact target-host measurements
+are in `docs/diagnostics/PHASE_2_PERSISTENCE.md`. Task 21 remains future work.
+
+The original outline paragraph below is archival wording and is superseded by the Task 20 status
+above; the detailed Phase 2 contract remains the normative roadmap for the remaining work.
+
+Obiectivul Phase 2 rămâne un client Worker cu rezultate deterministe și progres durabil. Task 16–20
+au închis contractele de bytes, repository, proiecție, Worker și bucla locală de persistență;
+Task 21 rămâne pentru parity, adversarial, soak și evidence finală, conform contractului Phase 2.

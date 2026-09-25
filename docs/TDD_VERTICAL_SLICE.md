@@ -243,15 +243,31 @@ generation and Thermal update; Overclock/Stability; Compute; combined Task/Bench
 Campaign. Unregistered tuple positions are deliberate no-op slots, not hidden implementations.
 
 Phase 2 Tasks 16–19 implement detached persistence bytes, the IndexedDB repository, owned projection,
-strict Worker protocol, the production host/scheduler and the real `GameClient` store/bridge. The
-production shell waits for the dedicated Worker and exposes its connection state. Task 19 keeps
-durable save orchestration, live load/recovery and import/export controls in Task 20. In-memory
-verified Replay resume is not persistence, autosave, migration, or worker recovery.
+strict Worker protocol, the production host/scheduler and the real `GameClient` store/bridge. Task 20
+connects durable saves/autosaves, verified load/recovery, local reports, and the minimal persistence
+controls to that architecture. Load/recovery promotes an admitted candidate through a new epoch and
+holds the scheduler until Continue. In-memory verified Replay resume remains distinct from durable
+persistence and worker recovery.
 
 Task 19 caps reserved or unacknowledged terminal Worker results at 512; the client releases each
 slot with a one-way `ACK_RESULT`, including after host fatal, and treats later command outcomes as
 unknown without replay. Its verified-target dense-N Chromium run reports the measured gates and
 publication-sequence pairing in `docs/diagnostics/PHASE_2_WORKER.md`.
+
+Task 20 connects the host's detached empty-queue captures to atomic local commits. Dirty generations
+include queue-only commands, settings and local statistics; foreground interval and committed
+lifecycle triggers coalesce to one in-flight plus one newest pending capture. Recovery re-verifies
+durable generations in capture-sequence order and falls back through older autosaves to manual data
+without deleting damaged records. Import remains explicit and revision-bound. Local reports use an
+allowlisted schema with bounded retention and no upload path. The minimal shell exposes these actions
+through the public `GameClient`, with Romanian and English strings. Target-host measurements are in
+`docs/diagnostics/PHASE_2_PERSISTENCE.md`.
+
+CP20 audit confirms the slot list uses cached previews labelled `unchecked`; only load and export
+admit a generation for use. Startup defers an unsaved slot's repository write, so 20 durable slots
+do not prevent listing and deletion. Import confirmation reports the committed transaction outcome
+even if a later lock release or informational read fails. Overwrite displays slot and revision for
+explicit confirmation; cancellation retains the selected preview.
 
 Phase 3 owns auto-connect/A* routing, renderer consumption of snapshots/patches, and heatmap UI.
 Phase 4 owns gameplay alerts/event semantics and UI, achievements/tutorial behavior, and any future
@@ -1741,10 +1757,10 @@ Originalul importat nu se modifică.
 
 Task 17 implements the frozen stores, atomic revision/writer-epoch fencing, Web Lock ownership,
 newest-three rotation, verified import/export, and isolated load admission. The timer and lifecycle
-triggers listed above remain Task 20 host work; Task 17 provides the atomic operation they will call
-but does not schedule it. Import overwrite and inactive-slot deletion acquire the same nonblocking
-slot lock as writer sessions. The repository remains outside deterministic `GameState` and Replay
-hashes. See ADR-0024 through ADR-0026 and the Phase 2 repository diagnostics.
+triggers are orchestrated by Task 20 against those atomic operations. Import overwrite and
+inactive-slot deletion acquire the same nonblocking slot lock as writer sessions. The repository
+remains outside deterministic `GameState` and Replay hashes. See ADR-0024 through ADR-0026 and the
+Phase 2 repository diagnostics.
 
 ## 34. Localizare
 

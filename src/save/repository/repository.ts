@@ -1,13 +1,21 @@
 import type { PlayerSettings, SavePreview } from "../contracts.ts";
-import { persistenceError } from "../persistenceErrors.ts";
+import { PersistenceError, persistenceError } from "../persistenceErrors.ts";
 import {
   MAX_AUTOSAVE_ROTATIONS,
   MAX_INPUT_FILE_BYTES,
   MAX_ORDINARY_SLOT_COUNT,
+  MAX_REPORT_BYTES,
+  MAX_REPORT_COUNT,
   SLOT_ID_PATTERN,
 } from "../persistenceLimits.ts";
 import { assertSafeExternalData } from "../inputSafety.ts";
-import { parsePlayerSettings, parseSaveEnvelope, parseSavePreview } from "../schema.ts";
+import {
+  parseLocalReport,
+  parsePlayerSettings,
+  parseSaveEnvelope,
+  parseSavePreview,
+} from "../schema.ts";
+import type { LocalReport } from "../schema.ts";
 import { autosaveKey, mapStorageError, parseAutosaveKey, throwIfCancelled } from "./storage.ts";
 import type { RepositoryStorage, RepositoryTransaction } from "./storage.ts";
 import type {
@@ -41,6 +49,7 @@ import { SETTINGS_RECORD_KEY } from "./types.ts";
 export interface SaveRepositoryCore {
   createSlot(slotId: string, writerEpoch: number, signal?: AbortSignal): Promise<SlotMetaRecord>;
   listSlots(signal?: AbortSignal): Promise<readonly SlotListing[]>;
+  readManualSaveOrNull(slotId: string, signal?: AbortSignal): Promise<StoredManualSave | null>;
   readManualSave(slotId: string, signal?: AbortSignal): Promise<StoredManualSave>;
   readManualSaveAtRevision(
     slotId: string,
@@ -59,11 +68,20 @@ export interface SaveRepositoryCore {
     options: WriteAutosaveOptions,
   ): Promise<WriteAutosaveResult>;
   listAutosaves(slotId: string, signal?: AbortSignal): Promise<readonly StoredAutosave[]>;
+  // Returns key-derived sequence candidates without parsing their values so
+  // recovery can skip one corrupt generation and continue to older records.
+  listAutosaveSequences(slotId: string, signal?: AbortSignal): Promise<readonly number[]>;
   readAutosave(
     slotId: string,
     captureSequence: number,
     signal?: AbortSignal,
   ): Promise<StoredAutosave>;
+  readAutosaveAtRevision(
+    slotId: string,
+    captureSequence: number,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<{ readonly meta: SlotMetaRecord; readonly autosave: StoredAutosave }>;
   getLatestRecovery(slotId: string, signal?: AbortSignal): Promise<RecoveryLocator | null>;
   deleteSlot(slotId: string, options: DeleteSlotOptions): Promise<void>;
   commitImport(request: ImportCommitRequest): Promise<ImportCommitResult>;
@@ -74,6 +92,10 @@ export interface SaveRepositoryCore {
     expectedWriterEpoch: number,
     signal?: AbortSignal,
   ): Promise<SlotMetaRecord>;
+  writeReport(report: LocalReport): Promise<void>;
+  listReports(): Promise<readonly LocalReport[]>;
+  readReport(reportId: string): Promise<LocalReport>;
+  deleteReport(reportId: string): Promise<void>;
 }
 
 function assertSlotId(slotId: string): void {
@@ -251,6 +273,47 @@ function parseSettingsRecord(value: unknown): SettingsRecord {
   };
 }
 
+interface StoredLocalReport {
+  readonly sequence: number;
+  readonly report: LocalReport;
+}
+
+const REPORT_SEQUENCE_KEY = "__overclock_report_sequence__";
+
+function parseStoredReportSequence(value: unknown): number {
+  assertSafeExternalData(value);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw persistenceError("INVALID_STATE", "Stored report sequence has an invalid shape.");
+  }
+  const record = value as Record<string, unknown>;
+  assertExactKeys(record, ["sequence"]);
+  const sequence = record["sequence"];
+  if (typeof sequence !== "number") {
+    throw persistenceError("INVALID_STATE", "Stored report sequence is invalid.");
+  }
+  assertSafeInteger(sequence, "stored report sequence");
+  return sequence;
+}
+
+function parseStoredLocalReport(value: unknown, expectedReportId?: string): StoredLocalReport {
+  assertSafeExternalData(value);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw persistenceError("INVALID_STATE", "Stored local report has an invalid shape.");
+  }
+  const record = value as Record<string, unknown>;
+  assertExactKeys(record, ["sequence", "report"]);
+  const sequence = record["sequence"];
+  if (typeof sequence !== "number") {
+    throw persistenceError("INVALID_STATE", "Stored local report sequence is invalid.");
+  }
+  assertSafeInteger(sequence, "stored report sequence");
+  const report = parseLocalReport(record["report"]);
+  if (expectedReportId !== undefined && report.reportId !== expectedReportId) {
+    throw persistenceError("INVALID_STATE", "Stored report key does not match its report id.");
+  }
+  return { sequence, report };
+}
+
 function assertIncrementable(value: number, name: string): void {
   if (value >= Number.MAX_SAFE_INTEGER) {
     throw persistenceError("LIMIT_EXCEEDED", `${name} is exhausted.`);
@@ -321,6 +384,23 @@ function applyImportSettings(
   });
 }
 
+function requireDurableSlotCapacity(tx: RepositoryTransaction): Promise<void> {
+  return tx.getAll("slotMeta").then((entries) => {
+    const durableCount = entries.reduce((count, entry) => {
+      if (typeof entry.key !== "string") {
+        throw persistenceError("INVALID_STATE", "Stored slot metadata key is invalid.");
+      }
+      return count + (parseSlotMetaRecord(entry.value, entry.key).latestRecovery === null ? 0 : 1);
+    }, 0);
+    if (durableCount >= MAX_ORDINARY_SLOT_COUNT) {
+      throw persistenceError(
+        "LIMIT_EXCEEDED",
+        `At most ${MAX_ORDINARY_SLOT_COUNT} durable slots are allowed.`,
+      );
+    }
+  });
+}
+
 export function createSaveRepositoryCore(storage: RepositoryStorage): SaveRepositoryCore {
   return {
     async createSlot(
@@ -332,31 +412,20 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
       assertSafeInteger(writerEpoch, "writerEpoch");
       throwIfCancelled(signal);
       return storage
-        .runTransaction(["slotMeta", "saves"], "readwrite", (tx) =>
-          tx
-            .get("slotMeta", slotId)
-            .then((existing) => {
-              if (existing !== undefined) {
-                throw persistenceError("INVALID_FORMAT", `Slot "${slotId}" already exists.`);
-              }
-              return tx.count("slotMeta");
-            })
-            .then((slotCount) => {
-              if (slotCount >= MAX_ORDINARY_SLOT_COUNT) {
-                throw persistenceError(
-                  "LIMIT_EXCEEDED",
-                  `At most ${MAX_ORDINARY_SLOT_COUNT} manual slots are allowed.`,
-                );
-              }
-              const meta: SlotMetaRecord = {
-                slotId,
-                revision: 0,
-                nextCaptureSequence: 0,
-                writerEpoch,
-                latestRecovery: null,
-              };
-              return tx.put("slotMeta", slotId, meta).then(() => meta);
-            }),
+        .runTransaction(["slotMeta"], "readwrite", (tx) =>
+          tx.get("slotMeta", slotId).then((existing) => {
+            if (existing !== undefined) {
+              throw persistenceError("INVALID_FORMAT", `Slot "${slotId}" already exists.`);
+            }
+            const meta: SlotMetaRecord = {
+              slotId,
+              revision: 0,
+              nextCaptureSequence: 0,
+              writerEpoch,
+              latestRecovery: null,
+            };
+            return tx.put("slotMeta", slotId, meta).then(() => meta);
+          }),
         )
         .catch((error: unknown) => Promise.reject(mapStorageError(error)));
     },
@@ -371,7 +440,13 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
               if (typeof entry.key !== "string") {
                 throw persistenceError("INVALID_STATE", "Stored manual save key is invalid.");
               }
-              manualBySlot.set(entry.key, parseStoredManualSave(entry.value, entry.key));
+              try {
+                manualBySlot.set(entry.key, parseStoredManualSave(entry.value, entry.key));
+              } catch (error) {
+                // Listing is informational. Preserve a damaged manual record
+                // and continue to any healthy autosave for this slot.
+                if (!(error instanceof PersistenceError)) throw error;
+              }
             }
             const listings: SlotListing[] = [];
             for (const entry of metas) {
@@ -388,6 +463,21 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
             listings.sort((a, b) => (a.slotId < b.slotId ? -1 : a.slotId > b.slotId ? 1 : 0));
             return listings;
           }),
+        )
+        .catch((error: unknown) => Promise.reject(mapStorageError(error)));
+    },
+
+    async readManualSaveOrNull(
+      slotId: string,
+      signal?: AbortSignal,
+    ): Promise<StoredManualSave | null> {
+      assertSlotId(slotId);
+      throwIfCancelled(signal);
+      return storage
+        .runTransaction(["saves"], "readonly", (tx) =>
+          tx
+            .get("saves", slotId)
+            .then((value) => (value === undefined ? null : parseStoredManualSave(value, slotId))),
         )
         .catch((error: unknown) => Promise.reject(mapStorageError(error)));
     },
@@ -433,10 +523,10 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
                 );
               }
               const save = parseStoredManualSave(saveValue, slotId);
-              if (save.revision !== meta.revision) {
+              if (save.revision > meta.revision) {
                 throw persistenceError(
                   "INVALID_STATE",
-                  "Stored manual save and slot metadata revisions disagree.",
+                  "Stored manual save revision is ahead of its slot metadata.",
                 );
               }
               return { meta: cloneMeta(meta), save };
@@ -506,10 +596,14 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
             };
             // Slot record and metadata commit atomically; the locator is
             // persisted only in this same transaction as its envelope.
-            return tx
-              .put("saves", slotId, stored)
-              .then(() => tx.put("slotMeta", slotId, meta))
-              .then(() => cloneMeta(meta));
+            const capacity =
+              current.latestRecovery === null ? requireDurableSlotCapacity(tx) : Promise.resolve();
+            return capacity.then(() =>
+              tx
+                .put("saves", slotId, stored)
+                .then(() => tx.put("slotMeta", slotId, meta))
+                .then(() => cloneMeta(meta)),
+            );
           }),
         )
         .catch((error: unknown) => Promise.reject(mapStorageError(error)));
@@ -543,8 +637,10 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
             const captureSequence = current.nextCaptureSequence;
             const stored: StoredAutosave = { slotId, captureSequence, envelope, preview };
             let prunedCaptureSequences: readonly number[] = [];
-            return tx
-              .put("autosaves", autosaveKey(slotId, captureSequence), stored)
+            const capacity =
+              current.latestRecovery === null ? requireDurableSlotCapacity(tx) : Promise.resolve();
+            return capacity
+              .then(() => tx.put("autosaves", autosaveKey(slotId, captureSequence), stored))
               .then(() => tx.getAll("autosaves"))
               .then((entries) => {
                 // Newest-first by capture sequence; retain exactly the
@@ -591,6 +687,23 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
               .map((entry) => verifiedAutosave(entry.value, slotId))
               .sort((a, b) => b.captureSequence - a.captureSequence);
           }),
+        )
+        .catch((error: unknown) => Promise.reject(mapStorageError(error)));
+    },
+
+    async listAutosaveSequences(slotId: string, signal?: AbortSignal): Promise<readonly number[]> {
+      assertSlotId(slotId);
+      throwIfCancelled(signal);
+      return storage
+        .runTransaction(["autosaves"], "readonly", (tx) =>
+          tx.getAll("autosaves").then((entries) =>
+            entries
+              .map((entry) => parseAutosaveKey(entry.key))
+              .flatMap((key) =>
+                key !== null && key.slotId === slotId ? [key.captureSequence] : [],
+              )
+              .sort((left, right) => right - left),
+          ),
         )
         .catch((error: unknown) => Promise.reject(mapStorageError(error)));
     },
@@ -703,13 +816,7 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
                   `Slot "${slotId}" already exists; import cannot reuse it.`,
                 );
               }
-              return tx.count("slotMeta").then((slotCount) => {
-                if (slotCount >= MAX_ORDINARY_SLOT_COUNT) {
-                  throw persistenceError(
-                    "LIMIT_EXCEEDED",
-                    `At most ${MAX_ORDINARY_SLOT_COUNT} manual slots are allowed.`,
-                  );
-                }
+              return requireDurableSlotCapacity(tx).then(() => {
                 const created: SlotMetaRecord = {
                   slotId,
                   revision: 1,
@@ -844,6 +951,136 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
             return tx.put("slotMeta", slotId, meta).then(() => cloneMeta(meta));
           }),
         )
+        .catch((error: unknown) => Promise.reject(mapStorageError(error)));
+    },
+
+    async readAutosaveAtRevision(
+      slotId: string,
+      captureSequence: number,
+      expectedRevision: number,
+      signal?: AbortSignal,
+    ): Promise<{ readonly meta: SlotMetaRecord; readonly autosave: StoredAutosave }> {
+      assertSlotId(slotId);
+      assertSafeInteger(captureSequence, "captureSequence");
+      assertSafeInteger(expectedRevision, "expectedRevision");
+      throwIfCancelled(signal);
+      return storage
+        .runTransaction(["slotMeta", "autosaves"], "readonly", (tx) =>
+          Promise.all([
+            tx.get("slotMeta", slotId),
+            tx.get("autosaves", autosaveKey(slotId, captureSequence)),
+          ]).then(([metaValue, autosaveValue]) => {
+            if (metaValue === undefined) {
+              throw persistenceError("INVALID_STATE", `Slot "${slotId}" does not exist.`);
+            }
+            const meta = parseSlotMetaRecord(metaValue, slotId);
+            if (meta.revision !== expectedRevision) {
+              throw persistenceError(
+                "STALE_REVISION",
+                `Expected revision ${expectedRevision} but found ${meta.revision}.`,
+              );
+            }
+            const autosave = verifiedAutosave(autosaveValue, slotId);
+            if (autosave.captureSequence !== captureSequence) {
+              throw persistenceError(
+                "INVALID_STATE",
+                "Stored autosave sequence does not match its key.",
+              );
+            }
+            return { meta: cloneMeta(meta), autosave };
+          }),
+        )
+        .catch((error: unknown) => Promise.reject(mapStorageError(error)));
+    },
+
+    async writeReport(report: LocalReport): Promise<void> {
+      const parsed = parseLocalReport(report);
+      if (parsed.reportId === REPORT_SEQUENCE_KEY) {
+        throw persistenceError("INVALID_FORMAT", "The local report id is reserved.");
+      }
+      const byteLength = new TextEncoder().encode(JSON.stringify(parsed)).byteLength;
+      if (byteLength > MAX_REPORT_BYTES) {
+        throw persistenceError("LIMIT_EXCEEDED", "The local report exceeds its byte limit.");
+      }
+      return storage
+        .runTransaction(["reports"], "readwrite", (tx) =>
+          tx.getAll("reports").then((entries) => {
+            const sequenceEntry = entries.find((entry) => entry.key === REPORT_SEQUENCE_KEY);
+            const existing = entries
+              .filter((entry) => entry.key !== REPORT_SEQUENCE_KEY)
+              .map((entry) => ({
+                key: entry.key,
+                ...parseStoredLocalReport(entry.value),
+              }));
+            if (existing.some((entry) => entry.report.reportId === parsed.reportId)) {
+              throw persistenceError("INVALID_FORMAT", "A report with this id already exists.");
+            }
+            const previousSequence =
+              sequenceEntry === undefined
+                ? existing.reduce((maximum, entry) => Math.max(maximum, entry.sequence), -1)
+                : parseStoredReportSequence(sequenceEntry.value);
+            assertIncrementable(previousSequence + 1, "report sequence");
+            const added: StoredLocalReport = { sequence: previousSequence + 1, report: parsed };
+            const all = [...existing, { key: parsed.reportId, ...added }].sort(
+              (left, right) => left.sequence - right.sequence,
+            );
+            const pruned = all.slice(0, Math.max(0, all.length - MAX_REPORT_COUNT));
+            return Promise.all([
+              tx.put("reports", parsed.reportId, added),
+              tx.put("reports", REPORT_SEQUENCE_KEY, { sequence: added.sequence }),
+              ...pruned.map((entry) => tx.delete("reports", entry.key)),
+            ]).then(() => undefined);
+          }),
+        )
+        .catch((error: unknown) => Promise.reject(mapStorageError(error)));
+    },
+
+    async listReports(): Promise<readonly LocalReport[]> {
+      return storage
+        .runTransaction(["reports"], "readonly", (tx) =>
+          tx.getAll("reports").then((entries) =>
+            entries
+              .filter((entry) => entry.key !== REPORT_SEQUENCE_KEY)
+              .map((entry) => parseStoredLocalReport(entry.value, String(entry.key)))
+              .sort((left, right) => right.sequence - left.sequence)
+              .map((entry) => structuredClone(entry.report)),
+          ),
+        )
+        .catch((error: unknown) => Promise.reject(mapStorageError(error)));
+    },
+
+    async readReport(reportId: string): Promise<LocalReport> {
+      if (
+        typeof reportId !== "string" ||
+        reportId.length === 0 ||
+        reportId.length > MAX_REPORT_BYTES ||
+        reportId === REPORT_SEQUENCE_KEY
+      ) {
+        throw persistenceError("INVALID_FORMAT", "The local report id is invalid.");
+      }
+      return storage
+        .runTransaction(["reports"], "readonly", (tx) =>
+          tx.get("reports", reportId).then((value) => {
+            if (value === undefined) {
+              throw persistenceError("INVALID_STATE", "The requested local report is missing.");
+            }
+            return structuredClone(parseStoredLocalReport(value, reportId).report);
+          }),
+        )
+        .catch((error: unknown) => Promise.reject(mapStorageError(error)));
+    },
+
+    async deleteReport(reportId: string): Promise<void> {
+      if (
+        typeof reportId !== "string" ||
+        reportId.length === 0 ||
+        reportId.length > MAX_REPORT_BYTES ||
+        reportId === REPORT_SEQUENCE_KEY
+      ) {
+        throw persistenceError("INVALID_FORMAT", "The local report id is invalid.");
+      }
+      return storage
+        .runTransaction(["reports"], "readwrite", (tx) => tx.delete("reports", reportId))
         .catch((error: unknown) => Promise.reject(mapStorageError(error)));
     },
   };

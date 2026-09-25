@@ -1,4 +1,5 @@
 import { loadContentBundle } from "../../content/loader/contentLoader.ts";
+import { createBrowserWorkerSavePersistence } from "./savePersistence.ts";
 import { createSimWorkerHost } from "./simWorkerHost.ts";
 import type { WorkerReply } from "./protocol.ts";
 
@@ -10,8 +11,10 @@ interface WorkerScope {
 
 const scope = globalThis as unknown as WorkerScope;
 const content = loadContentBundle();
+const persistence = createBrowserWorkerSavePersistence(content);
 const host = createSimWorkerHost({
   content,
+  persistence,
   postMessage: (reply) => {
     scope.postMessage(reply);
   },

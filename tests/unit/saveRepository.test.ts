@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { PersistenceError } from "../../src/save/persistenceErrors.ts";
 import { DEFAULT_PLAYER_SETTINGS } from "../../src/save/schema.ts";
+import type { LocalReport } from "../../src/save/schema.ts";
 import { createSaveRepositoryCore } from "../../src/save/repository/repository.ts";
 import {
   autosaveKey,
@@ -11,6 +12,29 @@ import {
 import { createOperationToken } from "../../src/save/repository/types.ts";
 import { createPayload, preparedPair, previewFor, saveTestContent } from "./saveTestFixtures.ts";
 import { encodeSaveEnvelope } from "../../src/save/codec.ts";
+
+function localReport(reportId: string): LocalReport {
+  return {
+    reportVersion: 1,
+    reportId,
+    appVersion: "0.1.0",
+    contentVersion: "0.1.0",
+    category: "manual",
+    errorCode: null,
+    tick: 0,
+    year: 1940,
+    createdAtIso: "2026-09-24T12:00:00.000Z",
+    counters: {
+      taskCompletions: 0,
+      taskAbandons: 0,
+      emergencyShutdowns: 0,
+      benchmarkAttempts: 0,
+      designApplications: 0,
+    },
+    durationMs: { total: 0, max: 0 },
+    capabilities: { worker: true, indexedDb: true, crypto: true, gzip: true, webLocks: true },
+  };
+}
 
 describe("atomic save repository core", () => {
   test("creates a slot with zeroed fencing metadata", async () => {
@@ -46,17 +70,38 @@ describe("atomic save repository core", () => {
     expect(meta.revision).toBe(0);
   });
 
-  test("caps manual slots at twenty", async () => {
+  test("caps committed manual and autosave slots at twenty while allowing an unsaved slot", async () => {
     const controls = createInMemoryRepositoryStorage();
     const repository = createSaveRepositoryCore(controls.storage);
     for (let index = 0; index < 20; index += 1) {
-      await repository.createSlot(`slot-${index.toString().padStart(2, "0")}`, 0);
+      const slotId = `slot-${index.toString().padStart(2, "0")}`;
+      await repository.createSlot(slotId, 0);
+      await repository.writeManualSave(slotId, await preparedPair(slotId), {
+        expectedRevision: 0,
+        expectedWriterEpoch: 0,
+      });
     }
-    await expect(repository.createSlot("slot-overflow", 0)).rejects.toMatchObject({
+    await repository.createSlot("slot-overflow", 0);
+    const overflow = await preparedPair("slot-overflow");
+    await expect(
+      repository.writeManualSave("slot-overflow", overflow, {
+        expectedRevision: 0,
+        expectedWriterEpoch: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: "LIMIT_EXCEEDED",
+    });
+    await expect(
+      repository.writeAutosave("slot-overflow", overflow, {
+        expectedRevision: 0,
+        expectedWriterEpoch: 0,
+      }),
+    ).rejects.toMatchObject({
       code: "LIMIT_EXCEEDED",
     });
     const listings = await repository.listSlots();
-    expect(listings).toHaveLength(20);
+    expect(listings.filter((slot) => slot.meta.latestRecovery !== null)).toHaveLength(20);
+    expect((await repository.readSlotMeta("slot-overflow")).latestRecovery).toBeNull();
   });
 
   test("writes and reads a manual save with atomic metadata", async () => {
@@ -107,6 +152,29 @@ describe("atomic save repository core", () => {
     const stored = await repository.readManualSave("slot-alpha");
     expect(stored.captureSequence).toBe(1);
     expect(stored.revision).toBe(2);
+  });
+
+  test("keeps a committed manual save readable after later autosave revisions", async () => {
+    const controls = createInMemoryRepositoryStorage();
+    const repository = createSaveRepositoryCore(controls.storage);
+    await repository.createSlot("slot-alpha", 0);
+    const manual = await preparedPair("slot-alpha", { seedSuffix: "-manual" });
+    await repository.writeManualSave("slot-alpha", manual, {
+      expectedRevision: 0,
+      expectedWriterEpoch: 0,
+    });
+    const autosave = await preparedPair("slot-alpha", { seedSuffix: "-auto" });
+    const updatedMeta = await repository.writeAutosave("slot-alpha", autosave, {
+      expectedRevision: 1,
+      expectedWriterEpoch: 0,
+    });
+
+    const stored = await repository.readManualSaveAtRevision(
+      "slot-alpha",
+      updatedMeta.meta.revision,
+    );
+    expect(stored.meta.revision).toBe(2);
+    expect(stored.save.revision).toBe(1);
   });
 
   test("rejects a stale revision without mutating the slot", async () => {
@@ -444,6 +512,48 @@ describe("atomic save repository core", () => {
       repository.writeSettings(hostile, { expectedRevision: null }),
     ).rejects.toMatchObject({ code: "INVALID_FORMAT" });
     expect(getterCalls).toBe(0);
+  });
+
+  test("keeps only the newest twenty reports and preserves sequence after clearing", async () => {
+    const controls = createInMemoryRepositoryStorage();
+    const repository = createSaveRepositoryCore(controls.storage);
+    for (let index = 0; index < 21; index += 1) {
+      await repository.writeReport(localReport(`report-${index.toString().padStart(2, "0")}`));
+    }
+
+    const retained = await repository.listReports();
+    expect(retained).toHaveLength(20);
+    expect(retained[0]?.reportId).toBe("report-20");
+    expect(retained.at(-1)?.reportId).toBe("report-01");
+    for (const report of retained) await repository.deleteReport(report.reportId);
+    await repository.writeReport(localReport("report-after-clear"));
+
+    const raw = await controls.storage.runTransaction(["reports"], "readonly", (tx) =>
+      tx.get("reports", "__overclock_report_sequence__"),
+    );
+    expect(raw).toEqual({ sequence: 21 });
+    expect((await repository.listReports()).map((report) => report.reportId)).toEqual([
+      "report-after-clear",
+    ]);
+  });
+
+  test("rejects sensitive report fields and preserves prior reports on quota failure", async () => {
+    const controls = createInMemoryRepositoryStorage();
+    const repository = createSaveRepositoryCore(controls.storage);
+    const first = localReport("report-safe");
+    await repository.writeReport(first);
+    await expect(
+      repository.writeReport({
+        ...localReport("report-with-stack"),
+        stack: "private path",
+      } as LocalReport),
+    ).rejects.toMatchObject({ code: "INVALID_FORMAT" });
+
+    controls.failNextCommitWithQuotaExceeded();
+    await expect(repository.writeReport(localReport("report-quota"))).rejects.toMatchObject({
+      code: "QUOTA_EXCEEDED",
+    });
+    await expect(repository.listReports()).resolves.toEqual([first]);
   });
 
   test("autosave keys use the native compound identity", () => {

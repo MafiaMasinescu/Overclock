@@ -1,10 +1,11 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
 import type { ContentBundle } from "../../src/content/schemas/contentSchemas.ts";
 import { parseSimCommand } from "../../src/sim/commands/commandSchema.ts";
 import { hashCanonicalState } from "../../src/sim/replay/canonicalState.ts";
 import { hashSimulationContent } from "../../src/sim/replay/replayContracts.ts";
+import { persistenceError } from "../../src/save/persistenceErrors.ts";
 import { createReplayRecorder } from "../../src/sim/replay/replayRecorder.ts";
 import { runReplay } from "../../src/sim/replay/replayRunner.ts";
 import {
@@ -16,6 +17,11 @@ import {
   createSimWorkerHost,
   type HostTimingAdapter,
   type SimWorkerHost,
+  type WorkerSaveCapture,
+  type WorkerSaveMetadata,
+  type WorkerSavePersistence,
+  type WorkerSaveSessionInfo,
+  type WorkerLoadCandidate,
 } from "../../src/app/worker/simWorkerHost.ts";
 
 const content = loadContentBundle();
@@ -98,12 +104,16 @@ interface Harness {
   readonly send: (kind: string, body: unknown) => Promise<void>;
 }
 
-function createHarness(contentBundle: ContentBundle = content): Harness {
+function createHarness(
+  contentBundle: ContentBundle = content,
+  persistence?: WorkerSavePersistence,
+): Harness {
   const replies: WorkerReply[] = [];
   const timing = new ManualTiming();
   const host = createSimWorkerHost({
     content: contentBundle,
     timing: timing.adapter,
+    ...(persistence !== undefined ? { persistence } : {}),
     postMessage: (reply) => replies.push(parseWorkerReply(reply)),
   });
   let sequence = 0;
@@ -152,6 +162,442 @@ function latestSnapshotTick(replies: readonly WorkerReply[]): number | null {
 }
 
 describe("serial SimWorkerHost and fixed-step scheduling", () => {
+  test("foreground timer cannot start a save during a pending load promotion", async () => {
+    const session: WorkerSaveSessionInfo = {
+      slotId: "slot-host-test",
+      createdAtIso: "2026-09-24T12:00:00.000Z",
+      settings: {
+        language: "en",
+        telemetryPreset: "standard",
+        reducedEffects: false,
+        reducedMotion: false,
+        frameCap: 60,
+        volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+      },
+      localStats: {
+        realPlayTimeSeconds: 0,
+        taskCompletions: 0,
+        taskAbandons: 0,
+        emergencyShutdowns: 0,
+        benchmarkAttempts: 0,
+        designApplications: 0,
+      },
+    };
+    let resolveLoad!: (candidate: WorkerLoadCandidate) => void;
+    const save = vi.fn(() =>
+      Promise.resolve({
+        slotId: session.slotId,
+        savedAtIso: session.createdAtIso,
+        tick: 0,
+        sizeBytes: 42,
+      }),
+    );
+    const prepareLoad = vi.fn(
+      () =>
+        new Promise<WorkerLoadCandidate>((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    const persistence: WorkerSavePersistence = {
+      startNewRun: () => Promise.resolve(session),
+      save,
+      updateSettings: (settings) => Promise.resolve(settings),
+      prepareLoad,
+      close: () => Promise.resolve(),
+    };
+    const harness = createHarness(content, persistence);
+    await initialize(harness);
+    const captured = await harness.host.captureAtBarrier();
+    const loading = harness.send("LOAD_SLOT", { slotId: session.slotId });
+    await vi.waitFor(() => {
+      expect(prepareLoad).toHaveBeenCalledOnce();
+    });
+
+    harness.timing.advanceBy(60_000);
+    expect(save).not.toHaveBeenCalled();
+
+    resolveLoad({
+      state: captured.state,
+      nextQueueSequence: captured.nextQueueSequence,
+      createdAtIso: session.createdAtIso,
+      localStats: session.localStats,
+      checkpoint: {
+        slotId: session.slotId,
+        savedAtIso: session.createdAtIso,
+        tick: captured.state.tick,
+        year: captured.state.campaign.currentYear,
+        captureSequence: 0,
+        sourceKind: "manual",
+        skippedCorruptRecords: 0,
+      },
+      promote: () => Promise.resolve(session),
+      rollback: () => Promise.resolve(),
+    });
+    await loading;
+    expect(save).not.toHaveBeenCalled();
+    expect(harness.host.getLifecycle()).toBe("READY_HELD");
+    harness.host.destroy();
+  });
+
+  test("coalesces foreground autosaves to the newest boundary while a write is pending", async () => {
+    const captures: WorkerSaveCapture[] = [];
+    const resolveWrites: ((metadata: WorkerSaveMetadata) => void)[] = [];
+    const persistence: WorkerSavePersistence = {
+      startNewRun: () =>
+        Promise.resolve({
+          slotId: "slot-host-test",
+          createdAtIso: "2026-09-24T12:00:00.000Z",
+          settings: {
+            language: "en",
+            telemetryPreset: "standard",
+            reducedEffects: false,
+            reducedMotion: false,
+            frameCap: 60,
+            volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+          },
+          localStats: {
+            realPlayTimeSeconds: 0,
+            taskCompletions: 0,
+            taskAbandons: 0,
+            emergencyShutdowns: 0,
+            benchmarkAttempts: 0,
+            designApplications: 0,
+          },
+        }),
+      save: vi.fn(
+        (capture: WorkerSaveCapture) =>
+          new Promise<WorkerSaveMetadata>((resolve) => {
+            captures.push(capture);
+            resolveWrites.push(resolve);
+          }),
+      ),
+      updateSettings: (settings: WorkerSaveCapture["settings"]) => Promise.resolve(settings),
+      close: () => Promise.resolve(),
+    };
+    const harness = createHarness(content, persistence);
+    await initialize(harness);
+
+    harness.timing.advanceBy(59_999);
+    expect(captures).toHaveLength(0);
+    harness.timing.advanceBy(1);
+    expect(captures).toHaveLength(1);
+    expect(harness.host.getLifecycle()).toBe("MAINTENANCE");
+
+    await harness.send("COMMAND", {
+      command: parseSimCommand({
+        commandId: "76000000-0000-4000-8000-000000000250",
+        source: "player",
+        kind: "ENTER_DESIGN_MODE",
+      }),
+    });
+    expect(
+      harness.replies.some(
+        (reply) => reply.kind === "COMMAND_RESULT" && reply.body.result.accepted,
+      ),
+    ).toBe(true);
+
+    harness.timing.advanceBy(60_000);
+    expect(captures).toHaveLength(1);
+    resolveWrites[0]?.({
+      slotId: "slot-host-test",
+      savedAtIso: "2026-09-24T12:01:00.000Z",
+      tick: 0,
+      sizeBytes: 42,
+    });
+    await vi.waitFor(() => {
+      expect(captures).toHaveLength(2);
+    });
+    expect(captures[1]).toMatchObject({ state: { tick: 0 }, nextQueueSequence: 1 });
+    resolveWrites[1]?.({
+      slotId: "slot-host-test",
+      savedAtIso: "2026-09-24T12:02:00.000Z",
+      tick: 0,
+      sizeBytes: 42,
+    });
+    await vi.waitFor(() => {
+      expect(harness.host.getLifecycle()).toBe("READY_HELD");
+    });
+    harness.host.destroy();
+  });
+
+  test("saves current settings and counts only visible unpaused play time", async () => {
+    const captures: WorkerSaveCapture[] = [];
+    const settings = {
+      language: "en" as const,
+      telemetryPreset: "standard" as const,
+      reducedEffects: false,
+      reducedMotion: false,
+      frameCap: 60 as const,
+      volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+    };
+    const localStats = {
+      realPlayTimeSeconds: 0,
+      taskCompletions: 0,
+      taskAbandons: 0,
+      emergencyShutdowns: 0,
+      benchmarkAttempts: 0,
+      designApplications: 0,
+    };
+    const persistence: WorkerSavePersistence = {
+      startNewRun: () =>
+        Promise.resolve({
+          slotId: "slot-host-test",
+          createdAtIso: "2026-09-24T12:00:00.000Z",
+          settings,
+          localStats,
+        }),
+      save: (capture) =>
+        Promise.resolve().then(() => {
+          captures.push(capture);
+          return {
+            slotId: "slot-host-test",
+            savedAtIso: "2026-09-24T12:00:01.000Z",
+            tick: capture.state.tick,
+            sizeBytes: 42,
+          };
+        }),
+      updateSettings: (nextSettings) => Promise.resolve(nextSettings),
+      close: () => Promise.resolve(),
+    };
+    const harness = createHarness(content, persistence);
+    await initialize(harness);
+
+    const clockCommand = (commandId: string, paused: boolean): Promise<void> =>
+      harness.send("COMMAND", {
+        command: parseSimCommand({ commandId, source: "player", kind: "SET_PAUSED", paused }),
+      });
+    await clockCommand("76000000-0000-4000-8000-000000000251", false);
+    harness.timing.advanceBy(600);
+    await clockCommand("76000000-0000-4000-8000-000000000252", true);
+    harness.timing.advanceBy(1_500);
+    await clockCommand("76000000-0000-4000-8000-000000000253", false);
+    harness.timing.advanceBy(400);
+
+    const updatedSettings = {
+      ...settings,
+      language: "ro" as const,
+      telemetryPreset: "compact" as const,
+      reducedEffects: true,
+      frameCap: 45 as const,
+    };
+    await harness.send("UPDATE_SETTINGS", { settings: updatedSettings });
+    await harness.send("REQUEST_SAVE", { reason: "manual" });
+
+    expect(captures).toHaveLength(1);
+    expect(captures[0]).toMatchObject({
+      settings: updatedSettings,
+    });
+    expect(captures[0]?.localStats.realPlayTimeSeconds).toBeGreaterThan(0.8);
+    expect(captures[0]?.localStats.realPlayTimeSeconds).toBeLessThan(1.2);
+    harness.host.destroy();
+  });
+
+  test("hiding requests a best-effort autosave and excludes hidden time from the interval", async () => {
+    const captures: WorkerSaveCapture[] = [];
+    const resolveWrites: ((metadata: WorkerSaveMetadata) => void)[] = [];
+    const session: WorkerSaveSessionInfo = {
+      slotId: "slot-host-test",
+      createdAtIso: "2026-09-24T12:00:00.000Z",
+      settings: {
+        language: "en",
+        telemetryPreset: "standard",
+        reducedEffects: false,
+        reducedMotion: false,
+        frameCap: 60,
+        volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+      },
+      localStats: {
+        realPlayTimeSeconds: 0,
+        taskCompletions: 0,
+        taskAbandons: 0,
+        emergencyShutdowns: 0,
+        benchmarkAttempts: 0,
+        designApplications: 0,
+      },
+    };
+    const persistence: WorkerSavePersistence = {
+      startNewRun: () => Promise.resolve(session),
+      save: (capture) =>
+        new Promise((resolve) => {
+          captures.push(capture);
+          resolveWrites.push(resolve);
+        }),
+      updateSettings: (settings) => Promise.resolve(settings),
+      close: () => Promise.resolve(),
+    };
+    const harness = createHarness(content, persistence);
+    await initialize(harness);
+
+    await harness.send("SET_HOST_VISIBILITY", { visible: false });
+    expect(captures).toHaveLength(1);
+    expect(harness.host.getLifecycle()).toBe("MAINTENANCE");
+    await harness.send("COMMAND", {
+      command: parseSimCommand({
+        commandId: "76000000-0000-4000-8000-000000000254",
+        source: "player",
+        kind: "ENTER_DESIGN_MODE",
+      }),
+    });
+    harness.timing.advanceBy(120_000);
+    expect(captures).toHaveLength(1);
+
+    await harness.send("SET_HOST_VISIBILITY", { visible: true });
+    harness.timing.advanceBy(60_000);
+    resolveWrites[0]?.({
+      slotId: session.slotId,
+      savedAtIso: "2026-09-24T12:01:00.000Z",
+      tick: 0,
+      sizeBytes: 42,
+    });
+    await vi.waitFor(() => {
+      expect(captures).toHaveLength(2);
+    });
+    expect(captures[1]?.nextQueueSequence).toBe(1);
+    resolveWrites[1]?.({
+      slotId: session.slotId,
+      savedAtIso: "2026-09-24T12:02:00.000Z",
+      tick: 0,
+      sizeBytes: 42,
+    });
+    await vi.waitFor(() => {
+      expect(harness.host.getLifecycle()).toBe("READY_HELD");
+    });
+    harness.host.destroy();
+  });
+
+  test("manual save captures same-tick command state and its next queue sequence", async () => {
+    const replies: WorkerReply[] = [];
+    const timing = new ManualTiming();
+    const saves: { capture: unknown; reason: string }[] = [];
+    const persistence = {
+      startNewRun: vi.fn(() =>
+        Promise.resolve({
+          slotId: "slot-host-test",
+          createdAtIso: "2026-09-24T12:00:00.000Z",
+          settings: {
+            language: "en",
+            telemetryPreset: "standard",
+            reducedEffects: false,
+            reducedMotion: false,
+            frameCap: 60,
+            volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+          } as const,
+          localStats: {
+            realPlayTimeSeconds: 0,
+            taskCompletions: 0,
+            taskAbandons: 0,
+            emergencyShutdowns: 0,
+            benchmarkAttempts: 0,
+            designApplications: 0,
+          },
+        }),
+      ),
+      save: vi.fn((capture: unknown, reason: string) =>
+        Promise.resolve().then(() => {
+          saves.push({ capture, reason });
+          return {
+            slotId: "slot-host-test",
+            savedAtIso: "2026-09-24T12:00:01.000Z",
+            tick: 0,
+            sizeBytes: 42,
+          };
+        }),
+      ),
+      updateSettings: (settings: WorkerSaveCapture["settings"]) => Promise.resolve(settings),
+      close: vi.fn(() => Promise.resolve()),
+    };
+    const hostOptions = {
+      content,
+      timing: timing.adapter,
+      persistence,
+      postMessage: (reply: WorkerReply) => replies.push(parseWorkerReply(reply)),
+    };
+    const host = createSimWorkerHost(hostOptions);
+    let sequence = 0;
+    const send = async (kind: string, body: unknown): Promise<void> => {
+      await host.receive({
+        protocolVersion: 1,
+        epoch: EPOCH,
+        requestSequence: sequence,
+        kind,
+        body,
+      });
+      sequence += 1;
+    };
+
+    await send("INITIALIZE_NEW", {
+      seed: "save-barrier-test",
+      contentVersion: content.contentVersion,
+      fingerprint: hashSimulationContent(content),
+    });
+    const ready = replies.find((reply) => reply.kind === "READY");
+    if (ready?.kind !== "READY") throw new Error("Expected a ready Worker host.");
+    await send("ACK_PUBLICATION", {
+      publicationSequence: ready.body.publication.publicationSequence,
+    });
+    await send("COMMAND", {
+      command: command("76000000-0000-4000-8000-000000000101", "SET_GUIDANCE_MODE", {
+        mode: "engineering",
+      }),
+    });
+    await send("REQUEST_SAVE", { reason: "manual" });
+
+    expect(persistence.startNewRun).toHaveBeenCalledOnce();
+    expect(persistence.save).toHaveBeenCalledOnce();
+    expect(saves[0]).toMatchObject({ reason: "manual" });
+    expect(saves[0]?.capture).toMatchObject({ nextQueueSequence: 1 });
+    const save = replies.find(
+      (reply) => reply.kind === "REQUEST_RESULT" && reply.body.result.kind === "save",
+    );
+    expect(save?.kind).toBe("REQUEST_RESULT");
+    if (save?.kind !== "REQUEST_RESULT") throw new Error("Expected save completion.");
+    expect(save.body.result).toMatchObject({
+      kind: "save",
+      metadata: { slotId: "slot-host-test", tick: 0, sizeBytes: 42 },
+    });
+    host.destroy();
+  });
+
+  test("returns stable storage codes when a requested save cannot commit", async () => {
+    const persistence: WorkerSavePersistence = {
+      startNewRun: () =>
+        Promise.resolve({
+          slotId: "slot-save-quota",
+          createdAtIso: "2026-09-24T12:00:00.000Z",
+          settings: {
+            language: "en",
+            telemetryPreset: "standard",
+            reducedEffects: false,
+            reducedMotion: false,
+            frameCap: 60,
+            volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+          },
+          localStats: {
+            realPlayTimeSeconds: 0,
+            taskCompletions: 0,
+            taskAbandons: 0,
+            emergencyShutdowns: 0,
+            benchmarkAttempts: 0,
+            designApplications: 0,
+          },
+        }),
+      save: () => Promise.reject(persistenceError("QUOTA_EXCEEDED", "private storage details")),
+      updateSettings: (settings) => Promise.resolve(settings),
+      close: () => Promise.resolve(),
+    };
+    const harness = createHarness(content, persistence);
+    await initialize(harness);
+    await harness.send("REQUEST_SAVE", { reason: "manual" });
+    await vi.waitFor(() => {
+      expect(harness.replies.some((reply) => reply.kind === "REQUEST_ERROR")).toBe(true);
+    });
+    expect(harness.replies.find((reply) => reply.kind === "REQUEST_ERROR")).toMatchObject({
+      body: { code: "QUOTA_EXCEEDED" },
+    });
+    expect(JSON.stringify(harness.replies)).not.toContain("private storage details");
+    harness.host.destroy();
+  });
+
   test("checks the bundled content handshake and publishes a full READY projection", async () => {
     const harness = createHarness();
     await harness.send("INITIALIZE_NEW", {

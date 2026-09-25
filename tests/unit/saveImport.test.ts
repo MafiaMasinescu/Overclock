@@ -117,6 +117,32 @@ describe("verified import preview", () => {
     expect(confirmed.slotId).toBe("slot-imported-1");
   });
 
+  test("a lock release failure after commit cannot report the import as failed", async () => {
+    const repository = createSaveRepositoryCore(createInMemoryRepositoryStorage().storage);
+    const service = createImportService({
+      repository,
+      locks: {
+        available: true,
+        acquire: (slotId) =>
+          Promise.resolve({
+            slotId,
+            name: `overclock-slot:${slotId}`,
+            release: () => Promise.reject(new Error("release failed after commit")),
+          }),
+      },
+      loadContent: () => codecContent,
+      generateSlotId: () => "slot-imported-release",
+    });
+    const preview = await service.previewImport({ bytes: await validInputBytes() });
+    await expect(service.confirmImport(preview.token ?? "")).resolves.toMatchObject({
+      slotId: "slot-imported-release",
+    });
+    await expect(repository.readManualSave("slot-imported-release")).resolves.toBeDefined();
+    await expect(service.confirmImport(preview.token ?? "")).rejects.toMatchObject({
+      code: "TOKEN_CONSUMED",
+    });
+  });
+
   test("a failed later preview invalidates the previous token", async () => {
     const harness = setupImport();
     const first = await harness.service.previewImport({ bytes: await validInputBytes("slot-a") });

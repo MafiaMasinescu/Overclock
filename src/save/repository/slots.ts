@@ -1,6 +1,6 @@
-import { persistenceError } from "../persistenceErrors.ts";
+import { PersistenceError, persistenceError } from "../persistenceErrors.ts";
 import type { SaveRepositoryCore } from "./repository.ts";
-import type { PreparedManualSave, SlotMetaRecord } from "./types.ts";
+import type { PreparedManualSave, RepositoryOperationToken, SlotMetaRecord } from "./types.ts";
 import type { WriteAutosaveResult } from "./types.ts";
 import type { SlotBusy, SlotLockHandle, WebLockAdapter } from "./webLocks.ts";
 
@@ -19,8 +19,14 @@ export interface WriterSession {
   readonly writerEpoch: number;
   readonly closed: boolean;
   currentRevision(): number;
-  writeManual(prepared: PreparedManualSave): Promise<SlotMetaRecord>;
-  writeAutosave(prepared: PreparedManualSave): Promise<WriteAutosaveResult>;
+  writeManual(
+    prepared: PreparedManualSave,
+    options?: { readonly token?: RepositoryOperationToken; readonly signal?: AbortSignal },
+  ): Promise<SlotMetaRecord>;
+  writeAutosave(
+    prepared: PreparedManualSave,
+    options?: { readonly token?: RepositoryOperationToken; readonly signal?: AbortSignal },
+  ): Promise<WriteAutosaveResult>;
   refresh(): Promise<SlotMetaRecord>;
   close(): Promise<void>;
 }
@@ -41,13 +47,25 @@ export async function openWriterSession(
   core: SaveRepositoryCore,
   locks: WebLockAdapter,
   slotId: string,
-  options?: { ifAvailable?: boolean; signal?: AbortSignal },
+  options?: { ifAvailable?: boolean; createIfMissing?: boolean; signal?: AbortSignal },
 ): Promise<OpenWriterResult> {
   const handleOrBusy: SlotLockHandle | SlotBusy = await locks.acquire(slotId, options);
   if (isSlotBusy(handleOrBusy)) return handleOrBusy;
   const handle: SlotLockHandle = handleOrBusy;
   try {
-    const meta = await core.readSlotMeta(slotId, options?.signal);
+    let meta: SlotMetaRecord;
+    try {
+      meta = await core.readSlotMeta(slotId, options?.signal);
+    } catch (error: unknown) {
+      if (
+        options?.createIfMissing !== true ||
+        !(error instanceof PersistenceError) ||
+        error.code !== "INVALID_STATE"
+      ) {
+        throw error;
+      }
+      meta = await core.createSlot(slotId, 0, options.signal);
+    }
     const rotated = await core.rotateWriterEpoch(slotId, meta.writerEpoch, options?.signal);
     return createSession(core, handle, slotId, rotated.writerEpoch, rotated.revision);
   } catch (error: unknown) {
@@ -120,20 +138,30 @@ function createSession(
     currentRevision(): number {
       return currentRevision;
     },
-    async writeManual(prepared: PreparedManualSave): Promise<SlotMetaRecord> {
+    async writeManual(
+      prepared: PreparedManualSave,
+      options?: { readonly token?: RepositoryOperationToken; readonly signal?: AbortSignal },
+    ): Promise<SlotMetaRecord> {
       requireOpen();
       const meta = await core.writeManualSave(slotId, prepared, {
         expectedRevision: currentRevision,
         expectedWriterEpoch: writerEpoch,
+        ...(options?.token !== undefined ? { token: options.token } : {}),
+        ...(options?.signal !== undefined ? { signal: options.signal } : {}),
       });
       currentRevision = meta.revision;
       return meta;
     },
-    async writeAutosave(prepared: PreparedManualSave): Promise<WriteAutosaveResult> {
+    async writeAutosave(
+      prepared: PreparedManualSave,
+      options?: { readonly token?: RepositoryOperationToken; readonly signal?: AbortSignal },
+    ): Promise<WriteAutosaveResult> {
       requireOpen();
       const result = await core.writeAutosave(slotId, prepared, {
         expectedRevision: currentRevision,
         expectedWriterEpoch: writerEpoch,
+        ...(options?.token !== undefined ? { token: options.token } : {}),
+        ...(options?.signal !== undefined ? { signal: options.signal } : {}),
       });
       currentRevision = result.meta.revision;
       return result;

@@ -1,4 +1,6 @@
 import type { CommandResult, SimCommand } from "../../sim/commands/contracts.ts";
+import type { PlayerSettings, SavePreview } from "../../save/contracts.ts";
+import type { LocalReport } from "../../save/schema.ts";
 import type { SimEvent } from "../../sim/events/contracts.ts";
 import type {
   GridPoint,
@@ -18,6 +20,37 @@ export interface SaveMetadata {
   sizeBytes: number;
 }
 
+export interface RecoverySummary {
+  readonly slotId: string;
+  readonly savedAtIso: string;
+  readonly tick: number;
+  readonly year: number;
+  readonly captureSequence: number;
+  readonly sourceKind: "manual" | "autosave";
+  readonly skippedCorruptRecords: number;
+  readonly lastKnownLiveTick?: number;
+}
+
+export interface SlotSummary {
+  readonly slotId: string;
+  readonly revision: number;
+  readonly tick: number;
+  readonly savedAtIso: string;
+  readonly sizeBytes: number;
+  readonly verification: "verified" | "unchecked";
+}
+
+export interface ImportPreviewResult {
+  readonly token: string | null;
+  readonly preview: SavePreview;
+  readonly allocatedSlotId: string | null;
+}
+
+export interface ImportConfirmationResult extends SlotSummary {
+  readonly appliedSettings: boolean;
+  readonly settings: PlayerSettings | null;
+}
+
 export type GameClientControlNotice =
   | { readonly kind: "EVENTS_GAP"; readonly nextEventSequence: number }
   | { readonly kind: "TRANSPORT_DEGRADED"; readonly publicationSequence: number };
@@ -30,6 +63,30 @@ export interface GameClient {
   subscribeControl(listener: (notice: GameClientControlNotice) => void): () => void;
   getGridViewModel(): GridViewModel;
   requestSave(reason: SaveReason): Promise<SaveMetadata>;
+  updateSettings(settings: PlayerSettings): Promise<void>;
+  loadSlot(slotId: string): Promise<RecoverySummary>;
+  recover(slotId: string): Promise<RecoverySummary>;
+  continueHost(): Promise<void>;
+  setPaused(paused: boolean): Promise<CommandResult>;
+  setSpeed(speed: 1 | 2 | 4): Promise<CommandResult>;
+  listSlots(): Promise<readonly SlotSummary[]>;
+  getRecoverySummary(): RecoverySummary | null;
+  previewImport(
+    fileBytes: ArrayBuffer,
+    destination?:
+      { readonly kind: "new" } | { readonly kind: "overwrite"; readonly slotId: string },
+  ): Promise<ImportPreviewResult>;
+  confirmImport(
+    token: string,
+    destination: { readonly kind: "new" } | { readonly kind: "overwrite"; readonly slotId: string },
+    expectedRevision: number | null,
+    applySettings: boolean,
+  ): Promise<ImportConfirmationResult>;
+  exportSlot(slotId: string, expectedRevision: number): Promise<Uint8Array>;
+  deleteSlot(slotId: string, expectedRevision: number): Promise<void>;
+  createReport(): Promise<LocalReport>;
+  listReports(): Promise<readonly LocalReport[]>;
+  deleteReport(reportId: string): Promise<void>;
   getConnectionStatus(): StoreConnectionStatus;
   subscribeConnection(listener: () => void): () => void;
   destroy(): void;

@@ -803,6 +803,8 @@ export function projectCommittedFactProjection(
   });
   return freezeOwned({
     tick: state.tick,
+    campaignYear: state.campaign.currentYear,
+    verticalSliceCompleted: state.campaign.verticalSliceCompleted,
     cashUsd: state.economy.cashUsd,
     liveLayoutRevision: facility.liveLayoutRevision,
     tasks,

@@ -2,10 +2,10 @@ import { createRoot } from "react-dom/client";
 import type { ReactNode } from "react";
 import { I18nextProvider } from "react-i18next";
 
-import { App } from "../App.tsx";
 import { loadContentBundle } from "../../content/loader/contentLoader.ts";
 import { createWorkerGameClient } from "../game-client/workerGameClient.ts";
 import { createAppI18n } from "../../localization/i18n.ts";
+import { RunningSession } from "./RunningSession.tsx";
 import "../../styles.css";
 
 const rootElement = document.getElementById("root");
@@ -32,7 +32,7 @@ try {
     content,
     seed: globalThis.crypto.randomUUID(),
   });
-  root.render(provider(<App client={client} />));
+  root.render(provider(<RunningSession initialClient={client} content={content} />));
 } catch {
   root.render(
     provider(

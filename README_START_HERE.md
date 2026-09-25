@@ -270,9 +270,10 @@ the first finite Task between ticks 1,780 and 1,790, records the first persisten
 30,270. Maximum forced deadtime is 2,990 ticks. The approved Task 15.7 balance corrections and the
 audited i7-2600 evidence are recorded in `docs/diagnostics/MILESTONE_BOT.md`.
 
-Task 15 closes the Phase 1 headless simulator. Phase 2 Tasks 16–19 provide persistence foundations,
-owned presentation, the Worker host and real GameClient; durable save orchestration/recovery remains
-Task 20. Build Workspace UI is Phase 3, gameplay UI is Phase 4, and release hardening is Phase 5.
+Task 15 closes the Phase 1 headless simulator. Phase 2 Tasks 16–20 provide persistence foundations,
+owned presentation, the Worker host, real GameClient, and local durable save/recovery controls. Task
+21 remains the Phase 2 integration and soak boundary. Build Workspace UI is Phase 3, gameplay UI is
+Phase 4, and release hardening is Phase 5.
 
 ## Phase 2 Task 16: detached save codec
 
@@ -324,8 +325,23 @@ client processing is paired to the Worker reply by `publicationSequence`. On the
 x64 / Intel Core i7-2600 target, the complete browser run reported p95 5.4 ms idle round-trip,
 1.5 ms direct tick, 3.2 ms combined Worker tick/projection, 4.4 ms client publication, 0.4 ms
 Worker `postMessage`, and 102.7 ms foreground visible command. Host identity, sample method, gates,
-and results are in `docs/diagnostics/PHASE_2_WORKER.md`. Durable save, import and recovery remain
-Task 20 work.
+and results are in `docs/diagnostics/PHASE_2_WORKER.md`.
+
+## Phase 2 Task 20: durable browser persistence
+
+Task 20 connects the production Worker to the existing local repository for same-tick manual saves,
+coalesced lifecycle/interval autosaves, verified live load and cold Worker recovery. It adds explicit
+save/import/export/delete and recovery controls, plus bounded local-only reports. The host retains
+three autosave generations; load/recovery promotes an admitted candidate into a fresh epoch and
+holds it until Continue. Task 20 browser performance evidence and the per-path p95 results are in
+[`docs/diagnostics/PHASE_2_PERSISTENCE.md`](docs/diagnostics/PHASE_2_PERSISTENCE.md).
+
+Run its focused browser checks with:
+
+```powershell
+corepack pnpm exec playwright test --workers=1 tests/e2e/workerPersistence.spec.ts tests/e2e/persistenceControls.spec.ts
+corepack pnpm exec playwright test --workers=1 tests/e2e/persistencePerformance.spec.ts
+```
 
 ## Regula de calitate
 

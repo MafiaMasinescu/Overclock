@@ -5,6 +5,7 @@ import type { CommandReceipt, CommandResult, SimCommand } from "../../sim/comman
 import type { GridPublication } from "../../sim/selectors/gridPublication.ts";
 import type { UiSnapshot } from "../../sim/selectors/presentationTypes.ts";
 import { localReportSchema, playerSettingsSchema, savePreviewSchema } from "../../save/schema.ts";
+import { PERSISTENCE_ERROR_CODES } from "../../save/persistenceErrors.ts";
 import { MAX_INPUT_FILE_BYTES } from "../../save/persistenceLimits.ts";
 
 export const WORKER_PROTOCOL_VERSION = 1 as const;
@@ -59,7 +60,15 @@ const requestBodySchemas = {
   CONTINUE_HOST: emptyBody,
   REQUEST_SAVE: z.strictObject({ reason: z.enum(["manual", "autosave", "checkpoint", "exit"]) }),
   LIST_SLOTS: emptyBody,
-  PREVIEW_IMPORT: z.strictObject({ fileBytes: z.instanceof(ArrayBuffer) }),
+  PREVIEW_IMPORT: z.strictObject({
+    fileBytes: z.instanceof(ArrayBuffer),
+    destination: z
+      .discriminatedUnion("kind", [
+        z.strictObject({ kind: z.literal("new") }),
+        z.strictObject({ kind: z.literal("overwrite"), slotId }),
+      ])
+      .optional(),
+  }),
   CONFIRM_IMPORT: z.strictObject({
     token: nonemptyText,
     destination: z.discriminatedUnion("kind", [
@@ -73,9 +82,10 @@ const requestBodySchemas = {
   DELETE_SLOT: z.strictObject({ slotId, expectedRevision: nonnegativeSafeInteger }),
   UPDATE_SETTINGS: z.strictObject({ settings: playerSettingsSchema }),
   REQUEST_REPORT: z.strictObject({ reportId: nonemptyText }),
+  CREATE_REPORT: emptyBody,
   LIST_REPORTS: emptyBody,
   DELETE_REPORT: z.strictObject({ reportId: nonemptyText }),
-  RECOVER: emptyBody,
+  RECOVER: z.strictObject({ slotId }),
   SHUTDOWN: emptyBody,
 } as const;
 
@@ -433,11 +443,13 @@ const slotSummarySchema = z.strictObject({
   tick: nonnegativeSafeInteger,
   savedAtIso: nonemptyText,
   sizeBytes: nonnegativeSafeInteger,
+  verification: z.enum(["verified", "unchecked"]),
 });
 const requestResultSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("initialized"), tick: nonnegativeSafeInteger }),
   z.strictObject({ kind: z.literal("snapshot"), tick: nonnegativeSafeInteger }),
   z.strictObject({ kind: z.literal("continued"), tick: nonnegativeSafeInteger }),
+  z.strictObject({ kind: z.literal("settings-updated"), tick: nonnegativeSafeInteger }),
   z.strictObject({
     kind: z.literal("visibility"),
     visible: z.boolean(),
@@ -455,10 +467,16 @@ const requestResultSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("import-preview"),
-    token: nonemptyText,
+    token: nonemptyText.nullable(),
     preview: savePreviewSchema,
+    allocatedSlotId: slotId.nullable(),
   }),
-  z.strictObject({ kind: z.literal("import-confirmed"), slot: slotSummarySchema }),
+  z.strictObject({
+    kind: z.literal("import-confirmed"),
+    slot: slotSummarySchema,
+    appliedSettings: z.boolean(),
+    settings: playerSettingsSchema.nullable(),
+  }),
   z.strictObject({ kind: z.literal("export"), fileBytes: z.instanceof(ArrayBuffer) }),
   z.strictObject({ kind: z.literal("deleted"), slotId }),
   z.strictObject({
@@ -483,6 +501,7 @@ const requestErrorCodes = [
   "INCOMPATIBLE_CONTENT",
   "SEQUENCE_EXHAUSTED",
   "FATAL",
+  ...PERSISTENCE_ERROR_CODES,
 ] as const;
 const lifecycleSchema = z.enum([
   "NEW",
@@ -502,6 +521,18 @@ const replyBodySchemas = {
     snapshot: snapshotSchema,
     publication: gridPublicationSchema,
     lifecycle: lifecycleSchema,
+    recovery: z
+      .strictObject({
+        slotId,
+        savedAtIso: nonemptyText,
+        tick: nonnegativeSafeInteger,
+        year: nonnegativeSafeInteger,
+        captureSequence: nonnegativeSafeInteger,
+        sourceKind: z.enum(["manual", "autosave"]),
+        skippedCorruptRecords: nonnegativeSafeInteger,
+      })
+      .nullable()
+      .optional(),
   }),
   COMMAND_RECEIPT: z.strictObject({
     commandId: z.uuid(),
@@ -599,6 +630,15 @@ type ReplyBody<K extends ReplyKind> = K extends "READY"
       readonly snapshot: UiSnapshot;
       readonly publication: GridPublication;
       readonly lifecycle: z.infer<typeof lifecycleSchema>;
+      readonly recovery?: {
+        readonly slotId: string;
+        readonly savedAtIso: string;
+        readonly tick: number;
+        readonly year: number;
+        readonly captureSequence: number;
+        readonly sourceKind: "manual" | "autosave";
+        readonly skippedCorruptRecords: number;
+      } | null;
     }
   : K extends "SNAPSHOT_PUBLICATION"
     ? { readonly snapshot: UiSnapshot; readonly publication: GridPublication | null }
@@ -890,8 +930,16 @@ export function workerRequestCategory(request: WorkerRequest): RequestCategory {
   if (request.kind === "PREVIEW_IMPORT") return "import";
   if (
     request.kind === "LOAD_SLOT" ||
+    request.kind === "RECOVER" ||
     request.kind === "REQUEST_SAVE" ||
-    request.kind === "CONFIRM_IMPORT"
+    request.kind === "CONFIRM_IMPORT" ||
+    request.kind === "LIST_SLOTS" ||
+    request.kind === "EXPORT_SLOT" ||
+    request.kind === "DELETE_SLOT" ||
+    request.kind === "REQUEST_REPORT" ||
+    request.kind === "CREATE_REPORT" ||
+    request.kind === "LIST_REPORTS" ||
+    request.kind === "DELETE_REPORT"
   ) {
     return "maintenance";
   }

@@ -143,6 +143,51 @@ export function createFakeGameClient(): GameClient {
     requestSave() {
       return Promise.reject(new Error("Saving is unavailable in Phase 0."));
     },
+    updateSettings() {
+      return Promise.reject(new Error("Settings persistence is unavailable in Phase 0."));
+    },
+    loadSlot() {
+      return Promise.reject(new Error("Loading is unavailable in the fake client."));
+    },
+    recover() {
+      return Promise.reject(new Error("Recovery is unavailable in the fake client."));
+    },
+    continueHost() {
+      return Promise.reject(new Error("Continue is unavailable in the fake client."));
+    },
+    setPaused() {
+      return Promise.reject(new Error("Clock controls are unavailable in the fake client."));
+    },
+    setSpeed() {
+      return Promise.reject(new Error("Clock controls are unavailable in the fake client."));
+    },
+    listSlots() {
+      return Promise.resolve([]);
+    },
+    getRecoverySummary() {
+      return null;
+    },
+    previewImport() {
+      return Promise.reject(new Error("Import is unavailable in the fake client."));
+    },
+    confirmImport() {
+      return Promise.reject(new Error("Import is unavailable in the fake client."));
+    },
+    exportSlot() {
+      return Promise.reject(new Error("Export is unavailable in the fake client."));
+    },
+    deleteSlot() {
+      return Promise.reject(new Error("Delete is unavailable in the fake client."));
+    },
+    createReport() {
+      return Promise.reject(new Error("Reports are unavailable in the fake client."));
+    },
+    listReports() {
+      return Promise.resolve([]);
+    },
+    deleteReport() {
+      return Promise.reject(new Error("Reports are unavailable in the fake client."));
+    },
     getConnectionStatus() {
       return "disconnected";
     },

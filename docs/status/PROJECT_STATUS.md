@@ -1,12 +1,12 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-24
+Updated: 2026-09-25
 
 ## Current phase
 
-- Phase 2: Tasks 16–19 provide persistence foundations, the repository, owned presentation, and the
-  real Worker/GameClient bridge. Task 19 is at its CP19 checkpoint boundary; Task 20 durable save,
-  autosave, load/recovery, and import/export UI work has not begun.
+- Phase 2: Tasks 16–20 provide persistence foundations, the repository, owned presentation, the
+  real Worker/GameClient bridge, and the durable browser save/recovery loop. Task 20 is at its CP20
+  checkpoint boundary. Task 21 integration and soak work has not begun.
 - Phase 1: Headless Simulator, closed through Task 15 and the ADR-0022 Campaign coherence repair.
 - Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
   `8e80b00` and explicitly approved on 18 August 2026.
@@ -1232,3 +1232,41 @@ tests, and production build. Two independent final `corepack pnpm test` processe
 `corepack pnpm test:determinism` passed 15/15 files (23 tests). The final full Chromium run passed
 33/33. Production scanning found no Worker test harness strings in `dist`, no app/browser/timer/
 storage imports in `src/sim`, and no production `devtools` imports. Final `git diff --check` passed.
+
+## Phase 2 Task 20: durable browser persistence
+
+Task 20 implements the local durable browser loop on the recorded CP19 base
+`c85298bdd8a8cb94a550665f6689a7fa8a8a8ce5`. The Worker captures exact same-tick state plus queue
+position, tracks private dirty generations, and coalesces foreground interval and committed
+lifecycle autosaves over the atomic Task 17 repository. Verified live load promotes a private
+candidate through a new epoch and holds scheduling until Continue. Fresh-Worker recovery rechecks
+the newest durable generation and falls back through older autosaves to valid manual data. The
+minimal localized shell exposes local save/import/export/delete and recovery controls; bounded,
+allowlisted playtest reports remain local and have no upload path.
+
+Target N performance evidence is recorded in `docs/diagnostics/PHASE_2_PERSISTENCE.md`. On the
+verified i7-2600 host, the CP20 full-suite p95 was 60.8 ms manual save, 80.6 ms autosave including
+rotation, 118.6 ms load to full `READY`, 121.3 ms import preview, 51.2 ms confirm to commit, and
+763.5 ms fresh-Worker recovery. Every Task 20 p95 passed its unchanged contract budget; an
+autosave maximum of 258.0 ms is recorded separately. The audit repaired capture-sequence fallback,
+damaged-manual listing, maintenance/autosave exclusion, load transition settlement, and the actual
+commit outcome for import. Slot-list previews now declare `unchecked`; load/export verify the
+candidate. New unsaved runs defer slot creation until the first durable save, keeping list/delete
+usable at the 20 durable-slot limit. The localized overwrite confirmation shows slot and revision.
+The complete serial Chromium suite passed 37/37, including quota/upgrade/two-tab failures and
+Worker/direct Campaign parity at tick 12,000 (`5f0c57e688e6a693`) and tick 24,000
+(`ff38b6a736a2ffb0`). The initial 36/37 run was interrupted by Vite HMR during a source edit;
+the isolated persistence test and then full suite passed after edits stopped. Full unit,
+determinism, content validation, typecheck, lint, build, and format check passed during review;
+the final checkpoint gates run on the staged candidate. The Task 20 implementation is based on the
+recorded CP19 commit above; this document does not predict the new checkpoint SHA. Task 21 has not
+begun.
+
+The CP20 staged-source audit passed two separate complete `pnpm test` processes (each 88 unit files,
+1,510 tests, plus 15 determinism files and 23 tests), standalone determinism, and `validate`.
+Affected Chromium tests passed 14/14 after the final import correction, with all persistence N p95
+budgets below threshold. Projection initially missed a p95 gate under background CPU load; the same
+diagnostic also missed on the untouched CP19 checkout. After the user paused busy Opera activity,
+all enforced projection gates passed on the unchanged Task 20 source. Replay's playback p95 also
+moved from a busy-host 8.8145 ms to 1.6419 ms against its `<5 ms` reference. Full measurements and
+the original misses remain in `docs/diagnostics/PHASE_2_PERSISTENCE.md`.

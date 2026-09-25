@@ -39,6 +39,7 @@ describe("strict Worker wire protocol", () => {
       "COMMAND",
       "CONFIRM_IMPORT",
       "CONTINUE_HOST",
+      "CREATE_REPORT",
       "DELETE_REPORT",
       "DELETE_SLOT",
       "EXPORT_SLOT",

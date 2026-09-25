@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { PersistenceError } from "../../src/save/persistenceErrors.ts";
 import { createSaveRepositoryCore } from "../../src/save/repository/repository.ts";
+import { createOperationToken } from "../../src/save/repository/types.ts";
 import {
   deleteInactiveSlot,
   isSlotBusy,
@@ -75,6 +76,52 @@ describe("writer exclusion with web locks", () => {
     if (isSlotBusy(sessionB)) throw new Error("expected tab B to acquire after release");
     expect(sessionB.writerEpoch).toBe(2);
     await sessionB.close();
+  });
+
+  test("creates the first durable slot while acquiring its writer session", async () => {
+    const controls = createInMemoryRepositoryStorage();
+    const repository = createSaveRepositoryCore(controls.storage);
+    const manager = createInMemoryLockManager();
+    const locks = createWebLockAdapter({ locks: manager.createClient() });
+
+    const session = await openWriterSession(repository, locks, "slot-new", {
+      ifAvailable: true,
+      createIfMissing: true,
+    });
+
+    if (isSlotBusy(session)) throw new Error("expected a newly created writer session");
+    expect(session.writerEpoch).toBe(1);
+    await expect(repository.readSlotMeta("slot-new")).resolves.toMatchObject({
+      slotId: "slot-new",
+      revision: 1,
+      writerEpoch: 1,
+      latestRecovery: null,
+    });
+    await session.close();
+  });
+
+  test("a cancelled prepared write does not open a transaction", async () => {
+    const controls = createInMemoryRepositoryStorage();
+    const repository = createSaveRepositoryCore(controls.storage);
+    const locks = createWebLockAdapter({
+      locks: createInMemoryLockManager().createClient(),
+    });
+    const session = await openWriterSession(repository, locks, "slot-cancel", {
+      createIfMissing: true,
+    });
+    if (isSlotBusy(session)) throw new Error("expected a writer session");
+    const { token, cancel } = createOperationToken();
+    cancel();
+
+    await expect(
+      session.writeManual(await preparedPair("slot-cancel"), { token }),
+    ).rejects.toMatchObject({
+      code: "CANCELLED",
+    });
+    await expect(repository.readManualSave("slot-cancel")).rejects.toMatchObject({
+      code: "INVALID_STATE",
+    });
+    await session.close();
   });
 
   test("a lock lost to tab death can be taken over; old writes go stale", async () => {
