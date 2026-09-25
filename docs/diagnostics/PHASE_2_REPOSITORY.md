@@ -76,3 +76,28 @@ statistical performance gates.
 
 Rerun both save diagnostics, focused repository tests and Chromium matrix after changes to codec,
 admission, IndexedDB schema, repository transactions, Web Locks, import/export or load admission.
+
+## Task 21 N/L rerun
+
+Updated 2026-09-25. Command: `corepack pnpm performance:save-repository`. N used 200 samples / 20
+warm-ups; L used 50 / 5. Values are median / p95 / maximum milliseconds. Preparation encodes the
+input before transaction samples; preview, confirm, and end-to-end import include their full
+repository operation.
+
+| Fixture | Operation | Bytes | Median | p95 | Maximum |
+|---|---|---:|---:|---:|---:|
+| N | Preparation + encode | 191,346 | 83.0473 | 109.1832 | 118.7826 |
+| N | Manual commit | — | 1.3757 | 2.3728 | 10.5678 |
+| N | Rotation commit | — | 7.2249 | 10.4700 | 18.3442 |
+| N | Import preview | 191,346 | 278.6114 | 374.4998 | 698.3400 |
+| N | Import confirm | 191,346 | 101.5042 | 135.4746 | 330.5274 |
+| N | End-to-end import | 191,346 | 380.1522 | 490.4938 | 811.9728 |
+| L | Preparation + encode | 262,296 | 117.6252 | 145.5411 | 162.7620 |
+| L | Manual commit | — | 1.6676 | 3.3699 | 4.2937 |
+| L | Rotation commit | — | 8.3752 | 12.5357 | 15.1006 |
+| L | Import preview | 262,296 | 402.9350 | 468.4113 | 638.8635 |
+| L | Import confirm | 262,296 | 145.4211 | 193.1149 | 200.3123 |
+| L | End-to-end import | 262,296 | 548.5551 | 639.4039 | 788.0118 |
+
+The command exited successfully. These measurements use the actual host stated in
+`PHASE_2_TASK_21.md`; installed RAM differs from the Phase 2 8 GiB target.

@@ -272,8 +272,10 @@ audited i7-2600 evidence are recorded in `docs/diagnostics/MILESTONE_BOT.md`.
 
 Task 15 closes the Phase 1 headless simulator. Phase 2 Tasks 16–20 provide persistence foundations,
 owned presentation, the Worker host, real GameClient, and local durable save/recovery controls. Task
-21 remains the Phase 2 integration and soak boundary. Build Workspace UI is Phase 3, gameplay UI is
-Phase 4, and release hardening is Phase 5.
+21 adds cross-domain save parity, adversarial persistence coverage, and real-Worker soak evidence.
+Its reviewed CP21 evidence is documented in `docs/diagnostics/PHASE_2_TASK_21.md`. Phase 2
+implementation is complete through the checkpoint commit containing that report. Build Workspace UI
+is Phase 3, gameplay UI is Phase 4, and release hardening is Phase 5.
 
 ## Phase 2 Task 16: detached save codec
 

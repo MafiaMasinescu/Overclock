@@ -100,3 +100,29 @@ launch performance.
 - Full Chromium E2E suite, including Worker, persistence/repository faults, concurrency, projection,
   and Phase 0 shell coverage: 33/33 passed.
 - Full candidate validation and repeated unit/determinism runs are recorded in `PROJECT_STATUS.md`.
+
+## Task 21 CP21 rerun
+
+Updated 2026-09-25. Exact host details and RAM classification are in
+`PHASE_2_TASK_21.md`: this machine has 16 GiB installed, while the Phase 2 target specifies 8 GiB.
+These measurements are informative and do not certify the exact target.
+
+The serial `performance:worker-host` rerun reported 1,500 no-tick wakes at median / p95 / maximum
+0.0009 / 0.0028 / 0.0493 ms; 500 due-tick wakes at 0.3299 / 0.8920 / 5.6006 ms; and 500 direct
+`SimCore.step(1)` calls at 0.1483 / 0.3593 / 4.4036 ms. The script exited successfully and reported
+`verified-target` based on its CPU/OS check only.
+
+The Task 21 full serial Chromium run reached all 600 publication samples but timed out draining two
+ACKs (39/40 total tests passed). With additional diagnostic context and unchanged gates, two isolated
+reruns drained ACKs and finished every cohort, but main-client publication p95 was 5.0 ms and
+5.2 ms against `<5 ms`. Other isolated p95s were idle 5.9/6.3 ms, direct tick 1.8/1.8 ms, combined
+tick/projection 3.7/3.8 ms, Worker post 0.4/0.4 ms, and foreground visibility 105.0/105.7 ms.
+The full cohort counts and failure disposition are preserved in `PHASE_2_TASK_21.md`.
+
+After the final fixture formatting and lint corrections, the complete serial Chromium suite passed
+40/40 on the final CP21 source. Its dense-N Worker diagnostic completed all unchanged cohorts and
+reported idle command p95 5.9 ms, direct tick 1.3 ms, combined tick/projection 3.7 ms, main-client
+publication 4.4 ms, Worker post 0.4 ms, and foreground visible latency 103.3 ms. The main-client
+publication gate passed at `<5 ms`. This final pass is host-informative because installed RAM is
+16 GiB against the contract's 8 GiB; the earlier isolated misses and ACK timeout remain part of the
+record rather than being removed.

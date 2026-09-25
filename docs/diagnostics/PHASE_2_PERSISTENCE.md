@@ -100,3 +100,38 @@ was separately 28.9840 ms p95. The codec diagnostic passed N canonical encode p9
 SHA-256 1.3789 ms, and gzip encode/decode 4.0675/5.7451 ms. The in-memory repository diagnostic
 passed and separated N preparation p95 89.2449 ms from manual transaction commit 2.0377 ms and
 autosave rotation commit 9.0489 ms; real IndexedDB evidence is the Chromium cohort above.
+
+## Task 21 CP21 browser and soak evidence
+
+Updated 2026-09-25. The 40-case serial Chromium run passed 39 tests and failed the Worker
+publication diagnostic while draining two ACKs. The persistence N cohort measured manual save,
+autosave including rotation, load through full `READY`, import preview, import confirmation, and
+fresh-Worker recovery p95s of 60.3, 70.0, 128.8, 127.5, 53.5, and 818.9 ms respectively. Each is
+below its unchanged p95 budget (250, 250, 500, 1,000, 250, and 1,500 ms). This entire host run is
+informative because installed RAM was 16 GiB against the contract's 8 GiB target.
+
+The added real-Worker mid-Replay checkpoint/recovery test passed, as did the one-cycle soak smoke.
+The full 60-minute soak completed 60 of 60 one-minute cycles, persisted and read back each cycle,
+and completed cleanup with at most three scheduler timers and zero pending requests, commands, or
+ACKs at its samples. Chromium working set ranged 285.3–337.5 MB; renderer heap ranged 19.3–23.1 MB.
+Both remained below the 500 MiB budget. Worker heap was unavailable from Chromium on this Windows
+host. Full sample series and slope are in `PHASE_2_TASK_21.md`.
+
+The final Task 21 full-suite rerun passed 40/40 and measured a fresh persistence N cohort. Values
+below are median / p95 / maximum milliseconds:
+
+| Path | Samples / warm-up | Median | p95 | Maximum | p95 budget |
+|---|---:|---:|---:|---:|---:|
+| Manual save N | 200 / 20 | 54.0 | 64.1 | 74.4 | <250 ms |
+| Autosave N, including rotation | 200 / 20 | 57.4 | 71.8 | 101.7 | <250 ms |
+| Load N through full `READY` | 200 / 20 | 124.3 | 156.0 | 380.3 | <500 ms |
+| Import preview N | 200 / 20 | 122.5 | 156.8 | 171.5 | <1,000 ms |
+| Confirm import N to commit | 200 / 20 | 46.9 | 63.7 | 86.9 | <250 ms |
+| Fresh Worker recovery N | 50 / 5 | 698.0 | 983.2 | 1,507.3 | <1,500 ms |
+
+Every final-run p95 was within its unchanged budget. The recovery maximum exceeded the p95 budget,
+but the contract gates p95; the maximum is retained here as diagnostic evidence. The final soak's
+Chromium working set was first 324.4 MB, last 289.0 MB, minimum 244.2 MB and maximum 336.5 MB
+(net -35.4 MB; OLS slope -81.9 MB/hour). Renderer heap was first 19.3 MB, last 23.1 MB, minimum
+19.3 MB and maximum 23.1 MB (net +3.8 MB; OLS slope +5.1 MB/hour). Worker heap was unavailable.
+As above, these results do not certify the contract's exact 8 GiB host.

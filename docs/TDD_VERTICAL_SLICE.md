@@ -269,6 +269,13 @@ do not prevent listing and deletion. Import confirmation reports the committed t
 even if a later lock release or informational read fails. Overwrite displays slot and revision for
 explicit confirmation; cancellation retains the selected preview.
 
+Task 21 adds cross-domain save-codec parity for active Task, Research, Benchmark, Design history,
+and high-ID Blueprint state; timestamp rollback recovery coverage; real-Worker mid-Replay durable
+checkpoint recovery; and a 60-minute IndexedDB persistence soak. The reviewed CP21 verification,
+host limitations, and preserved performance misses are documented in
+`docs/diagnostics/PHASE_2_TASK_21.md`. Phase 2 implementation is complete through the checkpoint
+commit containing that report.
+
 Phase 3 owns auto-connect/A* routing, renderer consumption of snapshots/patches, and heatmap UI.
 Phase 4 owns gameplay alerts/event semantics and UI, achievements/tutorial behavior, and any future
 contracts for workload-dependent Power/Heat and automatic energy/economy settlement retained from

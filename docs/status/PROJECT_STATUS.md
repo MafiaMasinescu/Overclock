@@ -5,8 +5,9 @@ Updated: 2026-09-25
 ## Current phase
 
 - Phase 2: Tasks 16–20 provide persistence foundations, the repository, owned presentation, the
-  real Worker/GameClient bridge, and the durable browser save/recovery loop. Task 20 is at its CP20
-  checkpoint boundary. Task 21 integration and soak work has not begun.
+  real Worker/GameClient bridge, and the durable browser save/recovery loop. Task 21 adds integrated
+  parity, adversarial recovery, diagnostics, and the 60-minute soak. Phase 2 implementation is
+  complete through CP21, the checkpoint commit containing the Task 21 evidence below.
 - Phase 1: Headless Simulator, closed through Task 15 and the ADR-0022 Campaign coherence repair.
 - Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
   `8e80b00` and explicitly approved on 18 August 2026.
@@ -1259,8 +1260,8 @@ Worker/direct Campaign parity at tick 12,000 (`5f0c57e688e6a693`) and tick 24,00
 the isolated persistence test and then full suite passed after edits stopped. Full unit,
 determinism, content validation, typecheck, lint, build, and format check passed during review;
 the final checkpoint gates run on the staged candidate. The Task 20 implementation is based on the
-recorded CP19 commit above; this document does not predict the new checkpoint SHA. Task 21 has not
-begun.
+recorded CP19 commit above; CP20 is `7dc99c4915caf520199589f807ef70ec66c6518a`. Task 21 and its
+CP21 review are described below.
 
 The CP20 staged-source audit passed two separate complete `pnpm test` processes (each 88 unit files,
 1,510 tests, plus 15 determinism files and 23 tests), standalone determinism, and `validate`.
@@ -1270,3 +1271,27 @@ diagnostic also missed on the untouched CP19 checkout. After the user paused bus
 all enforced projection gates passed on the unchanged Task 20 source. Replay's playback p95 also
 moved from a busy-host 8.8145 ms to 1.6419 ms against its `<5 ms` reference. Full measurements and
 the original misses remain in `docs/diagnostics/PHASE_2_PERSISTENCE.md`.
+
+## Phase 2 Task 21: integration and soak checkpoint
+
+Task 21 adds deterministic save-domain codec parity, timestamp-rollback recovery coverage, real
+Worker mid-Replay durable checkpoint recovery, and a 60-minute persistence soak using Chromium,
+IndexedDB, and Web Locks. Measured details and gate outcomes are in
+`../diagnostics/PHASE_2_TASK_21.md` and its linked codec, repository, projection, Worker, and
+persistence diagnostics. CP21 is the checkpoint commit containing these updates.
+
+Two independent complete `corepack pnpm test` runs passed, each with 88 unit files / 1,511 tests and
+16 determinism files / 25 tests. Standalone determinism and `corepack pnpm validate` passed. The
+final complete serial Chromium suite passed 40/40, including the 60/60 persistence soak and the
+dense-N Worker diagnostic at 4.4 ms main-client publication p95 (`<5 ms`). The final persistence
+N p95s were manual save 64.1 ms, autosave 71.8 ms, load 156.0 ms, import preview 156.8 ms,
+confirmation 63.7 ms, and fresh-Worker recovery 983.2 ms, each within its budget.
+
+The initial Task 21 browser run's two-ACK timeout and two isolated main-client publication p95
+misses at 5.0 and 5.2 ms remain documented alongside the final pass. Earlier Phase 1/2 diagnostic
+misses and the accepted Benchmark exception also remain unchanged. The host has 16 GiB installed
+against the Phase 2 target of 8 GiB, so these measurements are informative, not exact target
+certification. No threshold or sample count changed. The separate final read-only Phase 2 closure
+audit is the next boundary; Phase 3 has not begun. After the host limitation and preserved misses
+were reported, the owner explicitly authorized CP21 on 2026-09-25 without reclassifying this host
+or those measurements as target passes.

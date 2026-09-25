@@ -7,6 +7,10 @@ import {
 import type { WorkerReply } from "../../../src/app/worker/protocol.ts";
 import { createWorkerNFixture } from "../../performance/workerNFixture.ts";
 import { SimCore, type StepResult } from "../../../src/sim/core/simCore.ts";
+import { createWorkerSavePersistence } from "../../../src/app/worker/savePersistence.ts";
+import { createSaveRepositoryCore } from "../../../src/save/repository/repository.ts";
+import { openOverclockDatabase } from "../../../src/save/repository/indexedDb.ts";
+import { createWebLockAdapter } from "../../../src/save/repository/webLocks.ts";
 
 let observedCoreTickCount = 0;
 let activeScheduledWakeId: number | null = null;
@@ -170,6 +174,7 @@ class ManualTiming {
   }
 
   async waitForPublicationSamples(count: number): Promise<void> {
+    const host = await hostReady;
     const startedAt = performance.now();
     let lastProgressAt = startedAt;
     while (this.singleStepPublicationSampleCount < count) {
@@ -357,7 +362,9 @@ function parseControl(value: unknown): TestControl | null {
 const scope = globalThis as unknown as TestScope;
 const timing = new ManualTiming();
 const content = loadWorkerManualFixtureContent();
-const useDenseNFixture = new URL(import.meta.url).searchParams.get("fixture") === "n";
+const workerName = (globalThis as typeof globalThis & { name?: string }).name;
+const useDenseNFixture = workerName === "overclock-manual-test-worker-n";
+const usePersistenceReplayFixture = workerName === "overclock-manual-test-worker-replay";
 let activeEpoch: string | null = null;
 let nextRequestSequence = 0;
 let inboundTail: Promise<void> = Promise.resolve();
@@ -382,16 +389,31 @@ function reportFixtureError(error: unknown): void {
   });
 }
 
-const host = createSimWorkerHost({
-  content,
-  timing: timing.adapter,
-  postMessage: postReply,
-  ...(useDenseNFixture
-    ? { initialStateForTest: createWorkerNFixture("task-19-worker-n", content) }
-    : {}),
-});
+async function createManualHost(): Promise<ReturnType<typeof createSimWorkerHost>> {
+  const persistence = usePersistenceReplayFixture
+    ? createWorkerSavePersistence({
+        content,
+        repository: createSaveRepositoryCore(await openOverclockDatabase()),
+        locks: createWebLockAdapter(),
+      })
+    : undefined;
+  return createSimWorkerHost({
+    content,
+    timing: timing.adapter,
+    postMessage: postReply,
+    ...(persistence === undefined ? {} : { persistence }),
+    ...(useDenseNFixture
+      ? { initialStateForTest: createWorkerNFixture("task-19-worker-n", content) }
+      : {}),
+  });
+}
+
+// Attach the request listener before waiting for the persistence database to open.
+const hostReady = createManualHost();
+void hostReady.catch(reportFixtureError);
 
 async function handleControl(control: TestControl): Promise<void> {
+  const host = await hostReady;
   switch (control.kind) {
     case "ADVANCE_WAKES": {
       timing.advanceWakes(control.count);
@@ -509,14 +531,29 @@ scope.addEventListener("message", (event) => {
           nextRequestSequence = requestSequence + 1;
         }
       }
+      const host = await hostReady;
       await host.receive(event.data);
     })
-    .catch(reportFixtureError);
+    .catch((error: unknown) => {
+      reportFixtureError(error);
+    });
 });
 
 scope.addEventListener("error", () => {
-  host.destroy();
+  void hostReady
+    .then((host) => {
+      host.destroy();
+    })
+    .catch((error: unknown) => {
+      reportFixtureError(error);
+    });
 });
 scope.addEventListener("messageerror", () => {
-  host.destroy();
+  void hostReady
+    .then((host) => {
+      host.destroy();
+    })
+    .catch((error: unknown) => {
+      reportFixtureError(error);
+    });
 });

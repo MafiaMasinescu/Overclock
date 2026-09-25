@@ -86,3 +86,33 @@ IndexedDB/save/load budgets are owned by later tasks.
 - Real Chromium round-trips both encodings through native Web Crypto and Compression Streams.
 - Existing Phase 1 state, RNG, Replay, Campaign, Blueprint, Benchmark, and compatibility vectors are
   preserved.
+
+## Task 21 N/L rerun
+
+Updated 2026-09-25. Command: `corepack pnpm performance:save-codec`. The fixed N cohort used
+200 samples / 20 warm-ups; L used 50 / 5. Values are median / p95 / maximum milliseconds.
+Payload admission measures full-state admission, not only the byte codec.
+
+| Fixture | Operation | Bytes | Median | p95 | Maximum |
+|---|---|---:|---:|---:|---:|
+| N | Full-payload admission | 170,857 | 66.7144 | 85.4828 | 205.8397 |
+| N | Canonical-payload encode | 170,857 | 9.4866 | 14.1549 | 27.0609 |
+| N | Admit + encode, none | 191,352 | 80.6576 | 100.9819 | 125.9706 |
+| N | Admit + encode, gzip | 19,329 | 80.6001 | 122.1400 | 264.4370 |
+| N | Decode, none | 191,352 | 115.2360 | 158.6305 | 288.2154 |
+| N | Decode, gzip | 19,329 | 123.6632 | 151.0654 | 191.5470 |
+| N | SHA-256 | 170,857 | 0.9866 | 1.9537 | 8.8912 |
+| N | Gzip encode | 170,857 | 2.6481 | 5.1422 | 10.7922 |
+| N | Gzip decode | 170,857 | 3.5413 | 8.0198 | 17.9264 |
+| L | Full-payload admission | 233,649 | 106.8312 | 143.7114 | 148.5115 |
+| L | Canonical-payload encode | 233,649 | 14.7808 | 26.1054 | 113.4913 |
+| L | Admit + encode, none | 262,304 | 113.2923 | 140.8363 | 142.7908 |
+| L | Admit + encode, gzip | 21,213 | 120.9756 | 156.9610 | 188.5124 |
+| L | Decode, none | 262,304 | 168.6320 | 211.8899 | 245.7402 |
+| L | Decode, gzip | 21,213 | 169.0799 | 206.9557 | 318.7779 |
+| L | SHA-256 | 233,649 | 1.2506 | 1.8810 | 4.0868 |
+| L | Gzip encode | 233,649 | 3.0633 | 6.3464 | 7.2292 |
+| L | Gzip decode | 233,649 | 3.9096 | 6.2923 | 18.5255 |
+
+The command exited successfully. Host identity and the 16 GiB versus 8 GiB classification are in
+`PHASE_2_TASK_21.md`; these figures do not certify the exact contract target.

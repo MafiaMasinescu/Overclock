@@ -68,3 +68,29 @@ Two intervening target-host reruns produced `project-publish-encode` p95 misses 
 warm-up or threshold changed. A prior run measured 1.9260 ms, and the latest full isolated run
 passed at 1.8659 ms; the gate is accepted only from a complete run whose reported p95 is below the
 unchanged 2 ms threshold.
+
+## Task 21 rerun and isolated follow-up
+
+Updated 2026-09-25. Both commands ran serially on the same unchanged source:
+`corepack pnpm performance:projection` and an immediate isolated rerun. The script reports its own
+`targetHost: true` after checking CPU/OS; installed RAM was 16 GiB, while the Phase 2 contract names
+8 GiB. These are informative host measurements, not exact target certification.
+
+| Cohort / operation | Samples | Median | p95 | Maximum | Budget |
+|---|---:|---:|---:|---:|---:|
+| N pure project, initial | 500 | 0.8094 ms | 1.4335 ms | 4.7794 ms | <1 ms |
+| N project/publish/encode, initial | 500 | 1.1564 ms | 2.2996 ms | 4.8199 ms | <2 ms |
+| N store apply, initial | 500 | 1.5043 ms | 3.1211 ms | 10.4620 ms | <5 ms |
+| N direct production tick, initial | 200 | 2.0637 ms | 3.9790 ms | 11.8787 ms | <4 ms |
+| N combined tick + projection, initial | 500 | 3.0772 ms | 5.9018 ms | 18.5123 ms | <6 ms |
+| N pure project, isolated | 500 | 0.5547 ms | 1.0853 ms | 2.9849 ms | <1 ms |
+| N project/publish/encode, isolated | 500 | 1.3487 ms | 2.4268 ms | 8.2982 ms | <2 ms |
+| N store apply, isolated | 500 | 1.3475 ms | 2.9201 ms | 15.0050 ms | <5 ms |
+| N direct production tick, isolated | 200 | 1.6609 ms | 3.1327 ms | 12.9371 ms | <4 ms |
+| N combined tick + projection, isolated | 500 | 3.1062 ms | 5.9722 ms | 24.2657 ms | <6 ms |
+| N cold production-core construction, isolated | 20 | 11.2896 ms | 17.5321 ms | 17.9427 ms | report-only |
+
+Both runs exited nonzero with the same two N failures: pure-project and project/publish/encode.
+Store apply, direct tick and combined tick/projection remained below their p95 limits. The prior
+Task 20 and CP19 misses and the earlier passing unchanged-source run remain recorded above; these
+new misses are preserved rather than relabelled.

@@ -15,7 +15,12 @@ import { createProductionSimCore } from "../../../src/sim/core/productionSimCore
 import type { SimCore } from "../../../src/sim/core/simCore.ts";
 import { parseSimCommand } from "../../../src/sim/commands/commandSchema.ts";
 import { calculateDesignApplyPreview } from "../../../src/sim/design/designApplyPreview.ts";
-import { hashCanonicalState } from "../../../src/sim/replay/canonicalState.ts";
+import { canonicalSerialize, hashCanonicalState } from "../../../src/sim/replay/canonicalState.ts";
+import { createReplayRecorderForTests } from "../../../src/sim/replay/replayRecorder.ts";
+import type { ReplayOperation } from "../../../src/sim/replay/replayContracts.ts";
+import type { GameState } from "../../../src/sim/core/types.ts";
+import type { SimCommand } from "../../../src/sim/commands/contracts.ts";
+import { decodeSaveEnvelope } from "../../../src/save/codec.ts";
 import { createWorkerNFixture } from "../../performance/workerNFixture.ts";
 
 interface TestControlResult {
@@ -90,6 +95,9 @@ function isPublicationReplyKind(kind: unknown): boolean {
   return kind === "READY" || kind === "SNAPSHOT_PUBLICATION";
 }
 
+let activeManualWorkerCount = 0;
+let maximumManualWorkerCount = 0;
+
 class ManualWorkerPort implements WorkerPort {
   private readonly worker: Worker;
   private readonly messageListeners = new Set<MessageListener>();
@@ -98,6 +106,7 @@ class ManualWorkerPort implements WorkerPort {
   private readonly controls = new Map<string, (result: TestControlResult) => void>();
   private readonly requests = new Map<number, WorkerRequest["kind"]>();
   private readonly pendingAcks = new Set<number>();
+  private readonly pendingAckPublications = new Map<number, number>();
   private readonly ackWaiters = new Set<() => void>();
   private readonly heldAckWaiters = new Set<() => void>();
   private controlSequence = 0;
@@ -115,16 +124,17 @@ class ManualWorkerPort implements WorkerPort {
   terminateCount = 0;
   controlError: string | null = null;
   fixtureProgress: string | null = null;
+  lastRequestError: string | null = null;
+  private didTerminate = false;
 
-  constructor(fixture: "default" | "n" = "default") {
-    const workerUrl =
-      fixture === "n"
-        ? new URL("./workerManualEntry.ts?fixture=n", import.meta.url)
-        : new URL("./workerManualEntry.ts", import.meta.url);
+  constructor(fixture: "default" | "n" | "replay" = "default") {
+    const workerUrl = new URL("./workerManualEntry.ts", import.meta.url);
     this.worker = new Worker(workerUrl, {
       type: "module",
-      name: "overclock-manual-test-worker",
+      name: `overclock-manual-test-worker-${fixture}`,
     });
+    activeManualWorkerCount += 1;
+    maximumManualWorkerCount = Math.max(maximumManualWorkerCount, activeManualWorkerCount);
     this.worker.addEventListener("message", (event: MessageEvent<unknown>) => {
       if (
         event.data !== null &&
@@ -142,6 +152,7 @@ class ManualWorkerPort implements WorkerPort {
       }
       if (this.isControlError(event.data)) {
         this.controlError = event.data.message;
+        persistenceReplayProgress = `Worker fixture error: ${event.data.message}`;
         for (const resolve of this.controls.values()) {
           resolve({
             __workerTestResult: true,
@@ -177,6 +188,10 @@ class ManualWorkerPort implements WorkerPort {
       }
       if (replySequence !== null) {
         const requestKind = this.requests.get(replySequence);
+        if (replyKind === "REQUEST_ERROR" && isRecord(rawReply) && isRecord(rawReply["body"])) {
+          const body = rawReply["body"];
+          this.lastRequestError = `${String(requestKind)}:${String(body["code"])}:${String(body["requestKind"])}`;
+        }
         if (requestKind !== undefined && requestKind !== "ACK_PUBLICATION") {
           const startedAt = this.requestStartedAt.get(replySequence);
           if (startedAt !== undefined) {
@@ -189,6 +204,7 @@ class ManualWorkerPort implements WorkerPort {
           (replyKind === "REQUEST_RESULT" || replyKind === "REQUEST_ERROR")
         ) {
           this.pendingAcks.delete(replySequence);
+          this.pendingAckPublications.delete(replySequence);
           this.resolveAckWaitersIfIdle();
         }
       }
@@ -255,6 +271,7 @@ class ManualWorkerPort implements WorkerPort {
     this.requestStartedAt.set(message.requestSequence, performance.now());
     if (message.kind === "ACK_PUBLICATION") {
       this.pendingAcks.add(message.requestSequence);
+      this.pendingAckPublications.set(message.requestSequence, message.body.publicationSequence);
       if (this.holdNextAckValue) {
         this.holdNextAckValue = false;
         this.holdingRequestOrder = true;
@@ -294,6 +311,10 @@ class ManualWorkerPort implements WorkerPort {
 
   terminate(): void {
     this.terminateCount += 1;
+    if (!this.didTerminate) {
+      this.didTerminate = true;
+      activeManualWorkerCount -= 1;
+    }
     this.worker.terminate();
     this.heldAcks = [];
     this.heldRequests = [];
@@ -311,6 +332,30 @@ class ManualWorkerPort implements WorkerPort {
 
   get pendingAckCount(): number {
     return this.pendingAcks.size;
+  }
+
+  get heldRequestCount(): number {
+    return this.heldRequests.length;
+  }
+
+  get heldCommandCount(): number {
+    return this.heldCommands.length;
+  }
+
+  resetSoakSamples(): void {
+    if (
+      this.pendingAcks.size !== 0 ||
+      this.heldAcks.length !== 0 ||
+      this.heldRequests.length !== 0
+    ) {
+      throw new Error("Cannot clear Worker soak samples while requests remain outstanding.");
+    }
+    this.requests.clear();
+    this.requestStartedAt.clear();
+    this.receipts.length = 0;
+    this.publications.length = 0;
+    this.publicationProcessingMs.length = 0;
+    this.roundTripMs.length = 0;
   }
 
   async waitForHeldAck(): Promise<void> {
@@ -353,7 +398,16 @@ class ManualWorkerPort implements WorkerPort {
         this.ackWaiters.delete(waiter);
         reject(
           new Error(
-            `Timed out draining Worker acknowledgements (${this.pendingAcks.size} pending).`,
+            `Timed out draining Worker acknowledgements (${JSON.stringify({
+              pending: [...this.pendingAcks].map((requestSequence) => ({
+                requestSequence,
+                publicationSequence: this.pendingAckPublications.get(requestSequence) ?? null,
+              })),
+              publicationCount: this.publications.length,
+              lastPublicationSequence:
+                this.publications.at(-1)?.body.publication?.publicationSequence ?? null,
+              fixtureProgress: this.fixtureProgress,
+            })}).`,
           ),
         );
       }, 20_000);
@@ -417,28 +471,52 @@ const controlledClientTiming: ClientTimingAdapter = {
 
 let nextSessionId = 0;
 let workerDiagnosticsProgress = "idle";
+let persistenceReplayProgress = "idle";
+let persistenceSoakSession: Session | null = null;
+let persistenceSoakCycle = 0;
+let persistenceSoakMaximumTimers = 0;
 
 async function createSession(
   seedLabel = "worker-browser-session",
-  fixture: "default" | "n" = "default",
+  fixture: "default" | "n" | "replay" = "default",
+  options: {
+    readonly recoverSlotId?: string;
+    readonly initialState?: GameState;
+    readonly initialQueueSequence?: number;
+  } = {},
 ): Promise<Session> {
   const content = loadWorkerManualFixtureContent();
   const seed = `${seedLabel}-${++nextSessionId}`;
   const port = new ManualWorkerPort(fixture);
-  const client = await createWorkerGameClient({
-    content,
-    seed,
-    epoch: `browser-worker-${nextSessionId}`,
-    requestTimeoutMs: 120_000,
-    workerFactory: () => port,
-    timing: controlledClientTiming,
-  });
+  let client: GameClient;
+  try {
+    client = await createWorkerGameClient({
+      content,
+      seed,
+      epoch: `browser-worker-${nextSessionId}`,
+      requestTimeoutMs: 120_000,
+      workerFactory: () => port,
+      timing: controlledClientTiming,
+      ...(options.recoverSlotId === undefined ? {} : { recoverSlotId: options.recoverSlotId }),
+    });
+  } catch (error) {
+    throw new Error(
+      `Manual Worker startup failed (${port.lastRequestError ?? "no request error"}).`,
+      {
+        cause: error,
+      },
+    );
+  }
   const core = createProductionSimCore({
     content,
     initialState:
-      fixture === "n"
+      options.initialState ??
+      (fixture === "n"
         ? createWorkerNFixture("task-19-worker-n", content)
-        : createInitialGameState({ content, seed }),
+        : createInitialGameState({ content, seed })),
+    ...(options.initialQueueSequence === undefined
+      ? {}
+      : { initialCommandQueueSequence: options.initialQueueSequence }),
   });
   const session: Session = {
     client,
@@ -1117,6 +1195,413 @@ async function runDestroyCycles() {
   return { cycles: counts.length, counts };
 }
 
+async function startPersistenceSoak() {
+  if (persistenceSoakSession !== null) {
+    throw new Error("A persistence soak Worker is already running.");
+  }
+  if (activeManualWorkerCount !== 0) {
+    throw new Error("The persistence soak must start without a retained Worker.");
+  }
+  const session = await createSession("task-21-persistence-soak", "replay");
+  persistenceSoakSession = session;
+  persistenceSoakCycle = 0;
+  persistenceSoakMaximumTimers = 0;
+  await dispatchMirrored(session, { kind: "SET_PAUSED", paused: false });
+  return {
+    activeWorkers: activeManualWorkerCount,
+    maximumWorkers: maximumManualWorkerCount,
+    listeners: session.port.activeListenerCount,
+  };
+}
+
+async function samplePersistenceSoak() {
+  const session = persistenceSoakSession;
+  if (session === null) throw new Error("The persistence soak Worker has not started.");
+  const mode = persistenceSoakCycle % 2 === 0 ? "engineering" : "simple";
+  await dispatchMirrored(session, { kind: "SET_GUIDANCE_MODE", mode });
+
+  const advance = session.port.control("ADVANCE_WAKES", { count: 4 });
+  session.core.step(1);
+  await advance;
+  await session.port.waitForAckIdle();
+
+  const expectedState = session.core.getStateForSave();
+  const expectedQueue = session.core.getCommandQueuePosition();
+  const capture = (await session.port.control("CAPTURE")) as TestControlResult &
+    WorkerCapture & {
+      readonly pendingTimers: number;
+    };
+  if (
+    capture.tick !== expectedState.tick ||
+    capture.stateHash !== hashCanonicalState(expectedState) ||
+    capture.nextQueueSequence !== expectedQueue.nextSequence ||
+    expectedQueue.pendingCount !== 0
+  ) {
+    throw new Error("Persistence soak Worker capture diverged from its deterministic core.");
+  }
+
+  const saved = await session.client.requestSave("checkpoint");
+  const slot = (await session.client.listSlots()).find(
+    (candidate) => candidate.slotId === saved.slotId,
+  );
+  if (slot === undefined || saved.tick !== expectedState.tick) {
+    throw new Error("Persistence soak save was not listed at its committed revision.");
+  }
+  const bytes = await session.client.exportSlot(slot.slotId, slot.revision);
+  const decoded = await decodeSaveEnvelope(bytes, { content: session.content });
+  if (
+    decoded.migrated ||
+    decoded.payload.execution.nextQueueSequence !== expectedQueue.nextSequence ||
+    hashCanonicalState(decoded.payload.gameState) !== hashCanonicalState(expectedState) ||
+    canonicalSerialize(decoded.payload.gameState) !== canonicalSerialize(expectedState)
+  ) {
+    throw new Error("Persistence soak exported state differs from its committed Worker boundary.");
+  }
+
+  persistenceSoakCycle += 1;
+  persistenceSoakMaximumTimers = Math.max(persistenceSoakMaximumTimers, capture.pendingTimers);
+  const result = {
+    cycle: persistenceSoakCycle,
+    tick: capture.tick,
+    queueSequence: capture.nextQueueSequence,
+    timerCount: capture.pendingTimers,
+    maximumTimerCount: persistenceSoakMaximumTimers,
+    pendingAcks: session.port.pendingAckCount,
+    heldAcks: session.port.heldAckCount,
+    heldRequests: session.port.heldRequestCount,
+    heldCommands: session.port.heldCommandCount,
+    activeWorkers: activeManualWorkerCount,
+  };
+  if (
+    result.pendingAcks !== 0 ||
+    result.heldAcks !== 0 ||
+    result.heldRequests !== 0 ||
+    result.heldCommands !== 0 ||
+    result.activeWorkers !== 1
+  ) {
+    throw new Error(`Persistence soak found retained protocol work: ${JSON.stringify(result)}`);
+  }
+  session.port.resetSoakSamples();
+  session.receiptsAndResults.length = 0;
+  session.events.length = 0;
+  session.controls.length = 0;
+  return result;
+}
+
+function finishPersistenceSoak() {
+  const session = persistenceSoakSession;
+  if (session === null) throw new Error("The persistence soak Worker has not started.");
+  session.client.destroy();
+  persistenceSoakSession = null;
+  return {
+    cycles: persistenceSoakCycle,
+    maximumTimerCount: persistenceSoakMaximumTimers,
+    listenersAfterDestroy: session.port.activeListenerCount,
+    terminatedWorkers: session.port.terminateCount,
+    activeWorkersAfterDestroy: activeManualWorkerCount,
+    maximumWorkers: maximumManualWorkerCount,
+    pendingAcksAfterDestroy: session.port.pendingAckCount,
+  };
+}
+
+function sameReplayEntryOutcome(left: ReplayOperation, right: ReplayOperation): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function runPersistenceReplayScenario() {
+  let initial: Session | null = null;
+  let recovered: Session | null = null;
+  let stage = "creating initial persistence Worker";
+  const updateStage = (value: string): void => {
+    stage = value;
+    persistenceReplayProgress = value;
+  };
+  try {
+    updateStage(stage);
+    const initialSession = await createSession("worker-mid-replay", "replay");
+    initial = initialSession;
+    const uninterrupted = createReplayRecorderForTests({
+      content: initialSession.content,
+      initialState: initialSession.core.getStateForSave(),
+      core: initialSession.core,
+    });
+
+    const performInitialCommand = async (input: Record<string, unknown>): Promise<void> => {
+      const command = parseSimCommand({
+        ...input,
+        commandId: commandId(++nextCommandId),
+        source: "player",
+      });
+      if (command.kind === "SET_PAUSED" || command.kind === "SET_SPEED") {
+        const expected = uninterrupted.perform({ kind: "clock", command });
+        const actual = await initialSession.client.dispatch(command);
+        if (
+          expected.outcome.kind !== "clock-result" ||
+          JSON.stringify(expected.outcome.result) !== JSON.stringify(actual)
+        ) {
+          throw new Error(`Worker/direct clock result diverged for ${command.kind}.`);
+        }
+        return;
+      }
+
+      const receiptCount = initialSession.port.receipts.length;
+      const expectedReceipt = uninterrupted.perform({ kind: "enqueue", command });
+      const expectedResults = uninterrupted.perform({ kind: "process-pending" });
+      const actual = await initialSession.client.dispatch(command);
+      await initialSession.port.waitForAckIdle();
+      const actualReceipt = initialSession.port.receipts
+        .slice(receiptCount)
+        .find((reply) => reply.body.receipt.commandId === command.commandId)?.body.receipt;
+      const expectedResult =
+        expectedResults.outcome.kind === "command-results"
+          ? expectedResults.outcome.results.find((result) => result.commandId === command.commandId)
+          : undefined;
+      if (
+        expectedReceipt.outcome.kind !== "receipt" ||
+        JSON.stringify(expectedReceipt.outcome.receipt) !== JSON.stringify(actualReceipt) ||
+        JSON.stringify(expectedResult) !== JSON.stringify(actual)
+      ) {
+        throw new Error(`Worker/direct command result diverged for ${command.kind}.`);
+      }
+    };
+
+    updateStage("recording the Replay prefix");
+    await performInitialCommand({ kind: "SET_PAUSED", paused: false });
+    const prefixStep = uninterrupted.perform({ kind: "step", ticks: 12 });
+    if (prefixStep.outcome.kind !== "step-result") throw new Error("Replay prefix step failed.");
+    await initialSession.port.control("ADVANCE_WAKES", { count: 48 });
+    await initialSession.port.waitForAckIdle();
+    await performInitialCommand({ kind: "SET_PAUSED", paused: true });
+    await performInitialCommand({ kind: "SET_GUIDANCE_MODE", mode: "engineering" });
+    const replayCheckpoint = uninterrupted.checkpoint();
+
+    const expectedPrefixState = uninterrupted.getStateForSave();
+    const expectedPrefixQueue = uninterrupted.getCommandQueuePosition();
+    const workerCapture = (await initialSession.port.control("CAPTURE")) as TestControlResult &
+      WorkerCapture;
+    if (
+      workerCapture.tick !== expectedPrefixState.tick ||
+      workerCapture.stateHash !== hashCanonicalState(expectedPrefixState) ||
+      workerCapture.nextQueueSequence !== expectedPrefixQueue.nextSequence ||
+      expectedPrefixQueue.pendingCount !== 0
+    ) {
+      throw new Error("Worker capture did not match the quiescent Replay save boundary.");
+    }
+
+    updateStage("writing the quiescent save");
+    const saveMetadata = await initialSession.client.requestSave("checkpoint");
+    if (saveMetadata.tick !== expectedPrefixState.tick) {
+      throw new Error("Durable save captured a different Replay boundary tick.");
+    }
+    updateStage("reading back the saved payload");
+    const slot = (await initialSession.client.listSlots()).find(
+      (candidate) => candidate.slotId === saveMetadata.slotId,
+    );
+    if (slot === undefined) throw new Error("The Replay save slot was not listed.");
+    const savedBytes = await initialSession.client.exportSlot(slot.slotId, slot.revision);
+    const decoded = await decodeSaveEnvelope(savedBytes, { content: initialSession.content });
+    if (
+      decoded.migrated ||
+      decoded.payload.execution.nextQueueSequence !== expectedPrefixQueue.nextSequence ||
+      hashCanonicalState(decoded.payload.gameState) !== hashCanonicalState(expectedPrefixState)
+    ) {
+      throw new Error("Persisted Replay boundary failed schema, hash, or queue verification.");
+    }
+
+    const savedState = decoded.payload.gameState;
+    const savedQueueSequence = decoded.payload.execution.nextQueueSequence;
+    initial.client.destroy();
+    initial = null;
+
+    updateStage("recovering the saved Worker session");
+    const recoveredSession = await createSession("worker-mid-replay-recovered", "replay", {
+      recoverSlotId: saveMetadata.slotId,
+      initialState: savedState,
+      initialQueueSequence: savedQueueSequence,
+    });
+    recovered = recoveredSession;
+    const recoverySummary = recoveredSession.client.getRecoverySummary();
+    if (recoverySummary?.tick !== savedState.tick) {
+      throw new Error("Recovered Worker did not report the saved Replay boundary.");
+    }
+    await recoveredSession.client.continueHost();
+    const resumed = createReplayRecorderForTests({
+      content: recoveredSession.content,
+      initialState: savedState,
+      core: recoveredSession.core,
+    });
+
+    const suffixCommandOne = parseSimCommand({
+      commandId: commandId(++nextCommandId),
+      source: "player",
+      kind: "SET_GUIDANCE_MODE",
+      mode: "simple",
+    });
+    const suffixUnpause = parseSimCommand({
+      commandId: commandId(++nextCommandId),
+      source: "player",
+      kind: "SET_PAUSED",
+      paused: false,
+    });
+    const suffixCommandTwo = parseSimCommand({
+      commandId: commandId(++nextCommandId),
+      source: "player",
+      kind: "SET_GUIDANCE_MODE",
+      mode: "engineering",
+    });
+    const suffixPause = parseSimCommand({
+      commandId: commandId(++nextCommandId),
+      source: "player",
+      kind: "SET_PAUSED",
+      paused: true,
+    });
+    if (
+      suffixCommandOne.kind === "SET_PAUSED" ||
+      suffixCommandOne.kind === "SET_SPEED" ||
+      suffixCommandTwo.kind === "SET_PAUSED" ||
+      suffixCommandTwo.kind === "SET_SPEED" ||
+      suffixUnpause.kind !== "SET_PAUSED" ||
+      suffixPause.kind !== "SET_PAUSED"
+    ) {
+      throw new Error("Replay suffix command fixture has an unexpected command kind.");
+    }
+    const suffixOperations: ReplayOperation[] = [
+      { kind: "enqueue", command: suffixCommandOne },
+      { kind: "process-pending" },
+      { kind: "clock", command: suffixUnpause },
+      { kind: "step", ticks: 8 },
+      { kind: "enqueue", command: suffixCommandTwo },
+      { kind: "process-pending" },
+      { kind: "clock", command: suffixPause },
+    ];
+
+    const pendingSuffixCommands: SimCommand[] = [];
+    const pendingSuffixReceipts = new Map<string, unknown>();
+    updateStage("replaying the exact suffix through the recovered Worker");
+    for (const operation of suffixOperations) {
+      const uninterruptedEntry = uninterrupted.perform(operation);
+      const resumedEntry = resumed.perform(operation);
+      if (
+        uninterruptedEntry.tickBefore !== resumedEntry.tickBefore ||
+        uninterruptedEntry.tickAfter !== resumedEntry.tickAfter ||
+        !sameReplayEntryOutcome(uninterruptedEntry.operation, resumedEntry.operation) ||
+        JSON.stringify(uninterruptedEntry.outcome) !== JSON.stringify(resumedEntry.outcome)
+      ) {
+        throw new Error(`Replay continuation diverged at suffix operation ${operation.kind}.`);
+      }
+
+      switch (operation.kind) {
+        case "enqueue":
+          pendingSuffixCommands.push(operation.command);
+          if (uninterruptedEntry.outcome.kind !== "receipt") {
+            throw new Error("Replay enqueue operation omitted its command receipt.");
+          }
+          pendingSuffixReceipts.set(
+            operation.command.commandId,
+            uninterruptedEntry.outcome.receipt,
+          );
+          break;
+        case "process-pending": {
+          if (uninterruptedEntry.outcome.kind !== "command-results") {
+            throw new Error("Replay command processing omitted its results.");
+          }
+          for (const command of pendingSuffixCommands) {
+            const receiptCount = recoveredSession.port.receipts.length;
+            const actual = await recoveredSession.client.dispatch(command);
+            await recoveredSession.port.waitForAckIdle();
+            const actualReceipt = recoveredSession.port.receipts
+              .slice(receiptCount)
+              .find((reply) => reply.body.receipt.commandId === command.commandId)?.body.receipt;
+            const expectedEnqueue = pendingSuffixReceipts.get(command.commandId);
+            const expectedEntry = uninterruptedEntry.outcome.results.find(
+              (result) => result.commandId === command.commandId,
+            );
+            if (
+              expectedEnqueue === null ||
+              expectedEnqueue === undefined ||
+              expectedEntry === undefined ||
+              JSON.stringify(expectedEnqueue) !== JSON.stringify(actualReceipt) ||
+              JSON.stringify(expectedEntry) !== JSON.stringify(actual)
+            ) {
+              throw new Error(`Recovered Worker diverged for ${command.kind}.`);
+            }
+            pendingSuffixReceipts.delete(command.commandId);
+          }
+          pendingSuffixCommands.length = 0;
+          break;
+        }
+        case "clock": {
+          const actual = await recoveredSession.client.dispatch(operation.command);
+          if (
+            uninterruptedEntry.outcome.kind !== "clock-result" ||
+            JSON.stringify(uninterruptedEntry.outcome.result) !== JSON.stringify(actual)
+          ) {
+            throw new Error(`Recovered Worker diverged for ${operation.command.kind}.`);
+          }
+          break;
+        }
+        case "step": {
+          await recoveredSession.port.control("ADVANCE_WAKES", {
+            count: operation.ticks * 4,
+          });
+          await recoveredSession.port.waitForAckIdle();
+          break;
+        }
+        default:
+          throw new Error("Unsupported Replay suffix operation.");
+      }
+    }
+    if (pendingSuffixCommands.length !== 0) {
+      throw new Error("Replay suffix ended with unprocessed commands.");
+    }
+
+    updateStage("comparing completed Replay traces");
+    const uninterruptedArtifact = uninterrupted.finish();
+    const resumedArtifact = resumed.finish();
+    const suffixEntries = uninterruptedArtifact.log.entries.slice(replayCheckpoint.afterSequence);
+    if (suffixEntries.length !== resumedArtifact.log.entries.length) {
+      throw new Error("Resumed Replay did not contain the complete saved suffix.");
+    }
+
+    const finalCapture = (await recoveredSession.port.control("CAPTURE")) as TestControlResult &
+      WorkerCapture;
+    const directFinalState = uninterrupted.getStateForSave();
+    const recoveredFinalState = resumed.getStateForSave();
+    const directFinalHash = hashCanonicalState(directFinalState);
+    const recoveredFinalHash = hashCanonicalState(recoveredFinalState);
+    if (
+      directFinalHash !== recoveredFinalHash ||
+      finalCapture.stateHash !== recoveredFinalHash ||
+      finalCapture.tick !== recoveredFinalState.tick ||
+      finalCapture.nextQueueSequence !== resumed.getCommandQueuePosition().nextSequence
+    ) {
+      throw new Error("Durable Worker Replay suffix diverged from direct uninterrupted execution.");
+    }
+
+    updateStage("complete");
+    return {
+      ok: true,
+      savedTick: savedState.tick,
+      savedQueueSequence,
+      suffixEntries: suffixEntries.length,
+      directFinalTick: directFinalState.tick,
+      recoveredFinalTick: recoveredFinalState.tick,
+      directFinalHash,
+      recoveredFinalHash,
+    };
+  } catch (error) {
+    const requestError = recovered?.port.lastRequestError ?? initial?.port.lastRequestError;
+    const progress = recovered?.port.fixtureProgress ?? initial?.port.fixtureProgress;
+    throw new Error(
+      `Persistence Replay scenario failed at ${stage} (${requestError ?? "no request error"}; ${progress ?? "no Worker progress"}).`,
+      { cause: error },
+    );
+  } finally {
+    initial?.client.destroy();
+    recovered?.client.destroy();
+  }
+}
+
 declare global {
   interface Window {
     __workerManualHarness?: {
@@ -1124,8 +1609,22 @@ declare global {
       runResyncScenario(): Promise<unknown>;
       runFailureScenario(kind: "host-fatal" | "crash" | "messageerror"): Promise<unknown>;
       runDiagnostics(): Promise<unknown>;
+      runPersistenceReplayScenario(): Promise<{
+        readonly ok: boolean;
+        readonly savedTick: number;
+        readonly savedQueueSequence: number;
+        readonly suffixEntries: number;
+        readonly directFinalTick: number;
+        readonly recoveredFinalTick: number;
+        readonly directFinalHash: string;
+        readonly recoveredFinalHash: string;
+      }>;
       getDiagnosticsProgress(): string;
+      getPersistenceReplayProgress(): string;
       runDestroyCycles(): Promise<unknown>;
+      startPersistenceSoak(): Promise<unknown>;
+      samplePersistenceSoak(): Promise<unknown>;
+      finishPersistenceSoak(): unknown;
     };
   }
 }
@@ -1135,9 +1634,14 @@ window.__workerManualHarness = {
   runResyncScenario,
   runFailureScenario,
   runDiagnostics,
+  runPersistenceReplayScenario,
   getDiagnosticsProgress: () =>
     activeWorkerDiagnosticsPort === null
       ? workerDiagnosticsProgress
       : `${workerDiagnosticsProgress}; ${activeWorkerDiagnosticsPort.fixtureProgress ?? "waiting for Worker progress"}`,
+  getPersistenceReplayProgress: () => persistenceReplayProgress,
   runDestroyCycles,
+  startPersistenceSoak,
+  samplePersistenceSoak,
+  finishPersistenceSoak,
 };

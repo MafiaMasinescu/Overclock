@@ -112,12 +112,13 @@ bounded local reports. Reports are allowlisted, capped at 20, and have no upload
 The Task 20 candidate passed the full unit and determinism suites, content validation, typecheck,
 lint, production build, format check, and its Worker/UI Chromium checks. Slot-list previews are
 explicitly marked unchecked; load and export verify candidates before use. A new unsaved run can
-still list and delete saves when the 20 durable-slot limit is full. Exact target-host measurements
-are in `docs/diagnostics/PHASE_2_PERSISTENCE.md`. Task 21 remains future work.
+still list and delete saves when the 20 durable-slot limit is full. Its measurements are in
+`docs/diagnostics/PHASE_2_PERSISTENCE.md`.
 
-The original outline paragraph below is archival wording and is superseded by the Task 20 status
-above; the detailed Phase 2 contract remains the normative roadmap for the remaining work.
-
-Obiectivul Phase 2 rămâne un client Worker cu rezultate deterministe și progres durabil. Task 16–20
-au închis contractele de bytes, repository, proiecție, Worker și bucla locală de persistență;
-Task 21 rămâne pentru parity, adversarial, soak și evidence finală, conform contractului Phase 2.
+Task 21 adds save-domain parity, adversarial recovery coverage, durable Replay resume in a real
+Worker, and a 60-cycle IndexedDB soak. Its reviewed CP21 verification is recorded in
+`docs/diagnostics/PHASE_2_TASK_21.md`. This machine has 16 GiB RAM against the contract's 8 GiB
+target; performance evidence is informative. Two isolated dense-N publication p95 misses remain
+preserved, while the final full serial browser suite passed 40/40 at 4.4 ms p95 against `<5 ms`.
+Phase 2 implementation is complete through the checkpoint commit containing that evidence. The
+detailed Phase 2 contract remains the normative roadmap.

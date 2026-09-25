@@ -362,6 +362,54 @@ describe("Worker save persistence", () => {
     await persistence.close();
   });
 
+  test("recovers by capture sequence when wall-clock timestamps roll back", async () => {
+    const controls = createInMemoryRepositoryStorage();
+    const repository = createSaveRepositoryCore(controls.storage);
+    const locks = createWebLockAdapter({ locks: createInMemoryLockManager().createClient() });
+    const times = [
+      new Date("2026-09-25T12:00:00.000Z"),
+      new Date("2026-09-25T12:05:00.000Z"),
+      new Date("2026-09-25T11:05:00.000Z"),
+    ];
+    const persistence = createWorkerSavePersistence({
+      content: saveTestContent,
+      repository,
+      locks,
+      now: () => times.shift() ?? new Date("2026-09-25T11:05:00.000Z"),
+      createId: () => "aeaeaeae-aeae-4aea-8aea-aeaeaeaeaeae",
+    });
+    const session = await persistence.startNewRun();
+    const earlierState = createInitialGameState({
+      content: saveTestContent,
+      seed: "recovery-before-clock-rollback",
+    });
+    const laterState = createInitialGameState({
+      content: saveTestContent,
+      seed: "recovery-after-clock-rollback",
+    });
+    const capture = (state: typeof earlierState, nextQueueSequence: number) => ({
+      state,
+      nextQueueSequence,
+      dirtyGeneration: nextQueueSequence + 1,
+      createdAtIso: session.createdAtIso,
+      settings: session.settings,
+      localStats: session.localStats,
+    });
+
+    await persistence.save(capture(earlierState, 4), "autosave");
+    const latest = await persistence.save(capture(laterState, 9), "autosave");
+    expect(latest.savedAtIso).toBe("2026-09-25T11:05:00.000Z");
+
+    const candidate = await persistence.prepareLoad?.(session.slotId);
+    expect(candidate).toMatchObject({
+      state: laterState,
+      nextQueueSequence: 9,
+      checkpoint: { captureSequence: 1, sourceKind: "autosave", skippedCorruptRecords: 0 },
+    });
+    await candidate?.rollback();
+    await persistence.close();
+  });
+
   test("a damaged newest manual record remains stored while an older autosave stays listable", async () => {
     const controls = createInMemoryRepositoryStorage();
     const repository = createSaveRepositoryCore(controls.storage);
