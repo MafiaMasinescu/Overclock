@@ -196,6 +196,14 @@ export function createSimWorkerHost(options: SimWorkerHostOptions): SimWorkerHos
   const saveDrainWaiters: (() => void)[] = [];
   let pendingImportToken: string | null = null;
   let pendingImportDestination: string | null = null;
+  let pendingImportEpoch: string | null = null;
+
+  function discardPendingImport(): void {
+    pendingImportToken = null;
+    pendingImportDestination = null;
+    pendingImportEpoch = null;
+    persistence?.discardImport();
+  }
 
   function stopWakeTimer(): void {
     if (wakeTimer !== null) timing.clearTimeout(wakeTimer);
@@ -1219,6 +1227,7 @@ export function createSimWorkerHost(options: SimWorkerHostOptions): SimWorkerHos
       resultReservations.clear();
       unacknowledgedResults.clear();
       ledger.clear();
+      discardPendingImport();
       core = candidateCore;
       publisher = projection.publisher;
       context = candidateContext;
@@ -1544,6 +1553,7 @@ export function createSimWorkerHost(options: SimWorkerHostOptions): SimWorkerHos
         );
         pendingImportToken = preview.token;
         pendingImportDestination = preview.token === null ? null : destinationKey;
+        pendingImportEpoch = preview.token === null ? null : epoch;
         sendRequestResult(request, {
           kind: "import-preview",
           token: preview.token,
@@ -1567,7 +1577,8 @@ export function createSimWorkerHost(options: SimWorkerHostOptions): SimWorkerHos
           : `overwrite:${request.body.destination.slotId}`;
       if (
         request.body.token !== pendingImportToken ||
-        destinationKey !== pendingImportDestination
+        destinationKey !== pendingImportDestination ||
+        pendingImportEpoch !== epoch
       ) {
         sendRequestError(request.requestSequence, "TOKEN_CONSUMED", request.kind);
         return;
@@ -1581,6 +1592,7 @@ export function createSimWorkerHost(options: SimWorkerHostOptions): SimWorkerHos
         );
         pendingImportToken = null;
         pendingImportDestination = null;
+        pendingImportEpoch = null;
         if (confirmation.settings !== null) {
           activeSettings = structuredClone(confirmation.settings);
           markDirty();

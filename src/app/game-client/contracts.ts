@@ -10,6 +10,7 @@ import type {
 } from "../../sim/core/types.ts";
 import type { GridViewModel, UiSnapshot } from "./snapshots.ts";
 import type { StoreConnectionStatus } from "./store.ts";
+import type { WorkerReply, WorkerRequest } from "../worker/protocol.ts";
 
 export type SaveReason = "manual" | "autosave" | "checkpoint" | "exit";
 
@@ -129,18 +130,7 @@ export interface PixiGridAdapter {
   destroy(): void;
 }
 
-export type WorkerInboundMessage =
-  | { kind: "INITIALIZE"; seed: string; contentVersion: string }
-  | { kind: "LOAD_STATE"; payload: unknown }
-  | { kind: "COMMAND"; command: SimCommand }
-  | { kind: "STEP_DEBUG"; ticks: number }
-  | { kind: "REQUEST_FULL_SNAPSHOT" }
-  | { kind: "SHUTDOWN" };
-
-export type WorkerOutboundMessage =
-  | { kind: "READY"; snapshot: UiSnapshot; grid: GridViewModel }
-  | { kind: "COMMAND_RESULT"; result: CommandResult }
-  | { kind: "SNAPSHOT"; snapshot: UiSnapshot; grid: GridViewModel | null }
-  | { kind: "EVENTS"; events: SimEvent[] }
-  | { kind: "CHECKPOINT"; tick: number; stateHash: string }
-  | { kind: "FATAL_ERROR"; errorCode: string; reportId: string };
+// Compatibility names retain the public export surface while using the strict
+// protocol that the production Worker actually validates and transports.
+export type WorkerInboundMessage = WorkerRequest;
+export type WorkerOutboundMessage = WorkerReply;

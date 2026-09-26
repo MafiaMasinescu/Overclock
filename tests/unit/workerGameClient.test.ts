@@ -366,6 +366,7 @@ describe("real Worker GameClient transport adapter", () => {
       save: () => Promise.reject(new Error("not used")),
       updateSettings: (settings) => Promise.resolve(settings),
       prepareLoad: () => candidatePromise,
+      discardImport: () => undefined,
       close: () => Promise.resolve(),
     };
     const harness = await createHarness(5_000, persistence);
@@ -470,6 +471,7 @@ describe("real Worker GameClient transport adapter", () => {
       save: () => Promise.reject(new Error("not used")),
       updateSettings: (settings) => Promise.resolve(settings),
       prepareLoad: () => Promise.reject(new Error("corrupt candidate")),
+      discardImport: () => undefined,
       close: () => Promise.resolve(),
     };
     const harness = await createHarness(5_000, persistence);
@@ -508,6 +510,7 @@ describe("real Worker GameClient transport adapter", () => {
       save: () => Promise.reject(new Error("not used")),
       updateSettings: (settings) => Promise.resolve(settings),
       prepareLoad: () => new Promise<WorkerLoadCandidate>(() => undefined),
+      discardImport: () => undefined,
       close: () => Promise.resolve(),
     };
     const harness = await createHarness(5_000, persistence);

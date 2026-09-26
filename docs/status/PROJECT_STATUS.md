@@ -1,13 +1,16 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-25
+Updated: 2026-09-26
 
 ## Current phase
 
 - Phase 2: Tasks 16–20 provide persistence foundations, the repository, owned presentation, the
   real Worker/GameClient bridge, and the durable browser save/recovery loop. Task 21 adds integrated
-  parity, adversarial recovery, diagnostics, and the 60-minute soak. Phase 2 implementation is
-  complete through CP21, the checkpoint commit containing the Task 21 evidence below.
+  parity, adversarial recovery, diagnostics, and the 60-minute soak. Phase 2 implementation and
+  final read-only closure are complete through CP21 plus the closure repairs documented below.
+  Exact 8 GiB certification remains unavailable; an owner-authorized Phase 3 entry exception
+  preserves every performance miss and does not reclassify available-host measurements as target
+  passes. No Phase 3 implementation has begun.
 - Phase 1: Headless Simulator, closed through Task 15 and the ADR-0022 Campaign coherence repair.
 - Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
   `8e80b00` and explicitly approved on 18 August 2026.
@@ -1291,7 +1294,8 @@ The initial Task 21 browser run's two-ACK timeout and two isolated main-client p
 misses at 5.0 and 5.2 ms remain documented alongside the final pass. Earlier Phase 1/2 diagnostic
 misses and the accepted Benchmark exception also remain unchanged. The host has 16 GiB installed
 against the Phase 2 target of 8 GiB, so these measurements are informative, not exact target
-certification. No threshold or sample count changed. The separate final read-only Phase 2 closure
-audit is the next boundary; Phase 3 has not begun. After the host limitation and preserved misses
-were reported, the owner explicitly authorized CP21 on 2026-09-25 without reclassifying this host
-or those measurements as target passes.
+certification. No threshold or sample count changed. At the CP21 checkpoint, the separate final
+read-only Phase 2 closure audit was still the next boundary and Phase 3 had not begun. That boundary
+was completed by the closure repairs and exception recorded in the current-phase section above.
+After the host limitation and preserved misses were reported, the owner explicitly authorized CP21
+on 2026-09-25 without reclassifying this host or those measurements as target passes.

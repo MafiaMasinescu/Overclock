@@ -541,6 +541,9 @@ export function createWorkerSavePersistence(
     prepareLoad,
     listSlots,
     previewImport,
+    discardImport(): void {
+      imports.discardImport();
+    },
     confirmImport,
     exportSlot,
     deleteSlot,
@@ -603,6 +606,9 @@ export function createBrowserWorkerSavePersistence(content: ContentBundle): Work
       if (persistence.previewImport === undefined)
         throw persistenceError("STORAGE_ABORTED", "Import is unavailable.");
       return persistence.previewImport(bytes, destination);
+    },
+    discardImport(): void {
+      resolved?.discardImport();
     },
     async confirmImport(token, values): Promise<WorkerImportConfirmation> {
       if (closed) throw persistenceError("STORAGE_ABORTED", "The persistence session is closed.");

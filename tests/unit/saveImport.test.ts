@@ -117,6 +117,17 @@ describe("verified import preview", () => {
     expect(confirmed.slotId).toBe("slot-imported-1");
   });
 
+  test("discardImport erases the pending candidate before confirmation", async () => {
+    const harness = setupImport();
+    const preview = await harness.service.previewImport({ bytes: await validInputBytes() });
+    harness.service.discardImport();
+    await expect(harness.service.confirmImport(preview.token ?? "")).rejects.toMatchObject({
+      code: "TOKEN_CONSUMED",
+    });
+    await expect(harness.repository.listSlots()).resolves.toEqual([]);
+    expect(harness.controls.committedWriteCount()).toBe(0);
+  });
+
   test("a lock release failure after commit cannot report the import as failed", async () => {
     const repository = createSaveRepositoryCore(createInMemoryRepositoryStorage().storage);
     const service = createImportService({

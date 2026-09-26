@@ -145,6 +145,7 @@ function defaultScheduleExpiry(callback: () => void, delayMs: number): () => voi
 
 export interface ImportService {
   previewImport(request: PreviewImportRequest): Promise<PreviewImportResult>;
+  discardImport(): void;
   confirmImport(token: string, options?: ConfirmImportOptions): Promise<ConfirmImportResult>;
 }
 
@@ -180,6 +181,10 @@ export function createImportService(serviceOptions: ImportServiceOptions): Impor
   }
 
   return {
+    discardImport(): void {
+      clearPending();
+    },
+
     async previewImport(request: PreviewImportRequest): Promise<PreviewImportResult> {
       const invocationGeneration = ++previewGeneration;
       clearPending();

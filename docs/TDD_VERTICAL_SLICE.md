@@ -181,24 +181,18 @@ Testele folosesc `SimCore` direct. Node nu trebuie să emuleze Worker-ul pentru 
 
 ### 7.3 GameClient
 
-`GameClient` este singurul API folosit de UI pentru gameplay. Interfața curentă din
-`src/app/game-client/contracts.ts` păstrează fluxul `requestSave` ca punct public, dar Task 19 încă nu
-implementează operații durabile de save:
+`GameClient` este singurul API folosit de UI pentru gameplay și persistență. Contractul autoritativ este
+`src/app/game-client/contracts.ts`; el include atât fluxul de gameplay, cât și operațiile durabile
+introduse de Task 20 și rapoartele locale. Interfața publică actuală acoperă:
 
-```ts
-export interface GameClient {
-  dispatch(command: SimCommand): Promise<CommandResult>;
-  getSnapshot(): UiSnapshot;
-  subscribe(listener: () => void): () => void;
-  subscribeEvents(listener: (event: SimEvent) => void): () => void;
-  subscribeControl(listener: (notice: GameClientControlNotice) => void): () => void;
-  getGridViewModel(): GridViewModel;
-  requestSave(reason: SaveReason): Promise<SaveMetadata>;
-  getConnectionStatus(): StoreConnectionStatus;
-  subscribeConnection(listener: () => void): () => void;
-  destroy(): void;
-}
-```
+- gameplay dispatch, snapshots, events, controls, grid view models și lifecycle;
+- `requestSave`, `updateSettings`, `loadSlot`, `recover`, `continueHost`, `setPaused` și `setSpeed`;
+- listarea, exportul, importul preview/confirm și ștergerea sloturilor, cu revizii obligatorii;
+- creare/listare/ștergere de rapoarte locale, statusul conexiunii și `getRecoverySummary`.
+
+Tipurile de mesaje Worker nu se mai definesc aici ca uniuni istorice: `WorkerInboundMessage` și
+`WorkerOutboundMessage` sunt aliasuri către `WorkerRequest` și `WorkerReply` din protocolul strict
+actual, care exclude mesajele obsolete precum `LOAD_STATE` și `STEP_DEBUG`.
 
 UI-ul poate avea servicii separate pentru setări, localizare și dialoguri. Ele nu modifică direct simulatorul.
 

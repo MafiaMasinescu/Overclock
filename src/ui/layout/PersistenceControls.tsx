@@ -146,6 +146,8 @@ export function PersistenceControls({
     void perform(async () => {
       const summary = await client.loadSlot(selectedSlot.slotId);
       setRecovery(summary);
+      setPreview(null);
+      setImportBytes(null);
       setNotice(
         summary.skippedCorruptRecords > 0
           ? t("ui.persistence-recovered-with-skips", { count: summary.skippedCorruptRecords })
@@ -163,6 +165,8 @@ export function PersistenceControls({
     void perform(async () => {
       const summary = await client.recover(selectedSlot.slotId);
       setRecovery(summary);
+      setPreview(null);
+      setImportBytes(null);
       setNotice(
         summary.skippedCorruptRecords > 0
           ? t("ui.persistence-recovered-with-skips", { count: summary.skippedCorruptRecords })

@@ -1,6 +1,6 @@
 # Phase 2 Task 21 integration diagnostics
 
-Updated: 2026-09-25
+Updated: 2026-09-26
 
 Task 21.1 and 21.2 evidence based on CP20
 `7dc99c4915caf520199589f807ef70ec66c6518a`. CP21 is the commit containing this reviewed report.
@@ -132,6 +132,35 @@ After this limitation and the preserved misses were reported, the owner explicit
 on 2026-09-25. This is a checkpoint decision with the non-target evidence retained; it does not
 reclassify the host or any missed measurement as a target pass.
 
-The Task 21 implementation and CP21 review are complete on the available host, but exact target-host
-budget evidence remains unavailable. Phase 3 has not begun; entry still requires the separate final
-read-only Phase 2 closure audit and explicit approval.
+This records the CP21-era boundary: the Task 21 implementation and review were complete on the
+available host, but exact target-host budget evidence remained unavailable. At that checkpoint,
+Phase 3 had not begun and entry still required the separate final read-only Phase 2 closure audit
+and explicit approval. The completed closure disposition is recorded immediately below.
+
+## Final read-only closure and Phase 3 entry exception
+
+Updated: 2026-09-26. The final closure verification was run after the epoch-scoped import-candidate
+repair, regression coverage, and contract/documentation reconciliation. The machine still exposes
+15.983 GiB of RAM, not the contract's exact 8 GiB target, so an exact target-host run was not
+available. CPU, OS, browser, sample counts, thresholds, and timeouts were unchanged.
+
+The owner-authorized exception for Phase 3 entry is therefore:
+
+- Phase 3 may begin only under the explicit exception that all measurements below remain
+  informative/non-target evidence until repeated on an exact 8 GiB host.
+- No performance threshold, fixture, timeout, sample count, or historical result may be changed or
+  relabelled to obtain a pass.
+- The full serial Chromium matrix remains the gate evidence: 37 passed and 1 failed. The only
+  failure was the dense-N main-thread publication p95 at 5.2 ms against the strict `<5 ms` gate;
+  its 500 samples completed. All other 37 browser cases passed, including persistence, recovery,
+  lifecycle, parity, security, and the UI preview-clear assertion.
+- The unchanged isolated publication diagnostic completed 500 measured samples and passed once at
+  4.7 ms p95; this documents host-load sensitivity and does not erase the full-matrix miss.
+- The one-cycle real-Worker persistence soak passed: cycle 1 tick 1, queue sequence 1, three
+  timers (maximum three), zero pending/held ACKs, zero held requests/commands, one active Worker,
+  and zero dedicated Workers after destruction.
+
+The preserved Phase 2 misses remain: the earlier publication p95 misses and ACK-drain timeout, the
+projection and Task transient misses, the Task 15 milestone production-tick miss, the owner-accepted
+pure Benchmark 0.1013 ms versus `<0.10 ms` miss, and the 16 GiB-versus-8 GiB host mismatch. None
+is reclassified as a target pass. Phase 3 implementation itself remains outside this closure change.

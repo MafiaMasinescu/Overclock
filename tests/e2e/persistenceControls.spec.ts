@@ -35,6 +35,54 @@ test("persistence controls keep imports local, explicit, and revision-bound", as
         "",
       );
     });
+  const setManualSaveAvailable = async (slotId: string, available: boolean): Promise<void> => {
+    await page.evaluate(
+      async ({ slotId, available }) => {
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("overclock", 1);
+          request.onsuccess = () => {
+            resolve(request.result);
+          };
+          request.onerror = () => {
+            reject(request.error ?? new Error("Unable to open the local save database."));
+          };
+        });
+        await new Promise<void>((resolve, reject) => {
+          const transaction = database.transaction("saves", "readwrite");
+          const store = transaction.objectStore("saves");
+          if (available) {
+            const saved: unknown = Reflect.get(window, "__overclockRemovedManualSave");
+            if (saved === undefined) {
+              transaction.abort();
+              return;
+            }
+            store.put(saved, slotId);
+          } else {
+            const request = store.get(slotId);
+            request.onsuccess = () => {
+              if (request.result === undefined) {
+                transaction.abort();
+                return;
+              }
+              Reflect.set(window, "__overclockRemovedManualSave", request.result);
+              store.delete(slotId);
+            };
+          }
+          transaction.oncomplete = () => {
+            resolve();
+          };
+          transaction.onerror = () => {
+            reject(transaction.error ?? new Error("Manual save mutation failed."));
+          };
+          transaction.onabort = () => {
+            reject(transaction.error ?? new Error("Manual save mutation aborted."));
+          };
+        });
+        database.close();
+      },
+      { slotId, available },
+    );
+  };
 
   await fileInput.setInputFiles({
     name: "backup.ocsave",
@@ -134,15 +182,36 @@ test("persistence controls keep imports local, explicit, and revision-bound", as
   expect(await importDigest()).toBe(originalDigest);
 
   await slotSelect.selectOption(originalSlotId ?? "");
+  await setManualSaveAvailable(originalSlotId ?? "", false);
+  await page.getByRole("button", { name: "Încarcă" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "UNAVAILABLE" })).toBeVisible();
+  await expect(page.getByTestId("import-preview")).toBeVisible();
+  await setManualSaveAvailable(originalSlotId ?? "", true);
   await page.getByRole("button", { name: "Încarcă" }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "Runda a fost încărcată și este oprită." }),
   ).toBeVisible();
+  await expect(page.getByTestId("import-preview")).toHaveCount(0);
   await expect(page.locator(".persistence-recovery-note")).toBeVisible();
+
+  await fileInput.setInputFiles({
+    name: "backup.ocsave",
+    mimeType: "application/json",
+    buffer: saveBytes,
+  });
+  await expect(previewButton).toBeEnabled();
+  await previewButton.click();
+  await expect(page.getByTestId("import-preview")).toBeVisible();
+  await setManualSaveAvailable(originalSlotId ?? "", false);
+  await page.getByRole("button", { name: "Recuperează" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "UNAVAILABLE" })).toBeVisible();
+  await expect(page.getByTestId("import-preview")).toBeVisible();
+  await setManualSaveAvailable(originalSlotId ?? "", true);
   await page.getByRole("button", { name: "Recuperează" }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "Runda salvată este pregătită." }),
   ).toBeVisible();
+  await expect(page.getByTestId("import-preview")).toHaveCount(0);
   await page.getByRole("button", { name: "Continuă runda" }).click();
   await expect(page.locator(".persistence-recovery-note")).toHaveCount(0);
 

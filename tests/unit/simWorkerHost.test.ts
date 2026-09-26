@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import { loadContentBundle } from "../../src/content/loader/contentLoader.ts";
 import type { ContentBundle } from "../../src/content/schemas/contentSchemas.ts";
@@ -16,6 +16,7 @@ import {
 import {
   createSimWorkerHost,
   type HostTimingAdapter,
+  type HostCapture,
   type SimWorkerHost,
   type WorkerSaveCapture,
   type WorkerSaveMetadata,
@@ -102,6 +103,7 @@ interface Harness {
   readonly replies: WorkerReply[];
   readonly content: ContentBundle;
   readonly send: (kind: string, body: unknown) => Promise<void>;
+  readonly sendAtEpoch: (epoch: string, kind: string, body: unknown) => Promise<void>;
 }
 
 function createHarness(
@@ -116,18 +118,20 @@ function createHarness(
     ...(persistence !== undefined ? { persistence } : {}),
     postMessage: (reply) => replies.push(parseWorkerReply(reply)),
   });
-  let sequence = 0;
-  const send = async (kind: string, body: unknown): Promise<void> => {
+  const sequences = new Map<string, number>();
+  const sendAtEpoch = async (epoch: string, kind: string, body: unknown): Promise<void> => {
+    const requestSequence = sequences.get(epoch) ?? 0;
     await host.receive({
       protocolVersion: 1,
-      epoch: EPOCH,
-      requestSequence: sequence,
+      epoch,
+      requestSequence,
       kind,
       body,
     });
-    sequence += 1;
+    sequences.set(epoch, requestSequence + 1);
   };
-  return { host, timing, replies, content: contentBundle, send };
+  const send = (kind: string, body: unknown): Promise<void> => sendAtEpoch(EPOCH, kind, body);
+  return { host, timing, replies, content: contentBundle, send, sendAtEpoch };
 }
 
 async function initialize(harness: Harness): Promise<void> {
@@ -162,6 +166,264 @@ function latestSnapshotTick(replies: readonly WorkerReply[]): number | null {
 }
 
 describe("serial SimWorkerHost and fixed-step scheduling", () => {
+  test("requires every persistence adapter to erase pending import candidates", () => {
+    expectTypeOf<WorkerSavePersistence["discardImport"]>().toEqualTypeOf<() => void>();
+  });
+
+  test.each(["LOAD_SLOT", "RECOVER"] as const)(
+    "invalidates an import preview before %s and prevents durable confirmation",
+    async (replacementKind) => {
+      const session: WorkerSaveSessionInfo = {
+        slotId: "slot-import-epoch",
+        createdAtIso: "2026-09-24T12:00:00.000Z",
+        settings: {
+          language: "en",
+          telemetryPreset: "standard",
+          reducedEffects: false,
+          reducedMotion: false,
+          frameCap: 60,
+          volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+        },
+        localStats: {
+          realPlayTimeSeconds: 0,
+          taskCompletions: 0,
+          taskAbandons: 0,
+          emergencyShutdowns: 0,
+          benchmarkAttempts: 0,
+          designApplications: 0,
+        },
+      };
+      const confirmImport = vi.fn(() =>
+        Promise.resolve({
+          slotId: "imported-slot",
+          revision: 1,
+          tick: 12,
+          savedAtIso: "2026-09-24T12:00:00.000Z",
+          sizeBytes: 42,
+          appliedSettings: false,
+          settings: null,
+        }),
+      );
+      const discardImport = vi.fn();
+      let loadCapture: HostCapture | null = null;
+      const persistence: WorkerSavePersistence = {
+        startNewRun: () => Promise.resolve(session),
+        save: () =>
+          Promise.resolve({
+            slotId: session.slotId,
+            savedAtIso: session.createdAtIso,
+            tick: 0,
+            sizeBytes: 42,
+          }),
+        updateSettings: (settings) => Promise.resolve(settings),
+        prepareLoad: () => {
+          if (loadCapture === null) throw new Error("Missing load capture.");
+          return Promise.resolve({
+            state: loadCapture.state,
+            nextQueueSequence: loadCapture.nextQueueSequence,
+            createdAtIso: session.createdAtIso,
+            localStats: session.localStats,
+            checkpoint: {
+              slotId: session.slotId,
+              savedAtIso: session.createdAtIso,
+              tick: loadCapture.state.tick,
+              year: loadCapture.state.campaign.currentYear,
+              captureSequence: 0,
+              sourceKind: "manual",
+              skippedCorruptRecords: 0,
+            },
+            promote: () => Promise.resolve(session),
+            rollback: () => Promise.resolve(),
+          });
+        },
+        previewImport: () =>
+          Promise.resolve({
+            token: "old-epoch-token",
+            preview: {
+              sourceSchemaVersion: 1,
+              sourceSaveVersion: 1,
+              contentVersion: content.contentVersion,
+              simulatedYear: 1940,
+              tick: 12,
+              cashUsd: 0,
+              verticalSliceCompleted: false,
+              savedAtIso: session.createdAtIso,
+              migrationRequired: false,
+              compatibility: "compatible",
+              destinationSuggestion: { kind: "new-slot" },
+              compressedBytes: 42,
+              uncompressedBytes: 42,
+              slotId: "imported-slot",
+            },
+            allocatedSlotId: "imported-slot",
+          }),
+        discardImport,
+        confirmImport,
+        close: () => Promise.resolve(),
+      };
+      const harness = createHarness(content, persistence);
+      await initialize(harness);
+      loadCapture = await harness.host.captureAtBarrier();
+
+      await harness.send("PREVIEW_IMPORT", {
+        fileBytes: new Uint8Array([1, 2, 3]).buffer,
+        destination: { kind: "new" },
+      });
+      const preview = harness.replies.findLast(
+        (reply) => reply.kind === "REQUEST_RESULT" && reply.body.result.kind === "import-preview",
+      );
+      expect(preview?.kind).toBe("REQUEST_RESULT");
+      if (preview?.kind !== "REQUEST_RESULT") throw new Error("Expected import preview result.");
+      expect(preview.body.result.kind).toBe("import-preview");
+
+      await harness.send(replacementKind, { slotId: session.slotId });
+      const replaced = harness.replies.findLast((reply) => reply.kind === "SESSION_REPLACED");
+      expect(replaced?.kind).toBe("SESSION_REPLACED");
+      if (replaced?.kind !== "SESSION_REPLACED") throw new Error("Expected epoch transition.");
+
+      await harness.sendAtEpoch(replaced.body.nextEpoch, "CONFIRM_IMPORT", {
+        token: "old-epoch-token",
+        destination: { kind: "new" },
+        expectedRevision: null,
+        applySettings: false,
+      });
+
+      expect(confirmImport).not.toHaveBeenCalled();
+      expect(discardImport).toHaveBeenCalledOnce();
+      expect(harness.replies.findLast((reply) => reply.kind === "REQUEST_ERROR")).toMatchObject({
+        kind: "REQUEST_ERROR",
+        body: { code: "TOKEN_CONSUMED", operation: "CONFIRM_IMPORT" },
+      });
+      harness.host.destroy();
+    },
+  );
+
+  test.each([
+    ["LOAD_SLOT", "prepare"],
+    ["LOAD_SLOT", "promote"],
+    ["RECOVER", "prepare"],
+    ["RECOVER", "promote"],
+  ] as const)(
+    "retains an import preview when %s fails during %s",
+    async (replacementKind, failurePoint) => {
+      const session: WorkerSaveSessionInfo = {
+        slotId: "slot-import-failed-transition",
+        createdAtIso: "2026-09-24T12:00:00.000Z",
+        settings: {
+          language: "en",
+          telemetryPreset: "standard",
+          reducedEffects: false,
+          reducedMotion: false,
+          frameCap: 60,
+          volumes: { master: 1, music: 1, ui: 1, machinery: 1, alerts: 1 },
+        },
+        localStats: {
+          realPlayTimeSeconds: 0,
+          taskCompletions: 0,
+          taskAbandons: 0,
+          emergencyShutdowns: 0,
+          benchmarkAttempts: 0,
+          designApplications: 0,
+        },
+      };
+      let loadCapture: HostCapture | null = null;
+      const discardImport = vi.fn();
+      const confirmImport = vi.fn(() =>
+        Promise.resolve({
+          slotId: "imported-slot",
+          revision: 1,
+          tick: 12,
+          savedAtIso: session.createdAtIso,
+          sizeBytes: 42,
+          appliedSettings: false,
+          settings: null,
+        }),
+      );
+      const persistence: WorkerSavePersistence = {
+        startNewRun: () => Promise.resolve(session),
+        save: () =>
+          Promise.resolve({
+            slotId: session.slotId,
+            savedAtIso: session.createdAtIso,
+            tick: 0,
+            sizeBytes: 42,
+          }),
+        updateSettings: (settings) => Promise.resolve(settings),
+        prepareLoad: () => {
+          if (failurePoint === "prepare") return Promise.reject(new Error("prepare failed"));
+          if (loadCapture === null) throw new Error("Missing load capture.");
+          return Promise.resolve({
+            state: loadCapture.state,
+            nextQueueSequence: loadCapture.nextQueueSequence,
+            createdAtIso: session.createdAtIso,
+            localStats: session.localStats,
+            checkpoint: {
+              slotId: session.slotId,
+              savedAtIso: session.createdAtIso,
+              tick: loadCapture.state.tick,
+              year: loadCapture.state.campaign.currentYear,
+              captureSequence: 0,
+              sourceKind: "manual",
+              skippedCorruptRecords: 0,
+            },
+            promote: () => Promise.reject(new Error("promote failed")),
+            rollback: () => Promise.resolve(),
+          });
+        },
+        previewImport: () =>
+          Promise.resolve({
+            token: "retained-token",
+            preview: {
+              sourceSchemaVersion: 1,
+              sourceSaveVersion: 1,
+              contentVersion: content.contentVersion,
+              simulatedYear: 1940,
+              tick: 12,
+              cashUsd: 0,
+              verticalSliceCompleted: false,
+              savedAtIso: session.createdAtIso,
+              migrationRequired: false,
+              compatibility: "compatible",
+              destinationSuggestion: { kind: "new-slot" },
+              compressedBytes: 42,
+              uncompressedBytes: 42,
+              slotId: "imported-slot",
+            },
+            allocatedSlotId: "imported-slot",
+          }),
+        discardImport,
+        confirmImport,
+        close: () => Promise.resolve(),
+      };
+      const harness = createHarness(content, persistence);
+      await initialize(harness);
+      loadCapture = await harness.host.captureAtBarrier();
+
+      await harness.send("PREVIEW_IMPORT", {
+        fileBytes: new Uint8Array([1, 2, 3]).buffer,
+        destination: { kind: "new" },
+      });
+      await harness.send(replacementKind, { slotId: session.slotId });
+      expect(discardImport).not.toHaveBeenCalled();
+
+      await harness.send("CONFIRM_IMPORT", {
+        token: "retained-token",
+        destination: { kind: "new" },
+        expectedRevision: null,
+        applySettings: false,
+      });
+
+      expect(confirmImport).toHaveBeenCalledOnce();
+      expect(
+        harness.replies.findLast(
+          (reply) =>
+            reply.kind === "REQUEST_RESULT" && reply.body.result.kind === "import-confirmed",
+        ),
+      ).toBeDefined();
+      harness.host.destroy();
+    },
+  );
+
   test("foreground timer cannot start a save during a pending load promotion", async () => {
     const session: WorkerSaveSessionInfo = {
       slotId: "slot-host-test",
@@ -203,6 +465,7 @@ describe("serial SimWorkerHost and fixed-step scheduling", () => {
       save,
       updateSettings: (settings) => Promise.resolve(settings),
       prepareLoad,
+      discardImport: () => undefined,
       close: () => Promise.resolve(),
     };
     const harness = createHarness(content, persistence);
@@ -272,6 +535,7 @@ describe("serial SimWorkerHost and fixed-step scheduling", () => {
           }),
       ),
       updateSettings: (settings: WorkerSaveCapture["settings"]) => Promise.resolve(settings),
+      discardImport: () => undefined,
       close: () => Promise.resolve(),
     };
     const harness = createHarness(content, persistence);
@@ -357,6 +621,7 @@ describe("serial SimWorkerHost and fixed-step scheduling", () => {
           };
         }),
       updateSettings: (nextSettings) => Promise.resolve(nextSettings),
+      discardImport: () => undefined,
       close: () => Promise.resolve(),
     };
     const harness = createHarness(content, persistence);
@@ -423,6 +688,7 @@ describe("serial SimWorkerHost and fixed-step scheduling", () => {
           resolveWrites.push(resolve);
         }),
       updateSettings: (settings) => Promise.resolve(settings),
+      discardImport: () => undefined,
       close: () => Promise.resolve(),
     };
     const harness = createHarness(content, persistence);
@@ -504,6 +770,7 @@ describe("serial SimWorkerHost and fixed-step scheduling", () => {
         }),
       ),
       updateSettings: (settings: WorkerSaveCapture["settings"]) => Promise.resolve(settings),
+      discardImport: () => undefined,
       close: vi.fn(() => Promise.resolve()),
     };
     const hostOptions = {
@@ -583,6 +850,7 @@ describe("serial SimWorkerHost and fixed-step scheduling", () => {
         }),
       save: () => Promise.reject(persistenceError("QUOTA_EXCEEDED", "private storage details")),
       updateSettings: (settings) => Promise.resolve(settings),
+      discardImport: () => undefined,
       close: () => Promise.resolve(),
     };
     const harness = createHarness(content, persistence);

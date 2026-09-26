@@ -39,6 +39,7 @@ export interface WorkerSavePersistence {
     destination?:
       { readonly kind: "new-slot" } | { readonly kind: "overwrite"; readonly slotId: string },
   ): Promise<WorkerImportPreview>;
+  discardImport(): void;
   confirmImport?(
     token: string,
     options: { readonly expectedRevision: number | undefined; readonly applySettings: boolean },
