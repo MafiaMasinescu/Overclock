@@ -128,6 +128,31 @@ describe("canonical save codec", () => {
     });
   });
 
+  test("rejects a malformed dynamic module id before full save admission", async () => {
+    const content = loadContentBundle();
+    const malformed = structuredClone(createPayload());
+    const id = "module-bad\ud800";
+    malformed.gameState.facility.modules[id] = {
+      id,
+      definitionId: "module-vacuum-tube-logic",
+      position: { x: 0, y: 0 },
+      rotation: 0,
+      operationalState: "offline",
+      overclock: { profile: "balanced", frequencyRatio: 1, voltageRatio: 1 },
+      binComputeRatio: 1,
+      binEfficiencyRatio: 1,
+      binThermalRatio: 1,
+      binStabilityRatio: 1,
+      startupTicksRemaining: 0,
+      cooldownTicksRemaining: 0,
+    };
+    malformed.execution.stateHash = hashCanonicalState(malformed.gameState);
+
+    await expect(
+      encodeSaveEnvelope(malformed, { content, compression: "none" }),
+    ).rejects.toMatchObject({ code: "INVALID_FORMAT" });
+  });
+
   test("maps semantic GameState admission failures to stable persistence errors", async () => {
     const corrupted = structuredClone(createPayload());
     corrupted.gameState.economy.cashUsd = 0.0000001;
@@ -272,6 +297,22 @@ describe("canonical save codec", () => {
     ).rejects.toMatchObject({
       code: "INVALID_FORMAT",
     });
+  });
+
+  test.each(['"bad\\ud800"', '"\\ud800bad"', '"bad\\udc00"'])(
+    "rejects JSON strings containing an unpaired surrogate: %s",
+    (json) => {
+      expect(() => parseStrictJsonText(json)).toThrow(
+        expect.objectContaining({ code: "INVALID_FORMAT" }),
+      );
+    },
+  );
+
+  test("rejects a malformed dynamic key while preserving valid astral JSON", () => {
+    expect(() => parseStrictJsonText('{"module-\\ud800":true}')).toThrow(
+      expect.objectContaining({ code: "INVALID_FORMAT" }),
+    );
+    expect(parseStrictJsonText('{"module-🧠":true}')).toEqual({ "module-🧠": true });
   });
 
   test("rejects malformed base64, unsupported schema, and bounded parser overflow", async () => {

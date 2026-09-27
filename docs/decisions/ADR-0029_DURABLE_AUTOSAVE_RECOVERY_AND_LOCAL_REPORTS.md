@@ -22,9 +22,11 @@ transaction completes.
 Foreground autosaves run at 60-second monotonic intervals when dirty. Committed Task and Research
 completion, Benchmark start/terminal transitions, Campaign year changes, vertical-slice completion,
 pause/unpause, and visibility changes request coalesced captures. The host keeps one in-flight save
-and one newest pending capture. Three distinct autosave generations are retained; manual saves do
-not consume rotations. Hiding requests a best-effort dirty save and never claims forced-close
-durability.
+and one newest pending capture. Three distinct verified autosave generations are retained; malformed
+committed generations remain in place as damaged evidence and are excluded from verified rotation
+pruning, so only damaged evidence can temporarily make the physical history exceed three records.
+Manual saves do not consume rotations. Hiding requests a best-effort dirty save and never claims
+forced-close durability.
 
 Committed lifecycle observation reads a detached fact projection. The projection now carries
 Campaign year and vertical-slice completion so the host can observe these boundaries without

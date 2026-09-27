@@ -96,12 +96,4 @@ export interface SavePreview {
 export type SaveDestinationSuggestion =
   { kind: "new-slot" } | { kind: "overwrite"; slotId: string };
 
-export interface SaveRepository {
-  list(): Promise<SavePreview[]>;
-  read(slotId: string): Promise<SavePayloadV1>;
-  write(payload: SavePayloadV1): Promise<void>;
-  delete(slotId: string): Promise<void>;
-  rotateAutosave(payload: SavePayloadV1, retain: number): Promise<void>;
-}
-
 export type Migration = (input: unknown) => unknown;

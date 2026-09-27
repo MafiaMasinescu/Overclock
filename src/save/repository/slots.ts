@@ -1,6 +1,11 @@
 import { PersistenceError, persistenceError } from "../persistenceErrors.ts";
 import type { SaveRepositoryCore } from "./repository.ts";
-import type { PreparedManualSave, RepositoryOperationToken, SlotMetaRecord } from "./types.ts";
+import type {
+  PreparedManualSave,
+  RepositoryOperationToken,
+  SlotMetaRecord,
+  WriteAutosaveOptions,
+} from "./types.ts";
 import type { WriteAutosaveResult } from "./types.ts";
 import type { SlotBusy, SlotLockHandle, WebLockAdapter } from "./webLocks.ts";
 
@@ -25,7 +30,7 @@ export interface WriterSession {
   ): Promise<SlotMetaRecord>;
   writeAutosave(
     prepared: PreparedManualSave,
-    options?: { readonly token?: RepositoryOperationToken; readonly signal?: AbortSignal },
+    options?: Pick<WriteAutosaveOptions, "token" | "signal" | "skipCaptureSequences">,
   ): Promise<WriteAutosaveResult>;
   refresh(): Promise<SlotMetaRecord>;
   close(): Promise<void>;
@@ -154,7 +159,7 @@ function createSession(
     },
     async writeAutosave(
       prepared: PreparedManualSave,
-      options?: { readonly token?: RepositoryOperationToken; readonly signal?: AbortSignal },
+      options?: Pick<WriteAutosaveOptions, "token" | "signal" | "skipCaptureSequences">,
     ): Promise<WriteAutosaveResult> {
       requireOpen();
       const result = await core.writeAutosave(slotId, prepared, {
@@ -162,6 +167,9 @@ function createSession(
         expectedWriterEpoch: writerEpoch,
         ...(options?.token !== undefined ? { token: options.token } : {}),
         ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+        ...(options?.skipCaptureSequences !== undefined
+          ? { skipCaptureSequences: options.skipCaptureSequences }
+          : {}),
       });
       currentRevision = result.meta.revision;
       return result;

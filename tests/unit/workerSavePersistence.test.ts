@@ -66,6 +66,51 @@ describe("Worker save persistence", () => {
     await persistence.close();
   });
 
+  test("rejects malformed Unicode before a Worker save can commit", async () => {
+    const controls = createInMemoryRepositoryStorage();
+    const repository = createSaveRepositoryCore(controls.storage);
+    const locks = createWebLockAdapter({ locks: createInMemoryLockManager().createClient() });
+    const persistence = createWorkerSavePersistence({
+      content: saveTestContent,
+      repository,
+      locks,
+      createId: () => "unicode-admission",
+    });
+    const session = await persistence.startNewRun();
+    const state = createInitialGameState({ content: saveTestContent, seed: "unicode-admission" });
+    const id = "module-bad\ud800";
+    state.facility.modules[id] = {
+      id,
+      definitionId: "module-vacuum-tube-logic",
+      position: { x: 0, y: 0 },
+      rotation: 0,
+      operationalState: "offline",
+      overclock: { profile: "balanced", frequencyRatio: 1, voltageRatio: 1 },
+      binComputeRatio: 1,
+      binEfficiencyRatio: 1,
+      binThermalRatio: 1,
+      binStabilityRatio: 1,
+      startupTicksRemaining: 0,
+      cooldownTicksRemaining: 0,
+    };
+
+    await expect(
+      persistence.save(
+        {
+          state,
+          nextQueueSequence: 0,
+          dirtyGeneration: 1,
+          createdAtIso: session.createdAtIso,
+          settings: session.settings,
+          localStats: session.localStats,
+        },
+        "manual",
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_FORMAT" });
+    await expect(repository.readManualSaveOrNull(session.slotId)).resolves.toBeNull();
+    await persistence.close();
+  });
+
   test("cancelling during encode prevents a late transaction after session close", async () => {
     const controls = createInMemoryRepositoryStorage();
     const repository = createSaveRepositoryCore(controls.storage);
@@ -269,6 +314,117 @@ describe("Worker save persistence", () => {
     expect(candidate?.state).toEqual(firstState);
     const promoted = await candidate?.promote();
     expect(promoted?.slotId).toBe(session.slotId);
+    await persistence.close();
+  });
+
+  test("continues autosaving after recovery skips a malformed retained generation", async () => {
+    const controls = createInMemoryRepositoryStorage();
+    const repository = createSaveRepositoryCore(controls.storage);
+    const locks = createWebLockAdapter({ locks: createInMemoryLockManager().createClient() });
+    const persistence = createWorkerSavePersistence({
+      content: saveTestContent,
+      repository,
+      locks,
+      createId: () => "audit-forward-progress",
+    });
+    const session = await persistence.startNewRun();
+    const state = createInitialGameState({ content: saveTestContent, seed: "recovery-forward" });
+    const capture = (dirtyGeneration: number) => ({
+      state,
+      nextQueueSequence: dirtyGeneration,
+      dirtyGeneration,
+      createdAtIso: session.createdAtIso,
+      settings: session.settings,
+      localStats: session.localStats,
+    });
+
+    await persistence.save(capture(0), "manual");
+    await persistence.save(capture(1), "autosave");
+    await persistence.save(capture(2), "autosave");
+    await controls.storage.runTransaction(["autosaves"], "readwrite", (tx) =>
+      tx.put("autosaves", [session.slotId, 2], { corrupt: true }),
+    );
+
+    const candidate = await persistence.prepareLoad?.(session.slotId);
+    if (candidate === undefined) throw new Error("Load support is unavailable.");
+    expect(candidate.checkpoint).toMatchObject({
+      captureSequence: 1,
+      sourceKind: "autosave",
+      skippedCorruptRecords: 1,
+    });
+    await candidate.promote();
+
+    await expect(persistence.save(capture(3), "autosave")).resolves.toMatchObject({
+      slotId: session.slotId,
+    });
+    await expect(persistence.save(capture(4), "autosave")).resolves.toMatchObject({
+      slotId: session.slotId,
+    });
+    await expect(persistence.save(capture(5), "autosave")).resolves.toMatchObject({
+      slotId: session.slotId,
+    });
+    await expect(repository.listAutosaveSequences(session.slotId)).resolves.toEqual([5, 4, 3, 2]);
+    await expect(repository.readAutosave(session.slotId, 5)).resolves.toMatchObject({
+      captureSequence: 5,
+    });
+    await expect(repository.readAutosave(session.slotId, 4)).resolves.toMatchObject({
+      captureSequence: 4,
+    });
+    await expect(repository.readAutosave(session.slotId, 3)).resolves.toMatchObject({
+      captureSequence: 3,
+    });
+    await persistence.close();
+  });
+
+  test("preserves a checksum-corrupt generation across post-recovery rotations", async () => {
+    const controls = createInMemoryRepositoryStorage();
+    const repository = createSaveRepositoryCore(controls.storage);
+    const locks = createWebLockAdapter({ locks: createInMemoryLockManager().createClient() });
+    const persistence = createWorkerSavePersistence({
+      content: saveTestContent,
+      repository,
+      locks,
+      createId: () => "audit-checksum-forward-progress",
+    });
+    const session = await persistence.startNewRun();
+    const state = createInitialGameState({ content: saveTestContent, seed: "checksum-forward" });
+    const capture = (dirtyGeneration: number) => ({
+      state,
+      nextQueueSequence: dirtyGeneration,
+      dirtyGeneration,
+      createdAtIso: session.createdAtIso,
+      settings: session.settings,
+      localStats: session.localStats,
+    });
+
+    await persistence.save(capture(0), "manual");
+    await persistence.save(capture(1), "autosave");
+    await persistence.save(capture(2), "autosave");
+    await controls.storage.runTransaction(["autosaves"], "readwrite", async (tx) => {
+      const stored = await tx.get("autosaves", [session.slotId, 2]);
+      if (stored === undefined || typeof stored !== "object" || stored === null) {
+        throw new Error("Missing autosave to corrupt.");
+      }
+      const record = stored as { readonly envelope?: Record<string, unknown> };
+      await tx.put("autosaves", [session.slotId, 2], {
+        ...record,
+        envelope: { ...record.envelope, checksum: "0".repeat(64) },
+      });
+    });
+
+    const candidate = await persistence.prepareLoad?.(session.slotId);
+    if (candidate === undefined) throw new Error("Load support is unavailable.");
+    expect(candidate.checkpoint).toMatchObject({
+      captureSequence: 1,
+      sourceKind: "autosave",
+      skippedCorruptRecords: 1,
+    });
+    await candidate.promote();
+
+    await persistence.save(capture(3), "autosave");
+    await persistence.save(capture(4), "autosave");
+    await persistence.save(capture(5), "autosave");
+    await expect(repository.listAutosaveSequences(session.slotId)).resolves.toEqual([5, 4, 3, 2]);
     await persistence.close();
   });
 

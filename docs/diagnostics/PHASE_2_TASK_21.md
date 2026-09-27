@@ -1,6 +1,6 @@
 # Phase 2 Task 21 integration diagnostics
 
-Updated: 2026-09-26
+Updated: 2026-09-27
 
 Task 21.1 and 21.2 evidence based on CP20
 `7dc99c4915caf520199589f807ef70ec66c6518a`. CP21 is the commit containing this reviewed report.
@@ -164,3 +164,16 @@ The preserved Phase 2 misses remain: the earlier publication p95 misses and ACK-
 projection and Task transient misses, the Task 15 milestone production-tick miss, the owner-accepted
 pure Benchmark 0.1013 ms versus `<0.10 ms` miss, and the 16 GiB-versus-8 GiB host mismatch. None
 is reclassified as a target pass. Phase 3 implementation itself remains outside this closure change.
+
+## Independent closure audit follow-up (2026-09-27)
+
+The independent closure audit reproduced two Important correctness defects outside the accepted
+performance/RAM exceptions. Save admission now rejects unpaired UTF-16 surrogates in values and
+dynamic object keys at both the in-memory and strict-JSON boundaries, before a save can be promoted
+or committed. Autosave rotation now skips malformed retained generations for verified pruning while
+leaving those records in place as damaged evidence; valid saves therefore continue after recovery.
+Focused regressions cover malformed Unicode, no-commit Worker admission, recovery followed by three
+valid autosaves, and preservation of the damaged sequence. A real Chromium Worker/IndexedDB
+scenario covers the checksum-corrupt recovery path and retains the damaged sequence while three
+later autosaves commit. The Benchmark trigger wording and unused legacy configurable-retention
+sketch were reconciled in the TDD/contracts.

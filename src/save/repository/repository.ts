@@ -637,6 +637,7 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
             const captureSequence = current.nextCaptureSequence;
             const stored: StoredAutosave = { slotId, captureSequence, envelope, preview };
             let prunedCaptureSequences: readonly number[] = [];
+            const skippedCaptureSequences = new Set(options.skipCaptureSequences ?? []);
             const capacity =
               current.latestRecovery === null ? requireDurableSlotCapacity(tx) : Promise.resolve();
             return capacity
@@ -647,8 +648,23 @@ export function createSaveRepositoryCore(storage: RepositoryStorage): SaveReposi
                 // newest three distinct captures, prune the rest in this
                 // same transaction. Manual saves never participate.
                 const generations = entries
-                  .filter((entry) => parseAutosaveKey(entry.key)?.slotId === slotId)
-                  .map((entry) => verifiedAutosave(entry.value, slotId))
+                  .flatMap((entry) => {
+                    const key = parseAutosaveKey(entry.key);
+                    if (key?.slotId !== slotId) return [];
+                    if (skippedCaptureSequences.has(key.captureSequence)) return [];
+                    try {
+                      const generation = verifiedAutosave(entry.value, slotId);
+                      if (generation.captureSequence !== key.captureSequence) return [];
+                      return [generation];
+                    } catch (error) {
+                      if (error instanceof PersistenceError) {
+                        // Preserve damaged generations as evidence, but do not
+                        // let one unverified record block a valid rotation.
+                        return [];
+                      }
+                      throw error;
+                    }
+                  })
                   .sort((a, b) => b.captureSequence - a.captureSequence);
                 const pruned = generations.slice(MAX_AUTOSAVE_ROTATIONS);
                 prunedCaptureSequences = pruned.map((generation) => generation.captureSequence);

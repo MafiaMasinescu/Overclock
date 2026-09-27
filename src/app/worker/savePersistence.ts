@@ -138,6 +138,7 @@ export function createWorkerSavePersistence(
   let createdAtIso: string | null = null;
   let settings: PlayerSettings = structuredClone(DEFAULT_PLAYER_SETTINGS);
   let settingsRevision: number | null = null;
+  let quarantinedAutosaveSequences: readonly number[] = [];
   let closed = false;
   const activeOperations = new Set<() => void>();
 
@@ -160,6 +161,7 @@ export function createWorkerSavePersistence(
     settings = parsePlayerSettings(storedSettings?.settings ?? DEFAULT_PLAYER_SETTINGS);
     activeSlotId = slotId;
     createdAtIso = created;
+    quarantinedAutosaveSequences = [];
     return {
       slotId,
       createdAtIso: created,
@@ -184,6 +186,7 @@ export function createWorkerSavePersistence(
 
     let loaded: Awaited<ReturnType<typeof admitLoadedSave>> | null = null;
     let skippedCorruptRecords = 0;
+    const rejectedAutosaveSequences = new Set<number>();
     try {
       const meta = await options.repository.readSlotMeta(slotId);
       const sequences = await options.repository.listAutosaveSequences(slotId);
@@ -211,17 +214,20 @@ export function createWorkerSavePersistence(
       candidates.sort((left, right) => right.captureSequence - left.captureSequence);
       for (const candidate of candidates) {
         try {
-          loaded = await admitLoadedSave(options.repository, slotId, {
+          const admitted = await admitLoadedSave(options.repository, slotId, {
             content: options.content,
             ...(candidate.kind === "autosave"
               ? { captureSequence: candidate.captureSequence }
               : {}),
             ...(options.codecAdapters !== undefined ? { adapters: options.codecAdapters } : {}),
           });
-          break;
+          loaded ??= admitted;
         } catch (error) {
           if (!isRejectedSaveCandidate(error)) throw error;
           skippedCorruptRecords += 1;
+          if (candidate.kind === "autosave") {
+            rejectedAutosaveSequences.add(candidate.captureSequence);
+          }
         }
       }
       if (loaded === null) {
@@ -270,6 +276,7 @@ export function createWorkerSavePersistence(
           createdAtIso = candidate.payload.createdAtIso;
           settingsRevision = nextSettingsRevision;
           settings = structuredClone(nextSettings);
+          quarantinedAutosaveSequences = [...rejectedAutosaveSequences].sort((a, b) => b - a);
           if (previousWriter !== null && previousWriter !== targetWriter) {
             try {
               await previousWriter.close();
@@ -367,7 +374,11 @@ export function createWorkerSavePersistence(
         activeWriter = opened;
       }
       if (reason === "manual") await activeWriter.writeManual(prepared, { token: operation.token });
-      else await activeWriter.writeAutosave(prepared, { token: operation.token });
+      else
+        await activeWriter.writeAutosave(prepared, {
+          token: operation.token,
+          skipCaptureSequences: quarantinedAutosaveSequences,
+        });
       return {
         slotId: activeWriter.slotId,
         savedAtIso,
@@ -531,6 +542,7 @@ export function createWorkerSavePersistence(
     writer = null;
     activeSlotId = null;
     createdAtIso = null;
+    quarantinedAutosaveSequences = [];
     if (activeWriter !== null) await activeWriter.close();
   }
 

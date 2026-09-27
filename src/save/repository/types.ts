@@ -110,9 +110,12 @@ export interface WriteManualSaveOptions {
   readonly signal?: AbortSignal;
 }
 
-// Autosave writes fence exactly like manual writes; the alias keeps the
-// shared fencing contract visible at each call site.
-export type WriteAutosaveOptions = WriteManualSaveOptions;
+// Autosave writes fence exactly like manual writes. A recovery pass may also
+// identify damaged generations that must remain as evidence but be excluded
+// from future verified rotation.
+export type WriteAutosaveOptions = WriteManualSaveOptions & {
+  readonly skipCaptureSequences?: readonly number[];
+};
 
 export interface WriteAutosaveResult {
   readonly meta: SlotMetaRecord;

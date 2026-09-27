@@ -38,6 +38,25 @@ const validPreview = {
 };
 
 describe("Phase 2 persistence schema foundations", () => {
+  test.each([
+    ["trailing high surrogate value", "bad\ud800"],
+    ["leading high surrogate value", "\ud800bad"],
+    ["lone low surrogate value", "bad\udc00"],
+  ])("rejects %s at the in-memory trust boundary", (_, value) => {
+    expect(() => {
+      assertSafeExternalData(value);
+    }).toThrow(expect.objectContaining({ code: "INVALID_FORMAT" }));
+  });
+
+  test("accepts a valid astral pair but rejects malformed dynamic keys", () => {
+    expect(() => {
+      assertSafeExternalData("astral 🧠");
+    }).not.toThrow();
+    expect(() => {
+      assertSafeExternalData({ ["module-\ud800"]: true });
+    }).toThrow(expect.objectContaining({ code: "INVALID_FORMAT" }));
+  });
+
   test("counts primitive values and primitive depth at the in-memory trust boundary", () => {
     expect(() => {
       assertSafeExternalData([1, 2], { maxVisitedValues: 2 });

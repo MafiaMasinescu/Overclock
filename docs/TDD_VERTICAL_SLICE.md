@@ -1721,12 +1721,13 @@ Task 17 freezes the concrete version-1 schema: `autosaves` uses the native compo
 next capture sequence, and the recovery locator. The earlier shorthand above is superseded by this
 implemented contract.
 
-Autosave-ul păstrează trei rotații. Declanșatori:
+Autosave-ul păstrează trei generații verificate; recordurile corupte rămân ca dovezi și sunt excluse
+din pruning-ul generațiilor verificate. Declanșatori:
 
 - la fiecare 60 secunde reale dacă state-ul este dirty;
 - după task completion;
 - după research completion;
-- înainte și după benchmark final;
+- la tranziția de start și la tranziția terminală acceptată a unui Benchmark;
 - la finalul vertical slice-ului;
 - la `visibilitychange` când operația poate fi terminată rapid.
 

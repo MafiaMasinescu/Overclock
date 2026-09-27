@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-26
+Updated: 2026-09-27
 
 ## Current phase
 
@@ -1299,3 +1299,21 @@ read-only Phase 2 closure audit was still the next boundary and Phase 3 had not 
 was completed by the closure repairs and exception recorded in the current-phase section above.
 After the host limitation and preserved misses were reported, the owner explicitly authorized CP21
 on 2026-09-25 without reclassifying this host or those measurements as target passes.
+
+## Post-closure audit repairs
+
+Updated: 2026-09-27. The independent closure audit reproduced two Important correctness defects
+outside the accepted performance and RAM exceptions. Malformed trailing/leading/lone surrogate
+values and dynamic keys could pass one admission boundary, and a malformed retained autosave could
+block every later autosave after recovery. Both paths are now repaired and regression-covered:
+Unicode is rejected before save promotion and Worker persistence commit, while damaged autosave
+records remain as evidence and are excluded from verified-generation pruning so valid post-recovery
+rotations continue.
+
+The audit's non-blocking documentation/API observations are also reconciled: Benchmark autosaves
+are documented at accepted start/terminal transitions, and the unused configurable-retention
+`SaveRepository` sketch is retired in favor of the fixed `SaveRepositoryCore` contract. Fresh
+post-repair validation passed (`corepack pnpm validate`, determinism, the archived adversarial
+probes, and 16 targeted serial Chromium persistence/codec cases); the historical full-matrix
+performance and exact-8-GiB limitations remain unchanged, and no Phase 3 implementation is
+included here.
