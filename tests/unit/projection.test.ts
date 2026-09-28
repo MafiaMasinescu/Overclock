@@ -372,6 +372,17 @@ describe("draft projection", () => {
     expect(module?.id).toBe("module-instance-00000001");
     expect(module?.definitionId).toBe("module-vacuum-tube-logic");
     expect(module?.footprint).toEqual({ width: 2, height: 1 });
+    expect(module?.ports.length).toBeGreaterThan(0);
+    const port = module?.ports[0];
+    expect(port).toBeDefined();
+    expect(typeof port?.portId).toBe("string");
+    expect(typeof port?.kind).toBe("string");
+    expect(typeof port?.facingSide).toBe("string");
+    expect(typeof port?.moduleTile.x).toBe("number");
+    expect(typeof port?.moduleTile.y).toBe("number");
+    expect(typeof port?.adjacentTile.x).toBe("number");
+    expect(typeof port?.adjacentTile.y).toBe("number");
+    expect(typeof port?.capacityPerSecond).toBe("number");
     expect(module?.rotation).toBe(0);
     expect(module?.operationalState).toBe("offline");
     expect(module?.selected).toBe(true);
@@ -432,6 +443,14 @@ describe("draft projection", () => {
       { x: 2, y: 0 },
       { x: 3, y: 0 },
     ]);
+    expect(grid.routes[0]?.from).toEqual({
+      moduleInstanceId: "module-instance-00000001",
+      portId: "power-out-east",
+    });
+    expect(grid.routes[0]?.to).toEqual({
+      moduleInstanceId: "module-instance-00000002",
+      portId: "power-in-west",
+    });
     // Dirty power has no stored delivery yet: null, not zero.
     expect(grid.routes[0]?.utilizationRatio).toBeNull();
     expect(grid.routes[0]?.selected).toBe(true);

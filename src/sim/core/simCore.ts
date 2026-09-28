@@ -36,8 +36,117 @@ import {
 import { resolveSimulatorContent } from "./simulatorContent.ts";
 import type { CommittedFactProjection } from "../events/contracts.ts";
 import { projectCommittedFactProjection } from "../selectors/projector.ts";
+import {
+  createBuildGenerationTracker,
+  createBuildSourceStamp,
+  readBuildContext,
+  type BuildGenerationTracker,
+} from "../build/context.ts";
+import {
+  freezeBuildRead,
+  parseBuildQuery,
+  type BuildBlueprintMaterializationPreview,
+  type BuildQuery,
+  type BuildQueryDataMap,
+  type BuildQueryResult,
+  type BuildReadReason,
+  type BuildSourceStamp,
+} from "../build/contracts.ts";
+import {
+  previewBlueprintMaterialization,
+  previewBuildApply,
+  previewBuildManualRoute,
+  previewBuildMove,
+  previewBuildPlacement,
+  previewBuildRemoval,
+  previewBuildRotation,
+} from "../build/preview.ts";
 
 const UINT32_MAX = 0xffff_ffff;
+
+function readyBuildResult<K extends keyof BuildQueryDataMap>(
+  kind: K,
+  clientIntentSequence: number,
+  source: BuildSourceStamp,
+  data: BuildQueryDataMap[K],
+): BuildQueryResult {
+  return freezeBuildRead({
+    kind,
+    status: "ready",
+    clientIntentSequence,
+    source,
+    data,
+  }) as BuildQueryResult;
+}
+
+function rejectedBuildResult<K extends keyof BuildQueryDataMap>(
+  kind: K,
+  clientIntentSequence: number,
+  source: BuildSourceStamp,
+  reason: BuildReadReason,
+  data: BuildQueryDataMap[K],
+): BuildQueryResult {
+  return freezeBuildRead({
+    kind,
+    status: "rejected",
+    clientIntentSequence,
+    source,
+    reason,
+    data,
+  });
+}
+
+function rejectedBuildResultWithoutData(
+  kind: BuildQuery["kind"],
+  clientIntentSequence: number,
+  source: BuildSourceStamp,
+  reason: BuildReadReason,
+): BuildQueryResult {
+  return freezeBuildRead({ kind, status: "rejected", clientIntentSequence, source, reason });
+}
+
+function previewBuildResult<K extends "placement" | "move" | "rotate" | "removal" | "manual-route">(
+  kind: K,
+  clientIntentSequence: number,
+  source: BuildSourceStamp,
+  data: BuildQueryDataMap[K],
+): BuildQueryResult {
+  return data.status === "rejected"
+    ? rejectedBuildResult(kind, clientIntentSequence, source, data.reason ?? "INVALID_INPUT", data)
+    : readyBuildResult(kind, clientIntentSequence, source, data);
+}
+
+function mapBlueprintPreviewReason(
+  preview: Extract<BuildBlueprintMaterializationPreview, { readonly status: "rejected" }>,
+): BuildReadReason {
+  switch (preview.code) {
+    case "NOT_IN_DESIGN_MODE":
+      return "DRAFT_REQUIRED";
+    case "FEATURE_LOCKED":
+      return "FEATURE_LOCKED";
+    case "RESEARCH_INCOMPLETE":
+      return "RESEARCH_REQUIRED";
+    case "OUT_OF_BOUNDS":
+      return "OUT_OF_BOUNDS";
+    case "TILE_OCCUPIED":
+      return "TILE_OCCUPIED";
+    case "INVALID_PORT":
+      return "INVALID_PORT";
+    case "INCOMPATIBLE_PORTS":
+      return "INCOMPATIBLE_PORTS";
+    case "INVALID_ROUTE":
+      return "INVALID_ROUTE";
+    case "INSUFFICIENT_INVENTORY":
+      return "INSUFFICIENT_INVENTORY";
+    case "INVALID_SYSTEM":
+      return "INVALID_SYSTEM";
+    case "BLUEPRINT_NOT_FOUND":
+    case "BLUEPRINT_INVALID":
+    case "INVALID_ROTATION":
+    case "INVALID_TARGET":
+      return "BLUEPRINT_INVALID";
+  }
+}
 
 export type ClockCommand = Extract<SimCommand, { kind: "SET_PAUSED" | "SET_SPEED" }>;
 
@@ -290,6 +399,7 @@ export class SimCore {
   private readonly runsTickSystems: boolean;
   private readonly runsMutableTickSystems: boolean;
   private presentationProjector: PresentationProjector;
+  private buildGenerationTracker: BuildGenerationTracker;
 
   constructor({
     initialState,
@@ -310,6 +420,10 @@ export class SimCore {
     assertValidStoredBenchmarkState(initialState);
     assertValidBlueprintState(initialState.blueprints);
     this.authoritativeState = new AuthoritativeState(initialState);
+    this.buildGenerationTracker = createBuildGenerationTracker(
+      this.authoritativeState.readInternal(),
+      this.content,
+    );
     this.commandQueue = new CommandQueue(initialCommandQueueSequence);
     this.commandProcessor = new CommandProcessor(
       {
@@ -339,6 +453,158 @@ export class SimCore {
 
   getCommandQueuePosition(): { readonly nextSequence: number; readonly pendingCount: number } {
     return this.commandQueue.getPosition();
+  }
+
+  /**
+   * Narrow, detached Build read boundary. Querying never serializes save state,
+   * invokes callbacks or mutates gameplay state. Unsupported read variants stay
+   * explicitly unavailable until their named Task 22 subtask implements them.
+   */
+  queryBuild(input: BuildQuery): BuildQueryResult {
+    const query = parseBuildQuery(input);
+    const state = this.authoritativeState.readInternal();
+    const generation = this.buildGenerationTracker.observe(state);
+    const actualMode = state.facility.designDraft === null ? "live" : "draft";
+    const source = createBuildSourceStamp(state, actualMode, generation);
+    if (query.mode !== actualMode) {
+      return rejectedBuildResultWithoutData(
+        query.kind,
+        query.clientIntentSequence,
+        source,
+        actualMode === "live" ? "DRAFT_REQUIRED" : "INVALID_INPUT",
+      );
+    }
+    if (query.kind === "context") {
+      return freezeBuildRead({
+        kind: query.kind,
+        status: "ready",
+        clientIntentSequence: query.clientIntentSequence,
+        source,
+        context: readBuildContext(state, this.content, query.mode, generation),
+      });
+    }
+    switch (query.kind) {
+      case "placement": {
+        const data = previewBuildPlacement(state, this.content, query.input);
+        return previewBuildResult(query.kind, query.clientIntentSequence, source, data);
+      }
+      case "move": {
+        const data = previewBuildMove(state, this.content, query.moduleInstanceId, query.position);
+        return previewBuildResult(query.kind, query.clientIntentSequence, source, data);
+      }
+      case "rotate": {
+        const data = previewBuildRotation(
+          state,
+          this.content,
+          query.moduleInstanceId,
+          query.rotation,
+        );
+        return previewBuildResult(query.kind, query.clientIntentSequence, source, data);
+      }
+      case "removal": {
+        const data = previewBuildRemoval(state, query.moduleInstanceId);
+        return previewBuildResult(query.kind, query.clientIntentSequence, source, data);
+      }
+      case "apply": {
+        const preview = previewBuildApply(state, this.content);
+        return preview.reason !== null
+          ? rejectedBuildResult(
+              query.kind,
+              query.clientIntentSequence,
+              source,
+              preview.reason,
+              preview.data,
+            )
+          : readyBuildResult(query.kind, query.clientIntentSequence, source, preview.data);
+      }
+      case "manual-route": {
+        const data = previewBuildManualRoute(state, this.content, query.input);
+        return previewBuildResult(query.kind, query.clientIntentSequence, source, data);
+      }
+      case "blueprint-list": {
+        const ids = Object.keys(state.blueprints.records).toSorted();
+        const cursorIndex =
+          query.afterBlueprintId === null ? -1 : ids.indexOf(query.afterBlueprintId);
+        if (query.afterBlueprintId !== null && cursorIndex < 0) {
+          return rejectedBuildResultWithoutData(
+            query.kind,
+            query.clientIntentSequence,
+            source,
+            "BLUEPRINT_INVALID",
+          );
+        }
+        const start = cursorIndex + 1;
+        const pageIds = ids.slice(start, start + query.limit);
+        return readyBuildResult(query.kind, query.clientIntentSequence, source, {
+          records: pageIds
+            .map((id) => state.blueprints.records[id])
+            .filter((record) => record !== undefined)
+            .map((record) => structuredClone(record)),
+          nextAfterId: start + pageIds.length < ids.length ? (pageIds.at(-1) ?? null) : null,
+        });
+      }
+      case "blueprint-detail": {
+        const record = state.blueprints.records[query.blueprintId];
+        return record === undefined
+          ? rejectedBuildResultWithoutData(
+              query.kind,
+              query.clientIntentSequence,
+              source,
+              "BLUEPRINT_INVALID",
+            )
+          : readyBuildResult(
+              query.kind,
+              query.clientIntentSequence,
+              source,
+              structuredClone(record),
+            );
+      }
+      case "blueprint-materialization": {
+        const data = previewBlueprintMaterialization(
+          state,
+          this.content,
+          query.blueprintId,
+          query.position,
+          query.rotation,
+        );
+        return data.status === "rejected"
+          ? rejectedBuildResult(
+              query.kind,
+              query.clientIntentSequence,
+              source,
+              mapBlueprintPreviewReason(data),
+              data,
+            )
+          : readyBuildResult(query.kind, query.clientIntentSequence, source, data);
+      }
+      case "automatic-route":
+      case "adjacent-candidates":
+      case "diagnostic-pulse":
+        break;
+    }
+    return freezeBuildRead({
+      kind: query.kind,
+      status: "unavailable",
+      clientIntentSequence: query.clientIntentSequence,
+      source,
+      reason: "NOT_AVAILABLE",
+    });
+  }
+
+  getBuildGeneration(): number {
+    return this.buildGenerationTracker.observe(this.authoritativeState.readInternal());
+  }
+
+  getBuildSource() {
+    const state = this.authoritativeState.readInternal();
+    const generation = this.buildGenerationTracker.observe(state);
+    return freezeBuildRead(
+      createBuildSourceStamp(
+        state,
+        state.facility.designDraft === null ? "live" : "draft",
+        generation,
+      ),
+    );
   }
 
   enqueue(command: SimCommand): CommandReceipt {
@@ -471,6 +737,10 @@ export class SimCore {
     const retiredTickSystems = this.tickSystems;
     this.authoritativeState.replaceSnapshot(state);
     this.tickSystems = replacementTickSystems;
+    this.buildGenerationTracker = createBuildGenerationTracker(
+      this.authoritativeState.readInternal(),
+      this.content,
+    );
     this.presentationProjector = createPresentationProjector();
     for (const stage of TICK_SYSTEM_STAGE_ORDER) {
       try {

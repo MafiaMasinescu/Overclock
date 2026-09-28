@@ -116,6 +116,42 @@ export function createFakeGameClient(): GameClient {
         messageKey: "errors.phase-zero-no-simulator",
       });
     },
+    queryBuild(query) {
+      return Promise.resolve({
+        result: {
+          kind: query.kind,
+          status: "unavailable" as const,
+          clientIntentSequence: query.clientIntentSequence,
+          source: {
+            mode: query.mode,
+            observedTick: 0,
+            liveLayoutRevision: 0,
+            draftRevision: null,
+            generation: 0,
+          },
+          reason: "NOT_AVAILABLE" as const,
+        },
+        settings: null,
+      });
+    },
+    setPresentationContext() {
+      return Promise.resolve();
+    },
+    dispatchBuild(_command, expectedGeneration) {
+      return Promise.resolve({
+        kind: "not-queued" as const,
+        code: "INVALID_BUILD_COMMAND" as const,
+        expectedGeneration,
+        observedGeneration: 0,
+        source: {
+          mode: "draft" as const,
+          observedTick: 0,
+          liveLayoutRevision: 0,
+          draftRevision: null,
+          generation: 0,
+        },
+      });
+    },
     getSnapshot() {
       return placeholderSnapshot;
     },

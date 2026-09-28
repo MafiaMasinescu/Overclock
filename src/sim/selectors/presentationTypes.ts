@@ -23,6 +23,7 @@ import type {
   TaskStatus,
   ThermalTileState,
 } from "../core/types.ts";
+import type { PortKind, PortSide } from "../../grid/domain/portGeometry.ts";
 
 // Deeply immutable breakdown carried by value. The projector copies the
 // stored breakdown into a fresh object and freezes it; receivers never
@@ -137,6 +138,14 @@ export interface GridModuleViewModel {
   spriteKey: string;
   position: GridPoint;
   footprint: { width: number; height: number };
+  ports: readonly {
+    portId: string;
+    kind: PortKind;
+    facingSide: PortSide;
+    moduleTile: GridPoint;
+    adjacentTile: GridPoint;
+    capacityPerSecond: number;
+  }[];
   rotation: Rotation;
   operationalState: "offline" | "starting" | "online" | "brownout" | "shutdown";
   selected: boolean;
@@ -151,6 +160,8 @@ export interface GridRouteViewModel {
   id: string;
   kind: "power" | "data";
   path: readonly GridPoint[];
+  from: { moduleInstanceId: ModuleInstanceId; portId: string };
+  to: { moduleInstanceId: ModuleInstanceId; portId: string };
   // Stored Power byRoute utilization for power routes. Data utilization is
   // null unless authoritative evidence exists; a power route without a
   // stored delivery (dirty power, draft-only) is also null.

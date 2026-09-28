@@ -62,6 +62,36 @@ export function addMicrodollars(left: number, right: number): number {
   return result;
 }
 
+export type CreditAffordability =
+  | { readonly status: "available"; readonly nextCashUsd: number }
+  | { readonly status: "insufficient" }
+  | { readonly status: "invalid" };
+
+/**
+ * Shared exact credit guard for commands and advisory Build reads. It retains
+ * the existing microdollar conversion, overflow and inclusive credit-limit
+ * semantics without exposing intermediate arithmetic to UI code.
+ */
+export function evaluateCreditAffordability(
+  cashUsd: number,
+  creditLimitUsd: number,
+  costUsd: number,
+): CreditAffordability {
+  try {
+    const nextCashMicrodollars = addMicrodollars(
+      usdToMicrodollars(cashUsd),
+      -usdToMicrodollars(costUsd),
+    );
+    if (nextCashMicrodollars < -usdToMicrodollars(creditLimitUsd)) {
+      return { status: "insufficient" };
+    }
+    return { status: "available", nextCashUsd: microdollarsToUsd(nextCashMicrodollars) };
+  } catch (error: unknown) {
+    if (error instanceof RangeError) return { status: "invalid" };
+    throw error;
+  }
+}
+
 export function multiplyMicrodollars(value: number, multiplier: number): number {
   assertSafeInteger(value, "Microdollar value");
   assertSafeInteger(multiplier, "Microdollar multiplier");

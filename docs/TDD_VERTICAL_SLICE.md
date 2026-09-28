@@ -271,6 +271,11 @@ host limitations, and preserved performance misses are documented in
 commit containing that report.
 
 Phase 3 owns auto-connect/A* routing, renderer consumption of snapshots/patches, and heatmap UI.
+Task 22 currently owns only the neutral Build read/context/preview contracts, private read
+generation, strict Worker query/guard transport, and owned port/route presentation fields. These
+interfaces are completed and independently reviewed by CP22 in the commit containing this update;
+they do not imply visible Build controls, renderer completion, or routing search. Task 23 is not
+started.
 Phase 4 owns gameplay alerts/event semantics and UI, achievements/tutorial behavior, and any future
 contracts for workload-dependent Power/Heat and automatic energy/economy settlement retained from
 the original design. Those simulation changes are roadmap commitments awaiting explicit gameplay

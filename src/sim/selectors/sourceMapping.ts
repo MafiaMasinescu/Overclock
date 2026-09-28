@@ -101,6 +101,8 @@ const PROJECTOR_SOURCES: Readonly<Record<string, string>> = {
   "grid.modules[].position": "Layout module record position (copied).",
   "grid.modules[].footprint":
     "Existing pure resolveRotatedFootprintSize(definition.footprint, rotation) (no duplication).",
+  "grid.modules[].ports":
+    "Existing pure resolveModulePortGeometry(definition, module) with rotated module and adjacent tiles; copied for hit testing.",
   "grid.modules[].rotation": "Layout module record rotation (direct).",
   "grid.modules[].operationalState": "Layout module record operationalState (stored, direct).",
   "grid.modules[].selected": "Membership in the validated presentation context selectedIds.",
@@ -112,6 +114,8 @@ const PROJECTOR_SOURCES: Readonly<Record<string, string>> = {
   "grid.routes[].id": "Layout route record id, lexical order (direct).",
   "grid.routes[].kind": "Layout route record kind (direct).",
   "grid.routes[].path": "Layout route record path (copied points).",
+  "grid.routes[].from": "Stored route.from endpoint PortRef (copied).",
+  "grid.routes[].to": "Stored route.to endpoint PortRef (copied).",
   "grid.routes[].utilizationRatio":
     "Stored Power byRoute utilization for power routes (null without a stored delivery); always null for data routes until authoritative evidence exists.",
   "grid.routes[].selected": "Membership in the validated presentation context selectedIds.",

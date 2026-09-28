@@ -1,6 +1,6 @@
 # OVERCLOCK Project Status
 
-Updated: 2026-09-27
+Updated: 2026-09-28
 
 ## Current phase
 
@@ -10,7 +10,8 @@ Updated: 2026-09-27
   final read-only closure are complete through CP21 plus the closure repairs documented below.
   Exact 8 GiB certification remains unavailable; an owner-authorized Phase 3 entry exception
   preserves every performance miss and does not reclassify available-host measurements as target
-  passes. No Phase 3 implementation has begun.
+  passes. Phase 3 Task 22.1–22.4 and CP22 are complete in the commit containing this status
+  update. The next permitted implementation boundary is Task 23.1; it has not started.
 - Phase 1: Headless Simulator, closed through Task 15 and the ADR-0022 Campaign coherence repair.
 - Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
   `8e80b00` and explicitly approved on 18 August 2026.

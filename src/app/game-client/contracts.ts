@@ -11,6 +11,11 @@ import type {
 import type { GridViewModel, UiSnapshot } from "./snapshots.ts";
 import type { StoreConnectionStatus } from "./store.ts";
 import type { WorkerReply, WorkerRequest } from "../worker/protocol.ts";
+import type {
+  BuildGuardedWriteOutcome,
+  BuildQuery,
+  BuildQueryResult,
+} from "../../sim/build/contracts.ts";
 
 export type SaveReason = "manual" | "autosave" | "checkpoint" | "exit";
 
@@ -56,8 +61,20 @@ export type GameClientControlNotice =
   | { readonly kind: "EVENTS_GAP"; readonly nextEventSequence: number }
   | { readonly kind: "TRANSPORT_DEGRADED"; readonly publicationSequence: number };
 
+export interface BuildQueryResponse {
+  readonly result: BuildQueryResult;
+  readonly settings: PlayerSettings | null;
+}
+
 export interface GameClient {
   dispatch(command: SimCommand): Promise<CommandResult>;
+  queryBuild(query: BuildQuery): Promise<BuildQueryResponse>;
+  setPresentationContext(context: {
+    readonly selectedIds: readonly string[];
+    readonly inspectedEntityId: string | null;
+    readonly heatmapEnabled: boolean;
+  }): Promise<void>;
+  dispatchBuild(command: SimCommand, expectedGeneration: number): Promise<BuildGuardedWriteOutcome>;
   getSnapshot(): UiSnapshot;
   subscribe(listener: () => void): () => void;
   subscribeEvents(listener: (event: SimEvent) => void): () => void;

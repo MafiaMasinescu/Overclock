@@ -14,9 +14,12 @@ import type {
   SaveReason,
   SlotSummary,
 } from "./contracts.ts";
+import type { BuildGuardedWriteOutcome, BuildQuery } from "../../sim/build/contracts.ts";
+import type { BuildQueryResponse } from "./contracts.ts";
 import { createGameClientStore, type StoreConnectionStatus } from "./store.ts";
 import {
   MAX_OUTSTANDING_REQUESTS,
+  WORKER_PROTOCOL_VERSION,
   createReplySequenceGuard,
   createRequestCorrelator,
   createRequestLedger,
@@ -346,7 +349,7 @@ export async function createWorkerGameClient(
     let request: WorkerRequest;
     try {
       request = parseWorkerRequest({
-        protocolVersion: 1,
+        protocolVersion: WORKER_PROTOCOL_VERSION,
         epoch,
         requestSequence: sequence,
         kind: "ACK_RESULT",
@@ -387,6 +390,8 @@ export async function createWorkerGameClient(
     return (
       kind === "READY" ||
       kind === "COMMAND_RESULT" ||
+      kind === "BUILD_QUERY_RESULT" ||
+      kind === "BUILD_COMMAND_RESULT" ||
       kind === "REQUEST_RESULT" ||
       kind === "REQUEST_ERROR" ||
       kind === "SAVE_COMMITTED" ||
@@ -416,7 +421,7 @@ export async function createWorkerGameClient(
     let request: WorkerRequest;
     try {
       request = parseWorkerRequest({
-        protocolVersion: 1,
+        protocolVersion: WORKER_PROTOCOL_VERSION,
         epoch,
         requestSequence: sequence,
         kind,
@@ -430,7 +435,10 @@ export async function createWorkerGameClient(
         ),
       );
     }
-    const commandId = request.kind === "COMMAND" ? request.body.command.commandId : null;
+    const commandId =
+      request.kind === "COMMAND" || request.kind === "BUILD_COMMAND"
+        ? request.body.command.commandId
+        : null;
     const reserved = ledger.reserve(
       sequence,
       workerRequestByteLength(request),
@@ -741,6 +749,56 @@ export async function createWorkerGameClient(
       const reply = await sendRequest("COMMAND", { command });
       if (reply.kind !== "COMMAND_RESULT") {
         throw makeError("INVALID_REPLY", "Worker did not return a command result.");
+      }
+      return reply.body.result;
+    },
+    queryBuild: async (query: BuildQuery): Promise<BuildQueryResponse> => {
+      const reply = await sendRequest("QUERY_BUILD", { query });
+      if (reply.kind !== "BUILD_QUERY_RESULT") {
+        throw makeError("INVALID_REPLY", "Worker did not return a Build query result.");
+      }
+      const result = reply.body.result;
+      const contextSource =
+        result.kind === "context" && result.status === "ready" ? result.context.source : null;
+      const sourceMatchesContext =
+        contextSource === null ||
+        (contextSource.mode === result.source.mode &&
+          contextSource.observedTick === result.source.observedTick &&
+          contextSource.liveLayoutRevision === result.source.liveLayoutRevision &&
+          contextSource.draftRevision === result.source.draftRevision &&
+          contextSource.generation === result.source.generation);
+      const sourceModeMatches =
+        result.source.mode === query.mode ||
+        (result.status === "rejected" &&
+          (result.reason === "INVALID_INPUT" || result.reason === "DRAFT_REQUIRED"));
+      if (
+        result.kind !== query.kind ||
+        result.clientIntentSequence !== query.clientIntentSequence ||
+        !sourceModeMatches ||
+        !sourceMatchesContext
+      ) {
+        const error = makeError(
+          "INVALID_REPLY",
+          "Worker Build result does not correspond to its submitted query.",
+        );
+        failClient(error);
+        throw error;
+      }
+      return reply.body;
+    },
+    async setPresentationContext(context): Promise<void> {
+      const reply = await sendRequest("SET_PRESENTATION_CONTEXT", context);
+      if (reply.kind !== "REQUEST_RESULT" || reply.body.result.kind !== "snapshot") {
+        throw makeError("INVALID_REPLY", "Worker did not confirm the presentation context.");
+      }
+    },
+    dispatchBuild: async (
+      command: SimCommand,
+      expectedGeneration: number,
+    ): Promise<BuildGuardedWriteOutcome> => {
+      const reply = await sendRequest("BUILD_COMMAND", { command, expectedGeneration });
+      if (reply.kind !== "BUILD_COMMAND_RESULT") {
+        throw makeError("INVALID_REPLY", "Worker did not return a guarded Build result.");
       }
       return reply.body.result;
     },

@@ -1,5 +1,13 @@
 # Faza 3: Build Workspace
 
+Status: contract adoptat; Task 22.1–22.4 și checkpointul CP22 sunt finalizate de commitul care
+conține această actualizare. Task 23 nu este început.
+
+Contractul normativ complet și prompturile executorului sunt în
+[`OVERCLOCK_Phase_3_Contract_and_Prompts.md`](./OVERCLOCK_Phase_3_Contract_and_Prompts.md).
+Acest document rămâne rezumatul de produs; contractul complet prevalează la detaliile de
+ownership, protocoale, verificare și limite.
+
 ## Obiectiv
 
 Transformă simulatorul într-un grid interactiv, fără a finaliza încă întreaga campanie.
@@ -35,5 +43,24 @@ Transformă simulatorul într-un grid interactiv, fără a finaliza încă într
 
 ## Livrabil
 
-Un Build Workspace complet, conectat la simulator.
+Un Build Workspace complet, conectat la simulator, după CP22–CP28. CP22 livrează numai limita
+owned read/guard/Worker/GameClient din Task 22; documentul nu afirmă că UI-ul, renderer-ul sau
+routing-ul Phase 3 sunt finalizate.
 
+## Decompoziție normativă
+
+Ordinea și limitele exacte sunt în contractul complet. Inventarul executabil este păstrat
+explicit aici pentru handoff și nu autorizează saltul peste checkpointuri:
+
+| Grup | Subtaskuri |
+|---|---|
+| Task 22 – Build boundary | 22.1 contract/read types; 22.2 context/generation; 22.3 pure previews; 22.4 Worker/GameClient integration |
+| Task 23 – Pixi foundation | 23.1 owned scene; 23.2 camera/hit testing; 23.3 selection/inspector |
+| Task 24 – Build interaction | 24.1 Inventory/Catalog; 24.2 placement/purchase; 24.3 move/rotate/remove; 24.4 Apply/Cancel |
+| Task 25 – Routing | 25.1 deterministic planner; 25.2 manual/automatic tools; 25.3 adjacent auto-connect |
+| Task 26 – Blueprints/diagnostics | 26.1 Blueprint UI; 26.2 heatmap; 26.3 Diagnostic Pulse |
+| Task 27 – shell quality | 27.1 responsive layout; 27.2 keyboard/accessibility/localization; 27.3 browser acceptance |
+| Task 28 – closure | 28.1 dense fixture budgets; 28.2 recovery/lifecycle durability; 28.3 complete verification |
+
+Independent Sol checkpoints: CP22 after Task 22, then CP23, CP24, CP25, CP26, CP27 and
+CP28 at the corresponding group boundaries. Următoarea limită permisă este Task 23.1.

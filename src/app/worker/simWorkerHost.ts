@@ -22,6 +22,7 @@ import type {
   UiSnapshot,
 } from "../../sim/selectors/presentationTypes.ts";
 import type { GameState } from "../../sim/core/types.ts";
+import type { BuildGuardedWriteOutcome } from "../../sim/build/contracts.ts";
 import type {
   WorkerSaveCapture,
   WorkerSaveMetadata,
@@ -46,6 +47,7 @@ import {
   workerRequestByteLength,
   workerRequestCategory,
   MAX_RESULT_QUEUE_ENTRIES,
+  WORKER_PROTOCOL_VERSION,
   type InboundSequenceGuard,
   type RequestLedger,
   type WorkerReply,
@@ -132,6 +134,24 @@ function isClockCommand(
 ): command is Extract<SimCommand, { kind: "SET_PAUSED" | "SET_SPEED" }> {
   return command.kind === "SET_PAUSED" || command.kind === "SET_SPEED";
 }
+
+const BUILD_COMMAND_KINDS = new Set<SimCommand["kind"]>([
+  "ENTER_DESIGN_MODE",
+  "BUY_MODULE",
+  "PLACE_MODULE",
+  "MOVE_MODULE",
+  "ROTATE_MODULE",
+  "REMOVE_MODULE",
+  "CONNECT_PORTS",
+  "DISCONNECT_ROUTE",
+  "UNDO_DESIGN",
+  "REDO_DESIGN",
+  "APPLY_DESIGN",
+  "CANCEL_DESIGN",
+  "SAVE_BLUEPRINT",
+  "RENAME_BLUEPRINT",
+  "INSTANTIATE_BLUEPRINT",
+]);
 
 function isWorkLifecycle(lifecycle: HostLifecycle): boolean {
   return lifecycle !== "FATAL" && lifecycle !== "STOPPED";
@@ -264,7 +284,7 @@ export function createSimWorkerHost(options: SimWorkerHostOptions): SimWorkerHos
     // GameClient validates every wire reply; parsing the same large publication
     // again here duplicated the Worker boundary cost on the hot tick path.
     const reply = {
-      protocolVersion: 1,
+      protocolVersion: WORKER_PROTOCOL_VERSION,
       epoch,
       outboundSequence: sequence,
       requestSequence,
@@ -286,6 +306,8 @@ export function createSimWorkerHost(options: SimWorkerHostOptions): SimWorkerHos
     return (
       kind === "READY" ||
       kind === "COMMAND_RESULT" ||
+      kind === "BUILD_QUERY_RESULT" ||
+      kind === "BUILD_COMMAND_RESULT" ||
       kind === "REQUEST_RESULT" ||
       kind === "REQUEST_ERROR" ||
       kind === "SAVE_COMMITTED" ||
@@ -1373,6 +1395,60 @@ export function createSimWorkerHost(options: SimWorkerHostOptions): SimWorkerHos
     }
   }
 
+  function executeBuildCommand(request: Extract<WorkerRequest, { kind: "BUILD_COMMAND" }>): void {
+    if (core === null || lifecycle === "FATAL" || lifecycle === "STOPPED") {
+      sendRequestError(request.requestSequence, "FATAL", request.kind);
+      return;
+    }
+    const command = request.body.command;
+    if (!BUILD_COMMAND_KINDS.has(command.kind)) {
+      const source = core.getBuildSource();
+      emit("BUILD_COMMAND_RESULT", request.requestSequence, {
+        commandId: command.commandId,
+        result: {
+          kind: "not-queued",
+          code: "INVALID_BUILD_COMMAND",
+          expectedGeneration: request.body.expectedGeneration,
+          observedGeneration: source.generation,
+          source,
+        } satisfies BuildGuardedWriteOutcome,
+      });
+      return;
+    }
+    try {
+      const sourceBefore = core.getBuildSource();
+      if (sourceBefore.generation !== request.body.expectedGeneration) {
+        emit("BUILD_COMMAND_RESULT", request.requestSequence, {
+          commandId: command.commandId,
+          result: {
+            kind: "not-queued",
+            code: "STALE_BUILD_VIEW",
+            expectedGeneration: request.body.expectedGeneration,
+            observedGeneration: sourceBefore.generation,
+            source: sourceBefore,
+          } satisfies BuildGuardedWriteOutcome,
+        });
+        return;
+      }
+      const receipt = core.enqueue(command);
+      emit("COMMAND_RECEIPT", request.requestSequence, { commandId: command.commandId, receipt });
+      const results = core.processPendingCommands();
+      const result = results.find((entry) => entry.commandId === command.commandId);
+      if (result === undefined) throw new Error("Processed Build command result is missing.");
+      markDirty();
+      const sourceAfter = core.getBuildSource();
+      emit("BUILD_COMMAND_RESULT", request.requestSequence, {
+        commandId: command.commandId,
+        result: { kind: "domain", result, source: sourceAfter } satisfies BuildGuardedWriteOutcome,
+      });
+      observeCommittedFacts(result, command);
+      publishCurrent(false);
+      flushPendingAutosaveTriggers();
+    } catch (error) {
+      fatal(error, request.requestSequence);
+    }
+  }
+
   async function execute(request: WorkerRequest): Promise<void> {
     if (request.epoch !== epoch) return;
     if (lifecycle === "FATAL" || lifecycle === "STOPPED") {
@@ -1405,6 +1481,22 @@ export function createSimWorkerHost(options: SimWorkerHostOptions): SimWorkerHos
     }
     if (request.kind === "COMMAND") {
       executeCommand(request);
+      return;
+    }
+    if (request.kind === "QUERY_BUILD") {
+      if (core === null) {
+        sendRequestError(request.requestSequence, "FATAL", request.kind);
+        return;
+      }
+      const result = core.queryBuild(request.body.query);
+      emit("BUILD_QUERY_RESULT", request.requestSequence, {
+        result,
+        settings: activeSettings === null ? null : structuredClone(activeSettings),
+      });
+      return;
+    }
+    if (request.kind === "BUILD_COMMAND") {
+      executeBuildCommand(request);
       return;
     }
     if (request.kind === "LOAD_SLOT" || request.kind === "RECOVER") {

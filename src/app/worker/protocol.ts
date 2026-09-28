@@ -7,8 +7,13 @@ import type { UiSnapshot } from "../../sim/selectors/presentationTypes.ts";
 import { localReportSchema, playerSettingsSchema, savePreviewSchema } from "../../save/schema.ts";
 import { PERSISTENCE_ERROR_CODES } from "../../save/persistenceErrors.ts";
 import { MAX_INPUT_FILE_BYTES } from "../../save/persistenceLimits.ts";
+import {
+  parseBuildQuery,
+  type BuildGuardedWriteOutcome,
+  type BuildQueryResult,
+} from "../../sim/build/contracts.ts";
 
-export const WORKER_PROTOCOL_VERSION = 1 as const;
+export const WORKER_PROTOCOL_VERSION = 2 as const;
 export const MAX_OUTSTANDING_REQUESTS = 256;
 export const MAX_AGGREGATE_REQUEST_BYTES = 2 * 1024 * 1024;
 export const MAX_ORDINARY_REQUEST_BYTES = 256 * 1024;
@@ -38,6 +43,7 @@ const gridPoint = z.strictObject({ x: z.number().int(), y: z.number().int() });
 // Reuse the Phase 1 exact parser. The input has already passed descriptor
 // admission and been detached, so this cannot invoke caller accessors.
 const commandSchema = z.unknown().transform((value) => parseSimCommand(value));
+const buildQuerySchema = z.unknown().transform((value) => parseBuildQuery(value));
 const slotId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/);
 
 const requestBodySchemas = {
@@ -48,6 +54,11 @@ const requestBodySchemas = {
   }),
   LOAD_SLOT: z.strictObject({ slotId }),
   COMMAND: z.strictObject({ command: commandSchema }),
+  QUERY_BUILD: z.strictObject({ query: buildQuerySchema }),
+  BUILD_COMMAND: z.strictObject({
+    command: commandSchema,
+    expectedGeneration: nonnegativeSafeInteger,
+  }),
   REQUEST_FULL_SNAPSHOT: emptyBody,
   ACK_PUBLICATION: z.strictObject({ publicationSequence: nonnegativeSafeInteger }),
   ACK_RESULT: z.strictObject({ outboundSequence: nonnegativeSafeInteger }),
@@ -178,6 +189,392 @@ const commandResultSchema = z.union([
   }),
 ]);
 
+const buildReadReasonSchema = z.enum([
+  "INVALID_INPUT",
+  "OUT_OF_BOUNDS",
+  "TILE_OCCUPIED",
+  "INSUFFICIENT_INVENTORY",
+  "INSUFFICIENT_CREDIT",
+  "RESEARCH_REQUIRED",
+  "DRAFT_REQUIRED",
+  "ACTIVE_BENCHMARK",
+  "INVALID_PORT",
+  "INCOMPATIBLE_PORTS",
+  "INVALID_ROUTE",
+  "NO_ROUTE_FOUND",
+  "BLUEPRINT_INVALID",
+  "FEATURE_LOCKED",
+  "INVALID_SYSTEM",
+  "NOT_AVAILABLE",
+]);
+const buildModeSchema = z.enum(["live", "draft"]);
+const buildSourceSchema = z.strictObject({
+  mode: buildModeSchema,
+  observedTick: nonnegativeSafeInteger,
+  liveLayoutRevision: nonnegativeSafeInteger,
+  draftRevision: nonnegativeSafeInteger.nullable(),
+  generation: nonnegativeSafeInteger,
+});
+const rotationSchema = z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]);
+const buildPurchaseSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("available") }),
+  z.strictObject({ kind: z.literal("purchase"), costUsd: finiteNumber }),
+  z.strictObject({ kind: z.literal("locked"), researchIds: z.array(safeIdentifier).max(512) }),
+  z.strictObject({
+    kind: z.literal("insufficient-credit"),
+    costUsd: finiteNumber,
+    creditLimitUsd: finiteNumber,
+  }),
+  z.strictObject({ kind: z.literal("invalid"), reason: z.literal("INVALID_SYSTEM") }),
+]);
+const buildCatalogEntrySchema = z.strictObject({
+  definitionId: safeIdentifier,
+  nameKey: nonemptyText,
+  descriptionKey: nonemptyText,
+  category: nonemptyText,
+  tags: z.array(nonemptyText).max(512),
+  footprint: z.strictObject({ width: positiveSafeInteger, height: positiveSafeInteger }),
+  priceUsd: finiteNumber,
+  unlockResearchIds: z.array(safeIdentifier).max(512),
+  inventoryQuantity: nonnegativeSafeInteger,
+  reservationRequirement: nonnegativeSafeInteger,
+  reusableInstalledQuantity: nonnegativeSafeInteger,
+  availableAdditionalPlacements: nonnegativeSafeInteger,
+  purchase: buildPurchaseSchema,
+});
+const buildContextSchema = z.strictObject({
+  mode: buildModeSchema,
+  dimensions: z.strictObject({ width: positiveSafeInteger, height: positiveSafeInteger }),
+  source: buildSourceSchema,
+  catalog: z.array(buildCatalogEntrySchema).max(512),
+  canUndo: z.boolean(),
+  canRedo: z.boolean(),
+  apply: z.strictObject({ eligible: z.boolean(), reason: buildReadReasonSchema.nullable() }),
+  activeBenchmarkLock: z.boolean(),
+  featureFlags: z.strictObject({
+    autoRoute: z.boolean(),
+    heatmap: z.boolean(),
+    subassemblyBlueprints: z.boolean(),
+    powerHeadroomInspector: z.boolean(),
+    stabilityInspector: z.boolean(),
+  }),
+});
+function validateBuildPreviewStatus(
+  preview: { status: "ready" | "rejected"; valid: boolean; reason: unknown },
+  context: z.RefinementCtx,
+): void {
+  if (
+    (preview.status === "ready" && (!preview.valid || preview.reason !== null)) ||
+    (preview.status === "rejected" && (preview.valid || preview.reason === null))
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "Build preview status, validity and reason are inconsistent.",
+    });
+  }
+}
+const buildPlacementPreviewSchema = z
+  .strictObject({
+    status: z.enum(["ready", "rejected"]),
+    valid: z.boolean(),
+    reason: buildReadReasonSchema.nullable(),
+    definitionId: safeIdentifier,
+    position: gridPoint,
+    rotation: rotationSchema,
+    occupiedTiles: z.array(gridPoint).max(4096),
+    attachedRouteIds: z.array(safeIdentifier).max(4096),
+    purchaseCostUsd: finiteNumber,
+    requiresPurchase: z.boolean(),
+  })
+  .superRefine(validateBuildPreviewStatus);
+const buildRemovalPreviewSchema = z
+  .strictObject({
+    status: z.enum(["ready", "rejected"]),
+    valid: z.boolean(),
+    reason: buildReadReasonSchema.nullable(),
+    moduleInstanceId: safeIdentifier,
+    attachedRouteIds: z.array(safeIdentifier).max(4096),
+  })
+  .superRefine(validateBuildPreviewStatus);
+const buildManualRoutePreviewSchema = z
+  .strictObject({
+    status: z.enum(["ready", "rejected"]),
+    valid: z.boolean(),
+    reason: buildReadReasonSchema.nullable(),
+    domainReason: z
+      .enum([
+        "ROUTE_NOT_FOUND",
+        "DUPLICATE_ENDPOINT_PAIR",
+        "PATH_TOO_SHORT",
+        "PATH_TOO_LONG",
+        "PATH_ENDPOINT_MISMATCH",
+        "NON_ORTHOGONAL_SEGMENT",
+        "REPEATED_PATH_TILE",
+        "MISSING_MODULE",
+        "MISSING_PORT",
+        "SAME_MODULE_ENDPOINT",
+        "AIRFLOW_PORT",
+        "INVALID_ENDPOINT_CAPACITY",
+        "ROUTE_RECORD_KEY_MISMATCH",
+        "NON_CANONICAL_ENDPOINT_DIRECTION",
+        "PATH_INTERIOR_TILE_OCCUPIED",
+        "INVALID_ROUTE_CAPACITY",
+        "INVALID_CONGESTION_RATIO",
+        "INVALID_ROUTE_SEQUENCE",
+        "REQUESTED_KIND_MISMATCH",
+      ])
+      .nullable(),
+    routeKind: z.enum(["power", "data"]).nullable(),
+    path: z.array(gridPoint).max(4096),
+  })
+  .superRefine(validateBuildPreviewStatus);
+const designApplyPreviewSchema = z.union([
+  z.strictObject({
+    status: z.literal("ready"),
+    draftRevision: nonnegativeSafeInteger,
+    hasLayoutChanges: z.boolean(),
+    addedModuleIds: z.array(safeIdentifier).max(4096),
+    removedModuleIds: z.array(safeIdentifier).max(4096),
+    movedModuleIds: z.array(safeIdentifier).max(4096),
+    rotatedModuleIds: z.array(safeIdentifier).max(4096),
+    changedModuleIds: z.array(safeIdentifier).max(4096),
+    inventoryConsumption: z.array(
+      z.strictObject({
+        definitionId: safeIdentifier,
+        quantity: positiveSafeInteger,
+        bookValueUsd: finiteNumber,
+      }),
+    ),
+    salvageCredits: z.array(
+      z.strictObject({
+        definitionId: safeIdentifier,
+        quantity: positiveSafeInteger,
+        unitCreditUsd: finiteNumber,
+        creditUsd: finiteNumber,
+      }),
+    ),
+    consumedInventoryBookValueUsd: finiteNumber,
+    salvageCreditUsd: finiteNumber,
+    laborCostUsd: finiteNumber,
+    netCostUsd: finiteNumber,
+    downtimeTicks: nonnegativeSafeInteger,
+  }),
+  z.strictObject({ status: z.literal("blocked"), code: z.literal("NOT_IN_DESIGN_MODE") }),
+  z.strictObject({
+    status: z.literal("blocked"),
+    code: z.literal("INSUFFICIENT_INVENTORY"),
+    shortfalls: z.array(
+      z.strictObject({
+        definitionId: safeIdentifier,
+        requiredQuantity: positiveSafeInteger,
+        availableQuantity: nonnegativeSafeInteger,
+      }),
+    ),
+  }),
+  z.strictObject({ status: z.literal("blocked"), code: z.literal("INVALID_SYSTEM") }),
+]);
+const blueprintModuleSchema = z.strictObject({
+  localId: safeIdentifier,
+  definitionId: safeIdentifier,
+  relativePosition: gridPoint,
+  rotation: rotationSchema,
+  defaultOverclock: z.strictObject({
+    profile: z.enum(["eco", "balanced", "boost", "manual"]),
+    frequencyRatio: finiteNumber,
+    voltageRatio: finiteNumber,
+  }),
+});
+const blueprintRouteSchema = z.strictObject({
+  localId: safeIdentifier,
+  kind: z.enum(["power", "data"]),
+  fromLocalModuleId: safeIdentifier,
+  fromPortId: safeIdentifier,
+  toLocalModuleId: safeIdentifier,
+  toPortId: safeIdentifier,
+  relativePath: z.array(gridPoint).max(4096),
+});
+const blueprintRecordSchema = z.strictObject({
+  id: safeIdentifier,
+  name: nonemptyText,
+  version: positiveSafeInteger,
+  kind: z.enum(["subassembly", "server", "rack", "facility-zone"]),
+  contentVersion: nonemptyText,
+  modules: z.array(blueprintModuleSchema).max(4096),
+  routes: z.array(blueprintRouteSchema).max(4096),
+  requiredResearchIds: z.array(safeIdentifier).max(512),
+  bounds: z.strictObject({ width: positiveSafeInteger, height: positiveSafeInteger }),
+  summary: z.strictObject({
+    theoreticalComputeFlops: finiteNumber,
+    peakPowerWatts: finiteNumber,
+    estimatedMaxTemperatureC: finiteNumber,
+    estimatedCostUsd: finiteNumber,
+  }),
+});
+const blueprintMaterializationPreviewSchema = z.union([
+  z.strictObject({
+    status: z.literal("ready"),
+    blueprintId: safeIdentifier,
+    blueprintVersion: positiveSafeInteger,
+    targetPosition: gridPoint,
+    globalRotation: rotationSchema,
+    modules: z.array(
+      z.strictObject({
+        localHandle: safeIdentifier,
+        definitionId: safeIdentifier,
+        position: gridPoint,
+        rotation: rotationSchema,
+      }),
+    ),
+    routes: z.array(
+      z.strictObject({
+        localHandle: safeIdentifier,
+        kind: z.enum(["power", "data"]),
+        fromModuleHandle: safeIdentifier,
+        toModuleHandle: safeIdentifier,
+        path: z.array(gridPoint).max(4096),
+      }),
+    ),
+    inventoryReservationDelta: z.array(
+      z.strictObject({ definitionId: safeIdentifier, quantity: positiveSafeInteger }),
+    ),
+  }),
+  z.strictObject({
+    status: z.literal("rejected"),
+    code: z.enum([
+      "BLUEPRINT_NOT_FOUND",
+      "NOT_IN_DESIGN_MODE",
+      "FEATURE_LOCKED",
+      "RESEARCH_INCOMPLETE",
+      "BLUEPRINT_INVALID",
+      "INVALID_ROTATION",
+      "INVALID_TARGET",
+      "OUT_OF_BOUNDS",
+      "TILE_OCCUPIED",
+      "INVALID_PORT",
+      "INCOMPATIBLE_PORTS",
+      "INVALID_ROUTE",
+      "INSUFFICIENT_INVENTORY",
+      "INVALID_SYSTEM",
+    ]),
+    reason: nonemptyText,
+  }),
+]);
+const buildRejectedResult = (kind: z.ZodLiteral<string>) =>
+  z.strictObject({
+    kind,
+    status: z.enum(["rejected", "unavailable"]),
+    clientIntentSequence: nonnegativeSafeInteger,
+    source: buildSourceSchema,
+    reason: buildReadReasonSchema,
+  });
+const buildReadyResult = (kind: z.ZodLiteral<string>, data: z.ZodType) =>
+  z.strictObject({
+    kind,
+    status: z.literal("ready"),
+    clientIntentSequence: nonnegativeSafeInteger,
+    source: buildSourceSchema,
+    data,
+  });
+const buildDataRejectedResult = (kind: z.ZodLiteral<string>, data: z.ZodType) =>
+  z.strictObject({
+    kind,
+    status: z.literal("rejected"),
+    clientIntentSequence: nonnegativeSafeInteger,
+    source: buildSourceSchema,
+    reason: buildReadReasonSchema,
+    data,
+  });
+const buildQueryResultSchema = z
+  .union([
+    z.strictObject({
+      kind: z.literal("context"),
+      status: z.literal("ready"),
+      clientIntentSequence: nonnegativeSafeInteger,
+      source: buildSourceSchema,
+      context: buildContextSchema,
+    }),
+    buildRejectedResult(z.literal("context")),
+    buildReadyResult(z.literal("placement"), buildPlacementPreviewSchema),
+    buildDataRejectedResult(z.literal("placement"), buildPlacementPreviewSchema),
+    buildRejectedResult(z.literal("placement")),
+    buildReadyResult(z.literal("move"), buildPlacementPreviewSchema),
+    buildDataRejectedResult(z.literal("move"), buildPlacementPreviewSchema),
+    buildRejectedResult(z.literal("move")),
+    buildReadyResult(z.literal("rotate"), buildPlacementPreviewSchema),
+    buildDataRejectedResult(z.literal("rotate"), buildPlacementPreviewSchema),
+    buildRejectedResult(z.literal("rotate")),
+    buildReadyResult(z.literal("removal"), buildRemovalPreviewSchema),
+    buildDataRejectedResult(z.literal("removal"), buildRemovalPreviewSchema),
+    buildRejectedResult(z.literal("removal")),
+    buildReadyResult(z.literal("apply"), designApplyPreviewSchema),
+    buildDataRejectedResult(z.literal("apply"), designApplyPreviewSchema),
+    buildRejectedResult(z.literal("apply")),
+    buildReadyResult(z.literal("manual-route"), buildManualRoutePreviewSchema),
+    buildDataRejectedResult(z.literal("manual-route"), buildManualRoutePreviewSchema),
+    buildRejectedResult(z.literal("manual-route")),
+    buildReadyResult(
+      z.literal("blueprint-list"),
+      z.strictObject({
+        records: z.array(blueprintRecordSchema).max(50),
+        nextAfterId: safeIdentifier.nullable(),
+      }),
+    ),
+    buildRejectedResult(z.literal("blueprint-list")),
+    buildReadyResult(z.literal("blueprint-detail"), blueprintRecordSchema.nullable()),
+    buildRejectedResult(z.literal("blueprint-detail")),
+    buildReadyResult(z.literal("blueprint-materialization"), blueprintMaterializationPreviewSchema),
+    buildDataRejectedResult(
+      z.literal("blueprint-materialization"),
+      blueprintMaterializationPreviewSchema,
+    ),
+    buildRejectedResult(z.literal("blueprint-materialization")),
+    buildRejectedResult(z.literal("automatic-route")),
+    buildRejectedResult(z.literal("adjacent-candidates")),
+    buildRejectedResult(z.literal("diagnostic-pulse")),
+  ])
+  .superRefine((result, context) => {
+    if (!("data" in result)) return;
+    const data = result.data as { readonly status?: "ready" | "rejected" | "blocked" };
+    if (
+      result.kind === "placement" ||
+      result.kind === "move" ||
+      result.kind === "rotate" ||
+      result.kind === "removal" ||
+      result.kind === "manual-route" ||
+      result.kind === "blueprint-materialization"
+    ) {
+      if (data.status !== result.status) {
+        context.addIssue({
+          code: "custom",
+          message: "Build result status does not match its typed data status.",
+        });
+      }
+    } else if (
+      result.kind === "apply" &&
+      data.status === "blocked" &&
+      result.status !== "rejected"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A blocked Build Apply preview must be rejected.",
+      });
+    }
+  });
+const buildGuardedWriteOutcomeSchema = z.union([
+  z.strictObject({
+    kind: z.literal("not-queued"),
+    code: z.enum(["STALE_BUILD_VIEW", "INVALID_BUILD_COMMAND"]),
+    expectedGeneration: nonnegativeSafeInteger,
+    observedGeneration: nonnegativeSafeInteger,
+    source: buildSourceSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("domain"),
+    result: commandResultSchema,
+    source: buildSourceSchema,
+  }),
+]);
+
 const nullableNonnegative = nonnegativeSafeInteger.nullable();
 const taskCardSchema = z.strictObject({
   taskInstanceId: safeIdentifier,
@@ -302,6 +699,23 @@ const moduleViewSchema = z.strictObject({
   spriteKey: nonemptyText,
   position: gridPoint,
   footprint: z.strictObject({ width: positiveSafeInteger, height: positiveSafeInteger }),
+  ports: z.array(
+    z.strictObject({
+      portId: safeIdentifier,
+      kind: z.enum([
+        "power-in",
+        "power-out",
+        "data-in",
+        "data-out",
+        "data-bidirectional",
+        "airflow",
+      ]),
+      facingSide: z.enum(["north", "east", "south", "west"]),
+      moduleTile: gridPoint,
+      adjacentTile: gridPoint,
+      capacityPerSecond: finiteNumber,
+    }),
+  ),
   rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
   operationalState: z.enum(["offline", "starting", "online", "brownout", "shutdown"]),
   selected: z.boolean(),
@@ -313,6 +727,8 @@ const routeViewSchema = z.strictObject({
   id: safeIdentifier,
   kind: z.enum(["power", "data"]),
   path: z.array(gridPoint),
+  from: z.strictObject({ moduleInstanceId: safeIdentifier, portId: safeIdentifier }),
+  to: z.strictObject({ moduleInstanceId: safeIdentifier, portId: safeIdentifier }),
   utilizationRatio: finiteNumber.nullable(),
   selected: z.boolean(),
 });
@@ -543,6 +959,14 @@ const replyBodySchemas = {
     }),
   }),
   COMMAND_RESULT: z.strictObject({ commandId: z.uuid(), result: commandResultSchema }),
+  BUILD_QUERY_RESULT: z.strictObject({
+    result: buildQueryResultSchema,
+    settings: playerSettingsSchema.nullable(),
+  }),
+  BUILD_COMMAND_RESULT: z.strictObject({
+    commandId: z.uuid(),
+    result: buildGuardedWriteOutcomeSchema,
+  }),
   SNAPSHOT_PUBLICATION: z.strictObject({
     snapshot: snapshotSchema,
     publication: gridPublicationSchema.nullable(),
@@ -644,9 +1068,16 @@ type ReplyBody<K extends ReplyKind> = K extends "READY"
     ? { readonly snapshot: UiSnapshot; readonly publication: GridPublication | null }
     : K extends "COMMAND_RESULT"
       ? { readonly commandId: string; readonly result: CommandResult }
-      : K extends "COMMAND_RECEIPT"
-        ? { readonly commandId: string; readonly receipt: CommandReceipt }
-        : z.infer<(typeof replyBodySchemas)[K]>;
+      : K extends "BUILD_QUERY_RESULT"
+        ? {
+            readonly result: BuildQueryResult;
+            readonly settings: z.infer<typeof playerSettingsSchema> | null;
+          }
+        : K extends "BUILD_COMMAND_RESULT"
+          ? { readonly commandId: string; readonly result: BuildGuardedWriteOutcome }
+          : K extends "COMMAND_RECEIPT"
+            ? { readonly commandId: string; readonly receipt: CommandReceipt }
+            : z.infer<(typeof replyBodySchemas)[K]>;
 export type WorkerReply = { [K in ReplyKind]: ReplyFor<K> }[ReplyKind];
 export type WorkerReplyKind = ReplyKind;
 
@@ -1029,12 +1460,19 @@ export function createRequestCorrelator(): RequestCorrelator {
       if (match === undefined) return { matched: false, reason: "unknown" };
       if (match.epoch !== reply.epoch || currentEpoch !== reply.epoch)
         return { matched: false, reason: "stale-epoch" };
-      if (reply.kind === "COMMAND_RESULT") {
+      if (reply.kind === "COMMAND_RESULT" || reply.kind === "BUILD_COMMAND_RESULT") {
         const body = reply.body as { commandId: string; result: CommandResult };
+        const nestedCommandId =
+          reply.kind === "COMMAND_RESULT"
+            ? body.result.commandId
+            : (body.result as unknown as { kind?: string; result?: CommandResult }).kind ===
+                "domain"
+              ? (body.result as unknown as { result: CommandResult }).result.commandId
+              : undefined;
         if (
           match.commandId === null ||
           body.commandId !== match.commandId ||
-          body.result.commandId !== match.commandId
+          (nestedCommandId !== undefined && nestedCommandId !== match.commandId)
         ) {
           throw new WireProtocolError(
             "COMMAND_RESULT commandId does not match its epoch/requestSequence correlation.",

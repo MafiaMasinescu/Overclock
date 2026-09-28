@@ -5,6 +5,7 @@ import type { GameState, ModuleInstanceState } from "../core/types.ts";
 import { assertValidInventoryEconomyState } from "../economy/inventoryEconomyState.ts";
 import {
   addMicrodollars,
+  evaluateCreditAffordability,
   microdollarsToUsd,
   multiplyMicrodollars,
   usdToMicrodollars,
@@ -60,6 +61,54 @@ export type DesignApplyPreviewBlocked =
   | { readonly status: "blocked"; readonly code: "INVALID_SYSTEM" };
 
 export type DesignApplyPreview = DesignApplyPreviewReady | DesignApplyPreviewBlocked;
+
+export type DesignApplySettlement =
+  | {
+      readonly status: "ready";
+      readonly nextCashUsd: number;
+      readonly nextTotalExpenseUsd: number;
+      readonly nextTotalIncomeUsd: number;
+    }
+  | { readonly status: "rejected"; readonly code: "INSUFFICIENT_CASH" | "INVALID_SYSTEM" };
+
+/** Exact, side-effect-free settlement guard shared with APPLY_DESIGN and Build reads. */
+export function calculateDesignApplySettlement(
+  state: Readonly<GameState>,
+  preview: DesignApplyPreviewReady,
+): DesignApplySettlement {
+  try {
+    const affordability = evaluateCreditAffordability(
+      state.economy.cashUsd,
+      state.economy.creditLimitUsd,
+      preview.netCostUsd,
+    );
+    if (affordability.status === "insufficient") {
+      return { status: "rejected", code: "INSUFFICIENT_CASH" };
+    }
+    if (affordability.status === "invalid") {
+      return { status: "rejected", code: "INVALID_SYSTEM" };
+    }
+    return {
+      status: "ready",
+      nextCashUsd: affordability.nextCashUsd,
+      nextTotalExpenseUsd: microdollarsToUsd(
+        addMicrodollars(
+          usdToMicrodollars(state.economy.totalExpenseUsd),
+          usdToMicrodollars(preview.laborCostUsd),
+        ),
+      ),
+      nextTotalIncomeUsd: microdollarsToUsd(
+        addMicrodollars(
+          usdToMicrodollars(state.economy.totalIncomeUsd),
+          usdToMicrodollars(preview.salvageCreditUsd),
+        ),
+      ),
+    };
+  } catch (error: unknown) {
+    if (error instanceof RangeError) return { status: "rejected", code: "INVALID_SYSTEM" };
+    throw error;
+  }
+}
 
 interface DefinitionQuantities {
   readonly definitionId: string;

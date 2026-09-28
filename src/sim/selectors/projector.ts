@@ -11,6 +11,7 @@
 import type { ContentBundle } from "../../content/schemas/contentSchemas.ts";
 import type { CommittedFactProjection } from "../events/contracts.ts";
 import { compareStableStrings } from "../../grid/domain/stableOrdering.ts";
+import { resolveModulePortGeometry } from "../../grid/domain/portGeometry.ts";
 import { resolveRotatedFootprintSize } from "../../grid/domain/footprintGeometry.ts";
 import { freezeOwned } from "./freezeOwned.ts";
 import { isRegisteredProjectedThermalTiles, registerProjectedGrid } from "./ownedPlainData.ts";
@@ -221,12 +222,21 @@ function projectGridModules(
     }
     const liveModule = liveFacility.modules[moduleId];
     const footprint = resolveRotatedFootprintSize(definition.footprint, module.rotation);
+    const ports = resolveModulePortGeometry(module, definition).ports.map((port) => ({
+      portId: port.portId,
+      kind: port.kind,
+      facingSide: port.facingSide,
+      moduleTile: { ...port.moduleTile },
+      adjacentTile: { ...port.adjacentTile },
+      capacityPerSecond: port.capacityPerSecond,
+    }));
     modules.push({
       id: module.id,
       definitionId: module.definitionId,
       spriteKey: `module-${definition.category}`,
       position: { x: module.position.x, y: module.position.y },
       footprint: { width: footprint.width, height: footprint.height },
+      ports,
       rotation: module.rotation,
       operationalState: module.operationalState,
       selected: selected.has(module.id),
@@ -263,6 +273,8 @@ function projectGridRoutes(
       id: route.id,
       kind: route.kind,
       path: route.path.map((point) => ({ x: point.x, y: point.y })),
+      from: { ...route.from },
+      to: { ...route.to },
       utilizationRatio:
         route.kind === "power" ? (layout.power.byRoute[route.id]?.utilizationRatio ?? null) : null,
       selected: selected.has(route.id),

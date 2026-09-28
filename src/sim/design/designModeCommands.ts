@@ -29,16 +29,12 @@ import {
 import { canonicalSerialize } from "../replay/canonicalState.ts";
 import {
   calculateDesignApplyPreviewForTransaction,
+  calculateDesignApplySettlement,
   isDesignApplyPreviewRejection,
 } from "./designApplyPreview.ts";
 import { createDirtyPowerState } from "../power/powerState.ts";
 import { createDirtyOverclockState } from "../overclock/overclockState.ts";
-import {
-  addMicrodollars,
-  isMicrodollarAlignedUsd,
-  microdollarsToUsd,
-  usdToMicrodollars,
-} from "../economy/money.ts";
+import { isMicrodollarAlignedUsd } from "../economy/money.ts";
 
 export type DesignModeCommandHandlers = Pick<
   CommandHandlerRegistry,
@@ -146,7 +142,7 @@ export function calculateDesignInventoryReservations(
   });
 }
 
-function calculatePlacementReservations(
+export function calculatePlacementReservations(
   facility: Pick<FacilityState, "modules">,
   draft: Pick<DesignDraftState, "modules">,
   inventory: Readonly<Record<string, { readonly quantity: number }>>,
@@ -178,11 +174,45 @@ function calculatePlacementReservations(
   );
 }
 
-function incrementRevision(draft: DesignDraftState): number | null {
+export function incrementDesignRevision(draft: Readonly<DesignDraftState>): number | null {
   if (draft.revision >= Number.MAX_SAFE_INTEGER) {
     return null;
   }
   return draft.revision + 1;
+}
+
+export function resolveNextModuleInstanceId(
+  facility: Pick<FacilityState, "modules" | "nextModuleInstanceSequence">,
+  draft: Pick<DesignDraftState, "modules">,
+): string | null {
+  const sequence = facility.nextModuleInstanceSequence;
+  if (sequence >= Number.MAX_SAFE_INTEGER) return null;
+  const id = `module-instance-${sequence.toString().padStart(8, "0")}`;
+  return Object.hasOwn(facility.modules, id) || Object.hasOwn(draft.modules, id) ? null : id;
+}
+
+export function resolveNextRouteId(
+  facility: Pick<FacilityState, "routes" | "nextRouteSequence">,
+  draft: Pick<DesignDraftState, "routes">,
+): string | null {
+  const sequence = facility.nextRouteSequence;
+  if (sequence >= Number.MAX_SAFE_INTEGER) return null;
+  const id = `route-${sequence.toString().padStart(8, "0")}`;
+  return Object.hasOwn(facility.routes, id) || Object.hasOwn(draft.routes, id) ? null : id;
+}
+
+export function listAttachedRouteIds(
+  routes: Readonly<Record<string, RouteState>>,
+  moduleInstanceId: string,
+): readonly string[] {
+  return Object.values(routes)
+    .filter(
+      (route) =>
+        route.from.moduleInstanceId === moduleInstanceId ||
+        route.to.moduleInstanceId === moduleInstanceId,
+    )
+    .map((route) => route.id)
+    .toSorted(compareStableStrings);
 }
 
 function operationId(revision: number, commandId: string): string {
@@ -937,16 +967,10 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
         return REJECTIONS.insufficientInventory;
       }
 
-      const revision = incrementRevision(draft);
+      const revision = incrementDesignRevision(draft);
       const sequence = state.facility.nextModuleInstanceSequence;
-      if (revision === null || sequence >= Number.MAX_SAFE_INTEGER) {
-        return REJECTIONS.invalidSystem;
-      }
-      const moduleInstanceId = `module-instance-${sequence.toString().padStart(8, "0")}`;
-      if (
-        Object.hasOwn(state.facility.modules, moduleInstanceId) ||
-        Object.hasOwn(draft.modules, moduleInstanceId)
-      ) {
+      const moduleInstanceId = resolveNextModuleInstanceId(state.facility, draft);
+      if (revision === null || moduleInstanceId === null) {
         return REJECTIONS.invalidSystem;
       }
 
@@ -1003,7 +1027,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
       if (!placement.valid) {
         return gridRejection(placement);
       }
-      const revision = incrementRevision(draft);
+      const revision = incrementDesignRevision(draft);
       if (revision === null) {
         return REJECTIONS.invalidSystem;
       }
@@ -1054,7 +1078,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
       if (!placement.valid) {
         return gridRejection(placement);
       }
-      const revision = incrementRevision(draft);
+      const revision = incrementDesignRevision(draft);
       if (revision === null) {
         return REJECTIONS.invalidSystem;
       }
@@ -1089,7 +1113,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
       if (module === undefined) {
         return REJECTIONS.invalidPayload;
       }
-      const revision = incrementRevision(draft);
+      const revision = incrementDesignRevision(draft);
       if (revision === null) {
         return REJECTIONS.invalidSystem;
       }
@@ -1126,16 +1150,13 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
       if ("code" in resolved) {
         return routeRejection(resolved);
       }
-      const revision = incrementRevision(draft);
+      const revision = incrementDesignRevision(draft);
       if (revision === null) {
         return REJECTIONS.invalidSystem;
       }
       const sequence = state.facility.nextRouteSequence;
-      if (sequence >= Number.MAX_SAFE_INTEGER) {
-        return REJECTIONS.invalidSystem;
-      }
-      const routeId = `route-${sequence.toString().padStart(8, "0")}`;
-      if (Object.hasOwn(state.facility.routes, routeId) || Object.hasOwn(draft.routes, routeId)) {
+      const routeId = resolveNextRouteId(state.facility, draft);
+      if (routeId === null) {
         return REJECTIONS.invalidSystem;
       }
       const path = (resolved.reverseSubmittedPath ? command.path.toReversed() : command.path).map(
@@ -1180,7 +1201,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
       if (route?.id !== command.routeId) {
         return REJECTIONS.invalidSystem;
       }
-      const revision = incrementRevision(draft);
+      const revision = incrementDesignRevision(draft);
       if (revision === null) {
         return REJECTIONS.invalidSystem;
       }
@@ -1208,7 +1229,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
       }
       const operation = parseDesignDraftOperation(stored);
       assertUndoPrecondition(state.facility, draft, operation, content, state.inventory.stacks);
-      const revision = incrementRevision(draft);
+      const revision = incrementDesignRevision(draft);
       if (revision === null) {
         return REJECTIONS.invalidSystem;
       }
@@ -1231,7 +1252,7 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
       }
       const operation = parseDesignDraftOperation(stored);
       assertRedoPrecondition(state.facility, draft, operation, content, state.inventory.stacks);
-      const revision = incrementRevision(draft);
+      const revision = incrementDesignRevision(draft);
       if (revision === null) {
         return REJECTIONS.invalidSystem;
       }
@@ -1290,35 +1311,11 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
         return REJECTIONS.invalidSystem;
       }
 
-      let nextCashUsd: number;
-      let nextTotalExpenseUsd: number;
-      let nextTotalIncomeUsd: number;
-      try {
-        const cashMicrodollars = usdToMicrodollars(state.economy.cashUsd);
-        const creditLimitMicrodollars = usdToMicrodollars(state.economy.creditLimitUsd);
-        const netCostMicrodollars = usdToMicrodollars(preview.netCostUsd);
-        const nextCashMicrodollars = addMicrodollars(cashMicrodollars, -netCostMicrodollars);
-        if (nextCashMicrodollars < -creditLimitMicrodollars) {
-          return REJECTIONS.insufficientCash;
-        }
-        nextCashUsd = microdollarsToUsd(nextCashMicrodollars);
-        nextTotalExpenseUsd = microdollarsToUsd(
-          addMicrodollars(
-            usdToMicrodollars(state.economy.totalExpenseUsd),
-            usdToMicrodollars(preview.laborCostUsd),
-          ),
-        );
-        nextTotalIncomeUsd = microdollarsToUsd(
-          addMicrodollars(
-            usdToMicrodollars(state.economy.totalIncomeUsd),
-            usdToMicrodollars(preview.salvageCreditUsd),
-          ),
-        );
-      } catch (error: unknown) {
-        if (error instanceof RangeError) {
-          return REJECTIONS.invalidSystem;
-        }
-        throw error;
+      const settlement = calculateDesignApplySettlement(state, preview);
+      if (settlement.status === "rejected") {
+        return settlement.code === "INSUFFICIENT_CASH"
+          ? REJECTIONS.insufficientCash
+          : REJECTIONS.invalidSystem;
       }
 
       if (preview.hasLayoutChanges) {
@@ -1361,9 +1358,9 @@ export function createDesignModeCommandHandlers(content: ContentBundle): DesignM
         state.facility.liveLayoutRevision += 1;
         state.facility.power = createDirtyPowerState(state.facility.contractedPowerWatts);
         state.facility.overclock = createDirtyOverclockState();
-        state.economy.cashUsd = nextCashUsd;
-        state.economy.totalExpenseUsd = nextTotalExpenseUsd;
-        state.economy.totalIncomeUsd = nextTotalIncomeUsd;
+        state.economy.cashUsd = settlement.nextCashUsd;
+        state.economy.totalExpenseUsd = settlement.nextTotalExpenseUsd;
+        state.economy.totalIncomeUsd = settlement.nextTotalIncomeUsd;
       }
       state.facility.designDraft = null;
     },

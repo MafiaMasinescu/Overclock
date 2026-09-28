@@ -110,7 +110,7 @@ let requestSequence = 0;
 
 async function request(kind: string, body: unknown): Promise<void> {
   await host.receive({
-    protocolVersion: 1,
+    protocolVersion: 2,
     epoch: EPOCH,
     requestSequence,
     kind,

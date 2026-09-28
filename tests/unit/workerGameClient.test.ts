@@ -97,6 +97,7 @@ class LoopbackWorker implements WorkerPort {
   private nextPublicationTransform: ((reply: WorkerReply) => WorkerReply) | null = null;
   private nextEventBatchTransform: ((reply: WorkerReply) => WorkerReply) | null = null;
   private nextCommandResultTransform: ((reply: WorkerReply) => WorkerReply) | null = null;
+  private nextBuildQueryResultTransform: ((reply: WorkerReply) => WorkerReply) | null = null;
   private fatalOnNextCommand = false;
   terminated = false;
   terminationCount = 0;
@@ -170,9 +171,13 @@ class LoopbackWorker implements WorkerPort {
     this.nextCommandResultTransform = transform;
   }
 
+  transformNextBuildQueryResult(transform: (reply: WorkerReply) => WorkerReply): void {
+    this.nextBuildQueryResultTransform = transform;
+  }
+
   injectLateForeignEpochReply(): void {
     const reply = parseWorkerReply({
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch: "old-client-epoch",
       outboundSequence: Number.MAX_SAFE_INTEGER,
       requestSequence: 3,
@@ -193,7 +198,7 @@ class LoopbackWorker implements WorkerPort {
 
   private injectFatal(): void {
     const reply = parseWorkerReply({
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch: EPOCH,
       outboundSequence: this.outboundSequence,
       requestSequence: null,
@@ -229,6 +234,10 @@ class LoopbackWorker implements WorkerPort {
     if (this.nextCommandResultTransform !== null && input.kind === "COMMAND_RESULT") {
       reply = this.nextCommandResultTransform(reply);
       this.nextCommandResultTransform = null;
+    }
+    if (this.nextBuildQueryResultTransform !== null && input.kind === "BUILD_QUERY_RESULT") {
+      reply = this.nextBuildQueryResultTransform(reply);
+      this.nextBuildQueryResultTransform = null;
     }
     this.deliverToListeners(reply);
   }
@@ -525,7 +534,7 @@ describe("real Worker GameClient transport adapter", () => {
     if (lastReply === undefined) throw new Error("Expected an initial Worker reply.");
     harness.worker.injectLateReply(
       parseWorkerReply({
-        protocolVersion: 1,
+        protocolVersion: 2,
         epoch: EPOCH,
         outboundSequence: lastReply.outboundSequence + 1,
         requestSequence: loadRequest.requestSequence,
@@ -568,6 +577,52 @@ describe("real Worker GameClient transport adapter", () => {
     expect(facts[0]).toMatchObject({ kind: "COMMAND_REJECTED", eventId: `${EPOCH}-event-0` });
     expect(worker.requests.filter((request) => request.kind === "COMMAND")).toHaveLength(1);
     client.destroy();
+  });
+
+  test("returns owned Build host metadata and acknowledges the query result", async () => {
+    const harness = await createHarness();
+    const response = (await harness.client.queryBuild({
+      kind: "context",
+      mode: "live",
+      clientIntentSequence: 4,
+    })) as unknown as { readonly result: { readonly status: string }; readonly settings: unknown };
+    await flushMicrotasks();
+    expect(response.result.status).toBe("ready");
+    expect(response.settings).toBeNull();
+    const queryReply = [...harness.worker.replies]
+      .reverse()
+      .find((reply) => reply.kind === "BUILD_QUERY_RESULT");
+    expect(queryReply?.kind).toBe("BUILD_QUERY_RESULT");
+    if (queryReply?.kind !== "BUILD_QUERY_RESULT") throw new Error("Build query reply missing.");
+    expect(
+      harness.worker.requests.some(
+        (request) =>
+          request.kind === "ACK_RESULT" &&
+          request.body.outboundSequence === queryReply.outboundSequence,
+      ),
+    ).toBe(true);
+    harness.client.destroy();
+  });
+
+  test("rejects a schema-valid Build result with the wrong intent correlation", async () => {
+    const harness = await createHarness();
+    harness.worker.transformNextBuildQueryResult((reply) => {
+      if (reply.kind !== "BUILD_QUERY_RESULT") return reply;
+      return parseWorkerReply({
+        ...reply,
+        body: {
+          ...reply.body,
+          result: { ...reply.body.result, clientIntentSequence: 99 },
+        },
+      });
+    });
+
+    await expect(
+      harness.client.queryBuild({ kind: "context", mode: "live", clientIntentSequence: 5 }),
+    ).rejects.toMatchObject({ code: "INVALID_REPLY" });
+    expect(harness.client.getConnectionStatus()).toBe("degraded");
+    expect(harness.worker.terminated).toBe(true);
+    harness.client.destroy();
   });
 
   test("discards a late foreign-epoch result before sequence correlation", async () => {

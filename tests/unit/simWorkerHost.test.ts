@@ -122,7 +122,7 @@ function createHarness(
   const sendAtEpoch = async (epoch: string, kind: string, body: unknown): Promise<void> => {
     const requestSequence = sequences.get(epoch) ?? 0;
     await host.receive({
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch,
       requestSequence,
       kind,
@@ -166,6 +166,101 @@ function latestSnapshotTick(replies: readonly WorkerReply[]): number | null {
 }
 
 describe("serial SimWorkerHost and fixed-step scheduling", () => {
+  test("retires and acknowledges Build query terminal results", async () => {
+    const harness = createHarness();
+    await initialize(harness);
+    const initialTerminalReplies = harness.replies.filter(
+      (reply) => reply.kind === "READY" || reply.kind === "REQUEST_RESULT",
+    );
+    for (const reply of initialTerminalReplies) {
+      await harness.send("ACK_RESULT", { outboundSequence: reply.outboundSequence });
+    }
+
+    await harness.send("QUERY_BUILD", {
+      query: { kind: "context", mode: "live", clientIntentSequence: 1 },
+    });
+    const queryReply = [...harness.replies]
+      .reverse()
+      .find((reply) => reply.kind === "BUILD_QUERY_RESULT");
+    expect(queryReply?.kind).toBe("BUILD_QUERY_RESULT");
+    if (queryReply?.kind !== "BUILD_QUERY_RESULT") throw new Error("Build query was not answered.");
+
+    await harness.send("ACK_RESULT", { outboundSequence: queryReply.outboundSequence });
+    expect(harness.host.getLifecycle()).toBe("READY_HELD");
+  });
+
+  test("retires and acknowledges guarded Build command terminal results", async () => {
+    const harness = createHarness();
+    await initialize(harness);
+    const initialTerminalReplies = harness.replies.filter(
+      (reply) => reply.kind === "READY" || reply.kind === "REQUEST_RESULT",
+    );
+    for (const reply of initialTerminalReplies) {
+      await harness.send("ACK_RESULT", { outboundSequence: reply.outboundSequence });
+    }
+
+    await harness.send("QUERY_BUILD", {
+      query: { kind: "context", mode: "live", clientIntentSequence: 1 },
+    });
+    const queryReply = [...harness.replies]
+      .reverse()
+      .find((reply) => reply.kind === "BUILD_QUERY_RESULT");
+    expect(queryReply?.kind).toBe("BUILD_QUERY_RESULT");
+    if (queryReply?.kind !== "BUILD_QUERY_RESULT") throw new Error("Build query was not answered.");
+
+    await harness.send("BUILD_COMMAND", {
+      expectedGeneration: queryReply.body.result.source.generation,
+      command: {
+        commandId: "78000000-0000-4000-8000-000000000002",
+        source: "player",
+        kind: "ENTER_DESIGN_MODE",
+      },
+    });
+    const commandReply = [...harness.replies]
+      .reverse()
+      .find((reply) => reply.kind === "BUILD_COMMAND_RESULT");
+    expect(commandReply?.kind).toBe("BUILD_COMMAND_RESULT");
+    if (commandReply?.kind !== "BUILD_COMMAND_RESULT") {
+      throw new Error("Build command was not answered.");
+    }
+    expect(commandReply.body.result).toMatchObject({ kind: "domain", result: { accepted: true } });
+    expect(commandReply.body.result).toMatchObject({ source: { mode: "draft" } });
+
+    await harness.send("ACK_RESULT", { outboundSequence: queryReply.outboundSequence });
+    await harness.send("ACK_RESULT", { outboundSequence: commandReply.outboundSequence });
+    expect(harness.host.getLifecycle()).toBe("READY_HELD");
+  });
+
+  test("serializes Build queries and rejects stale guarded writes before queue admission", async () => {
+    const harness = createHarness();
+    await initialize(harness);
+    await harness.send("QUERY_BUILD", {
+      query: { kind: "context", mode: "live", clientIntentSequence: 1 },
+    });
+    const queryReply = [...harness.replies]
+      .reverse()
+      .find((reply) => reply.kind === "BUILD_QUERY_RESULT");
+    expect(queryReply?.kind).toBe("BUILD_QUERY_RESULT");
+    if (queryReply?.kind !== "BUILD_QUERY_RESULT") throw new Error("Build query was not answered.");
+    expect(queryReply.body.result.status).toBe("ready");
+    const before = harness.host.getLifecycle();
+    await harness.send("BUILD_COMMAND", {
+      expectedGeneration: queryReply.body.result.source.generation + 1,
+      command: command("78000000-0000-4000-8000-000000000001", "BUY_MODULE", {
+        definitionId: "module-power-distribution",
+        quantity: 1,
+      }),
+    });
+    const staleReply = [...harness.replies]
+      .reverse()
+      .find((reply) => reply.kind === "BUILD_COMMAND_RESULT");
+    expect(staleReply?.kind).toBe("BUILD_COMMAND_RESULT");
+    if (staleReply?.kind !== "BUILD_COMMAND_RESULT")
+      throw new Error("Build command was not answered.");
+    expect(staleReply.body.result).toMatchObject({ kind: "not-queued", code: "STALE_BUILD_VIEW" });
+    expect(harness.host.getLifecycle()).toBe(before);
+  });
+
   test("requires every persistence adapter to erase pending import candidates", () => {
     expectTypeOf<WorkerSavePersistence["discardImport"]>().toEqualTypeOf<() => void>();
   });
@@ -783,7 +878,7 @@ describe("serial SimWorkerHost and fixed-step scheduling", () => {
     let sequence = 0;
     const send = async (kind: string, body: unknown): Promise<void> => {
       await host.receive({
-        protocolVersion: 1,
+        protocolVersion: 2,
         epoch: EPOCH,
         requestSequence: sequence,
         kind,
@@ -1349,7 +1444,7 @@ describe("serial SimWorkerHost and fixed-step scheduling", () => {
     await initialize(harness);
     const before = harness.replies.length;
     await harness.host.receive({
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch: "stale-epoch",
       requestSequence: 2,
       kind: "COMMAND",
@@ -1361,7 +1456,7 @@ describe("serial SimWorkerHost and fixed-step scheduling", () => {
     });
     expect(harness.replies).toHaveLength(before);
     await harness.host.receive({
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch: EPOCH,
       requestSequence: 2,
       kind: "STEP_DEBUG",

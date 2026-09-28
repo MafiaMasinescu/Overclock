@@ -19,7 +19,7 @@ const COMMAND_ID = "75000000-0000-4000-8000-000000000001";
 
 function initializeRequest(requestSequence = 0) {
   return {
-    protocolVersion: 1,
+    protocolVersion: 2,
     epoch,
     requestSequence,
     kind: "INITIALIZE_NEW",
@@ -36,6 +36,7 @@ describe("strict Worker wire protocol", () => {
     expect(WORKER_REQUEST_KINDS.toSorted()).toEqual([
       "ACK_PUBLICATION",
       "ACK_RESULT",
+      "BUILD_COMMAND",
       "COMMAND",
       "CONFIRM_IMPORT",
       "CONTINUE_HOST",
@@ -48,6 +49,7 @@ describe("strict Worker wire protocol", () => {
       "LIST_SLOTS",
       "LOAD_SLOT",
       "PREVIEW_IMPORT",
+      "QUERY_BUILD",
       "RECOVER",
       "REQUEST_FULL_SNAPSHOT",
       "REQUEST_REPORT",
@@ -58,6 +60,8 @@ describe("strict Worker wire protocol", () => {
       "UPDATE_SETTINGS",
     ]);
     expect(WORKER_REPLY_KINDS.toSorted()).toEqual([
+      "BUILD_COMMAND_RESULT",
+      "BUILD_QUERY_RESULT",
       "COMMAND_RECEIPT",
       "COMMAND_RESULT",
       "EVENTS_GAP",
@@ -88,7 +92,7 @@ describe("strict Worker wire protocol", () => {
   test("accepts result acknowledgements and the declared committed-save reply", () => {
     expect(
       parseWorkerRequest({
-        protocolVersion: 1,
+        protocolVersion: 2,
         epoch,
         requestSequence: 4,
         kind: "ACK_RESULT",
@@ -97,7 +101,7 @@ describe("strict Worker wire protocol", () => {
     ).toMatchObject({ kind: "ACK_RESULT", body: { outboundSequence: 3 } });
     expect(
       parseWorkerReply({
-        protocolVersion: 1,
+        protocolVersion: 2,
         epoch,
         outboundSequence: 5,
         requestSequence: 4,
@@ -116,7 +120,7 @@ describe("strict Worker wire protocol", () => {
 
   test.each([
     { ...initializeRequest(), future: true },
-    { ...initializeRequest(), protocolVersion: 2 },
+    { ...initializeRequest(), protocolVersion: 3 },
     { ...initializeRequest(), kind: "STEP_DEBUG" },
     {
       ...initializeRequest(),
@@ -142,7 +146,7 @@ describe("strict Worker wire protocol", () => {
   test("copies bounded import bytes and enforces the independent import-size exception", () => {
     const sourceBytes = Uint8Array.from([1, 2, 3]).buffer;
     const request = parseWorkerRequest({
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch,
       requestSequence: 0,
       kind: "PREVIEW_IMPORT",
@@ -155,7 +159,7 @@ describe("strict Worker wire protocol", () => {
     expect(() => parseWorkerRequest({ ...initializeRequest(-0), requestSequence: -0 })).toThrow();
     expect(() =>
       parseWorkerRequest({
-        protocolVersion: 1,
+        protocolVersion: 2,
         epoch,
         requestSequence: 0,
         kind: "PREVIEW_IMPORT",
@@ -167,7 +171,7 @@ describe("strict Worker wire protocol", () => {
   test("rejects malformed commands at transport admission", () => {
     expect(() =>
       parseWorkerRequest({
-        protocolVersion: 1,
+        protocolVersion: 2,
         epoch,
         requestSequence: 0,
         kind: "COMMAND",
@@ -196,7 +200,7 @@ describe("strict Worker wire protocol", () => {
   test("checks reply outbound sequence and epoch independently", () => {
     const guard = createReplySequenceGuard(epoch);
     const reply = {
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch,
       outboundSequence: 0,
       requestSequence: null,
@@ -251,7 +255,7 @@ describe("strict Worker wire protocol", () => {
     const correlator = createRequestCorrelator();
     correlator.add(epoch, 4, COMMAND_ID);
     const reply = {
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch,
       outboundSequence: 2,
       requestSequence: 4,
@@ -290,7 +294,7 @@ describe("strict Worker wire protocol", () => {
     expect(correlator.cancel(epoch, 7)).toBe(true);
     expect(correlator.size()).toBe(0);
     const lateReply = parseWorkerReply({
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch,
       outboundSequence: 8,
       requestSequence: 7,
@@ -305,7 +309,7 @@ describe("strict Worker wire protocol", () => {
 
   test("accepts exact typed replies and rejects unknown reply kinds and keys", () => {
     const reply = {
-      protocolVersion: 1,
+      protocolVersion: 2,
       epoch,
       outboundSequence: 0,
       requestSequence: null,
@@ -317,7 +321,7 @@ describe("strict Worker wire protocol", () => {
     expect(() => parseWorkerReply({ ...reply, extra: 1 })).toThrow();
     expect(
       parseWorkerReply({
-        protocolVersion: 1,
+        protocolVersion: 2,
         epoch,
         outboundSequence: 1,
         requestSequence: null,
@@ -327,7 +331,7 @@ describe("strict Worker wire protocol", () => {
     ).toBe("TRANSPORT_DEGRADED");
     expect(
       parseWorkerReply({
-        protocolVersion: 1,
+        protocolVersion: 2,
         epoch,
         outboundSequence: 2,
         requestSequence: null,
@@ -335,5 +339,64 @@ describe("strict Worker wire protocol", () => {
         body: { nextEventSequence: 5 },
       }),
     ).toMatchObject({ kind: "EVENTS_GAP", body: { nextEventSequence: 5 } });
+  });
+
+  test("rejects malformed Build query and guarded-command result payloads", () => {
+    const base = {
+      protocolVersion: 2,
+      epoch,
+      outboundSequence: 3,
+      requestSequence: 1,
+    } as const;
+    expect(() =>
+      parseWorkerReply({
+        ...base,
+        kind: "BUILD_QUERY_RESULT",
+        body: { result: { arbitrary: true }, settings: null },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseWorkerReply({
+        ...base,
+        kind: "BUILD_QUERY_RESULT",
+        body: {
+          settings: null,
+          result: {
+            kind: "placement",
+            status: "ready",
+            clientIntentSequence: 1,
+            source: {
+              mode: "draft",
+              observedTick: 0,
+              liveLayoutRevision: 0,
+              draftRevision: 0,
+              generation: 1,
+            },
+            data: {
+              status: "rejected",
+              valid: false,
+              reason: "OUT_OF_BOUNDS",
+              definitionId: "module-vacuum-tube-logic",
+              position: { x: -1, y: 0 },
+              rotation: 0,
+              occupiedTiles: [],
+              attachedRouteIds: [],
+              purchaseCostUsd: 0,
+              requiresPurchase: false,
+            },
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseWorkerReply({
+        ...base,
+        kind: "BUILD_COMMAND_RESULT",
+        body: {
+          commandId: COMMAND_ID,
+          result: { kind: "not-queued", code: "STALE_BUILD_VIEW", extra: true },
+        },
+      }),
+    ).toThrow();
   });
 });

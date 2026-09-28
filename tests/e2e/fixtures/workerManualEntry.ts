@@ -481,7 +481,7 @@ async function handleControl(control: TestControl): Promise<void> {
       if (activeEpoch === null)
         throw new Error("Cannot inject a fatal before Worker initialization.");
       await host.receive({
-        protocolVersion: 1,
+        protocolVersion: 2,
         epoch: activeEpoch,
         requestSequence: nextRequestSequence + 1,
         kind: "REQUEST_FULL_SNAPSHOT",
