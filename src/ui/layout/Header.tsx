@@ -1,18 +1,25 @@
-import type { ChangeEvent, ReactElement } from "react";
+import { useSyncExternalStore, type ChangeEvent, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { HeaderViewModel } from "../../app/game-client/snapshots.ts";
+import type { GameClient } from "../../app/game-client/contracts.ts";
 import type { SupportedLanguage } from "../../localization/i18n.ts";
 
 interface HeaderProps {
   header: HeaderViewModel;
+  client: GameClient;
 }
 
 function formatInteger(value: number, language: string): string {
   return new Intl.NumberFormat(language, { maximumFractionDigits: 0 }).format(value);
 }
 
-export function Header({ header }: HeaderProps): ReactElement {
+export function Header({ header, client }: HeaderProps): ReactElement {
+  const connection = useSyncExternalStore(
+    (listener) => client.subscribeConnection(listener),
+    () => client.getConnectionStatus(),
+  );
+  const live = connection === "live";
   const { i18n, t } = useTranslation();
   const language = (i18n.resolvedLanguage ?? "ro") as SupportedLanguage;
 
@@ -58,8 +65,40 @@ export function Header({ header }: HeaderProps): ReactElement {
         </div>
       </div>
       <div className="clock-block">
-        <span className="pause-indicator">{t("ui.paused")}</span>
-        <strong>{header.speed}×</strong>
+        <button
+          type="button"
+          className="pause-indicator"
+          aria-pressed={header.paused}
+          disabled={!live}
+          onClick={() => {
+            if (client.getConnectionStatus() !== "live") return;
+            void client.setPaused(!header.paused).catch(() => {
+              // The connection/recovery owner presents transport failure. Never
+              // optimistically change the clock or retry an unknown outcome.
+            });
+          }}
+        >
+          {header.paused ? t("ui.paused") : t("ui.running")}
+        </button>
+        <div className="speed-controls" role="group" aria-label={t("ui.speed")}>
+          {[1, 2, 4].map((speed) => (
+            <button
+              type="button"
+              key={speed}
+              className={header.speed === speed ? "speed-button is-active" : "speed-button"}
+              aria-pressed={header.speed === speed}
+              disabled={!live}
+              onClick={() => {
+                if (client.getConnectionStatus() !== "live") return;
+                void client.setSpeed(speed as 1 | 2 | 4).catch(() => {
+                  // Keep the last authoritative clock until publication/recovery.
+                });
+              }}
+            >
+              {speed}×
+            </button>
+          ))}
+        </div>
       </div>
       <label className="language-control">
         <span>{t("ui.language")}</span>

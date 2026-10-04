@@ -2,9 +2,13 @@
 
 Planning edition 1.0, 27 September 2026. Language of executable prompts: English.
 
-Status: adopted implementation contract; Task 22.1–22.4 and CP22 are complete in the commit
-containing this update. Task 23 is not started. This document records the contract, not a Phase 3
-closure or permission to skip later independent checkpoints.
+Status: adopted implementation contract; Task 22.1–22.4 and CP22 are complete (`eb4b2b3`).
+Task 23.1–23.3 rendering/selection foundations are implemented; CP23 review/evidence are in
+`../diagnostics/PHASE_3_TASK_23_CP23_REVIEW.md` and `../../TASK_23_VERIFICATION.md`.
+CP23 is completed by the commit containing this update, directly after CP22.
+Task 24 is not started. This document records the contract, not a Phase 3 closure or
+permission to skip later independent checkpoints. Owner-directed Task 23 presentation
+refinements are explicitly recorded in ADR-0030; other normative requirements are unchanged.
 
 Repository path: `docs/phases/OVERCLOCK_Phase_3_Contract_and_Prompts.md`.
 

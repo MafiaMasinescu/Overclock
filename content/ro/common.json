@@ -77,50 +77,62 @@
   "modules": {
     "module-power-distribution": {
       "name": "Panou de distribuție electrică",
+      "shortName": "Curent",
       "description": "Distribuie puterea contractată către module. Capacitatea traseelor și headroom-ul limitează sarcina sigură."
     },
     "module-vacuum-tube-logic": {
       "name": "Modul logic cu tuburi",
+      "shortName": "Tub",
       "description": "Execută operații de bază. Produce multă căldură și beneficiază direct de frecvență și cooling."
     },
     "module-arithmetic-unit": {
       "name": "Unitate aritmetică",
+      "shortName": "Calcul",
       "description": "Concentrează operațiile numerice. Oferă compute mare, dar cere power, control și rute rapide."
     },
     "module-control-unit": {
       "name": "Unitate de control",
+      "shortName": "Ctrl",
       "description": "Coordonează ordinea operațiilor și reduce penalizările task-urilor seriale și sensibile la latență."
     },
     "module-accumulator-register": {
       "name": "Registru acumulator",
+      "shortName": "Reg.",
       "description": "Păstrează rezultate intermediare aproape de compute. Oferă latență mică, dar capacitate redusă."
     },
     "module-delay-line-memory": {
       "name": "Memorie delay-line",
+      "shortName": "Delay",
       "description": "Oferă mai multă capacitate prin impulsuri recirculate. Crește posibilitățile de lucru, dar cere timing stabil."
     },
     "module-punch-card-reader": {
       "name": "Cititor de cartele perforate",
+      "shortName": "Cartele",
       "description": "Încarcă date prin cartele. Este robust, dar limitează task-urile cu cerere mare de bandwidth."
     },
     "module-paper-tape-reader": {
       "name": "Cititor de bandă perforată",
+      "shortName": "Bandă",
       "description": "Oferă input mai rapid și buffering simplu pentru fluxuri susținute."
     },
     "module-line-printer": {
       "name": "Imprimantă de linie",
+      "shortName": "Print",
       "description": "Livrează volume mari de rezultate. Consumă spațiu și power, dar reduce blocajele de output."
     },
     "module-data-relay": {
       "name": "Releu de date",
+      "shortName": "Releu",
       "description": "Extinde și organizează traseele. Reduce congestionarea și penalizarea conexiunilor lungi."
     },
     "module-air-mover": {
       "name": "Ventilator industrial",
+      "shortName": "Aer",
       "description": "Direcționează airflow-ul peste modulele apropiate și reduce hotspot-urile locale."
     },
     "module-room-cooling": {
       "name": "Unitate de răcire a camerei",
+      "shortName": "Răcire",
       "description": "Extrage căldură din facility. Consumă multă putere, dar susține sarcini lungi și overclock."
     }
   },
@@ -232,17 +244,57 @@
     "year": "An",
     "objective": "Pregătește sistemul cu tuburi electronice",
     "paused": "Pauză",
+    "running": "Rulează",
+    "speed": "Viteză",
+    "live": "Live",
+    "draft": "Draft",
     "workspace": "Spațiu de lucru central",
-    "workspace-empty": "Canvas-ul facilității așteaptă conectarea simulatorului",
-    "workspace-hint": "Renderer-ul din Faza 0 este montat și responsive. Plasarea pe grilă vine în Faza 3.",
+    "workspace-empty": "Canvas-ul facilității",
+    "workspace-hint": "Folosește instrumentele de selecție și pan pentru a inspecta layout-ul.",
+    "canvas-tools": "Instrumente canvas",
+    "select-tool": "Selectează",
+    "pan-tool": "Pan",
+    "zoom-in": "Mărește",
+    "zoom-out": "Micșorează",
+    "zoom-level": "Zoom",
+    "fit-camera": "Încadrează",
+    "retry-canvas": "Reîncearcă renderer-ul",
+    "canvas-initializing": "Se inițializează canvas-ul",
+    "canvas-ready": "Canvas activ",
+    "canvas-error": "Renderer indisponibil",
+    "canvas-context-lost": "Contextul grafic a fost pierdut",
+    "canvas-renderer-error": "Renderer-ul nu a putut fi inițializat.",
+    "canvas-instructions": "Click pentru un tile · drag pentru zonă · Escape anulează preview-ul · rotița pentru zoom",
     "build-tray": "Tavă de construcție",
     "inventory": "Inventar",
     "catalog": "Catalog",
     "active-task": "Task activ",
     "task-placeholder": "Verificarea tabelelor balistice",
-    "task-status": "Alocare placeholder",
+    "task-status": "Status task",
+    "no-active-task": "Niciun task activ",
+    "task-data-unavailable": "Datele task-ului nu sunt disponibile.",
+    "authoritative-readouts": "READOUT-URI AUTORITATIVE",
     "telemetry": "Telemetrie",
+    "memory": "Memorie",
+    "research-data": "Date cercetare",
+    "power-headroom": "Headroom power",
+    "retry-rate": "Rată retry",
+    "telemetry-chart-unavailable": "Seria temporală nu este disponibilă în contractul actual.",
     "inspector": "Inspector",
+    "entity-list": "Entități",
+    "no-entities": "Nicio entitate în layout",
+    "source-tick": "tick",
+    "route-from": "De la",
+    "route-to": "Către",
+    "capacity": "Capacitate",
+    "inspector-module": "Modul",
+    "inspector-route": "Rută",
+    "inspector-tile": "Tile",
+    "inspector-task": "Task",
+    "live-source": "Live",
+    "draft-source": "Draft",
+    "no-inspector-data": "Nu există date detaliate disponibile.",
+    "unavailable": "Indisponibil",
     "no-selection": "Nicio entitate selectată",
     "language": "Limbă",
     "romanian": "Română",

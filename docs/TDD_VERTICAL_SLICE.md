@@ -113,19 +113,19 @@ Implementăm cea mai simplă structură care susține vertical slice-ul și exte
 
 Faza 0 trebuie să fixeze versiuni exacte în lockfile.
 
-| Strat | Alegere |
-|---|---|
-| Limbaj | TypeScript cu `strict: true` |
-| Build | Vite |
-| UI | React |
-| Canvas | PixiJS 8 |
-| Grafice | uPlot |
-| Validare | Zod |
-| Localizare | i18next și react-i18next |
-| Teste | Vitest și Playwright |
-| Package manager | pnpm |
+| Strat               | Alegere                                 |
+| ------------------- | --------------------------------------- |
+| Limbaj              | TypeScript cu `strict: true`            |
+| Build               | Vite                                    |
+| UI                  | React                                   |
+| Canvas              | PixiJS 8                                |
+| Grafice             | uPlot                                   |
+| Validare            | Zod                                     |
+| Localizare          | i18next și react-i18next                |
+| Teste               | Vitest și Playwright                    |
+| Package manager     | pnpm                                    |
 | Persistență browser | IndexedDB printr-un adapter propriu mic |
-| Desktop ulterior | Tauri 2 |
+| Desktop ulterior    | Tauri 2                                 |
 
 Nu adăugăm o bibliotecă globală de state în Faza 0. `GameClientStore` folosește `useSyncExternalStore`. Putem evalua o bibliotecă numai dacă profiling-ul sau complexitatea reală justifică schimbarea.
 
@@ -273,9 +273,14 @@ commit containing that report.
 Phase 3 owns auto-connect/A* routing, renderer consumption of snapshots/patches, and heatmap UI.
 Task 22 currently owns only the neutral Build read/context/preview contracts, private read
 generation, strict Worker query/guard transport, and owned port/route presentation fields. These
-interfaces are completed and independently reviewed by CP22 in the commit containing this update;
-they do not imply visible Build controls, renderer completion, or routing search. Task 23 is not
-started.
+interfaces are completed and independently reviewed by CP22 (`eb4b2b3`); they do not imply
+visible construction tools or routing search. Task 23.1–23.3 implements the owned Pixi scene,
+camera/hit testing, unified selection/inspector and truthful summaries described in
+`docs/diagnostics/PHASE_3_RENDERING.md`. Its visual and verification evidence are retained in
+`docs/diagnostics/PHASE_3_VISUAL_REVIEW.md` and `TASK_23_VERIFICATION.md`. The owner's tile-area
+selection, one-based display coordinates and zoom percentage refinements are recorded in
+ADR-0030. Task 24 construction, later routing/Blueprint/heatmap controls and Task 28 target
+certification remain outside this completed foundation.
 Phase 4 owns gameplay alerts/event semantics and UI, achievements/tutorial behavior, and any future
 contracts for workload-dependent Power/Heat and automatic energy/economy settlement retained from
 the original design. Those simulation changes are roadmap commitments awaiting explicit gameplay
@@ -341,21 +346,21 @@ Fișierele din `contracts/src/` ale acestui pachet sunt contracte de pornire. Î
 
 ## 9. Unități și convenții
 
-| Concept | Reprezentare |
-|---|---|
-| Tick | integer, 100 ms de simulare |
-| Compute | FLOPS |
-| Work | număr de operații |
-| Power | watts |
-| Energy cost | USD per kWh în conținut |
-| Temperature | grade Celsius |
-| Memory capacity | bytes |
-| Bandwidth | bytes per second |
-| Latency | microseconds |
-| Cash | USD, `number` autoritativ cuantizat la 6 zecimale prin microdolari |
-| Grid position | coordonate integer `x`, `y` |
-| Rotation | 0, 90, 180 sau 270 |
-| Ratio/factor | număr finit, documentat și limitat |
+| Concept         | Reprezentare                                                       |
+| --------------- | ------------------------------------------------------------------ |
+| Tick            | integer, 100 ms de simulare                                        |
+| Compute         | FLOPS                                                              |
+| Work            | număr de operații                                                  |
+| Power           | watts                                                              |
+| Energy cost     | USD per kWh în conținut                                            |
+| Temperature     | grade Celsius                                                      |
+| Memory capacity | bytes                                                              |
+| Bandwidth       | bytes per second                                                   |
+| Latency         | microseconds                                                       |
+| Cash            | USD, `number` autoritativ cuantizat la 6 zecimale prin microdolari |
+| Grid position   | coordonate integer `x`, `y`                                        |
+| Rotation        | 0, 90, 180 sau 270                                                 |
+| Ratio/factor    | număr finit, documentat și limitat                                 |
 
 Simulatorul păstrează câmpurile monetare publice ca `number`, dar execută mutațiile monetare autoritative prin aritmetică internă în microdolari, unde 1 USD = 1.000.000 microdolari. La granițele monetare, valorile se cuantizează la 6 zecimale USD cu rotunjire la jumătate în sensul îndepărtării de zero (`round-half-away-from-zero`). UI-ul afișează de regulă Cash cu 2 zecimale, iar statisticile extinse pot expune valori sub-cent. Formatarea UI rămâne separată și nu reintră niciodată în simulator. Precizia autoritativă sub-cent este necesară pentru costurile deterministe de energie; de exemplu, 24.000 W timp de 0,1 secunde la 0,042 USD/kWh costă 0,000028 USD.
 
@@ -452,19 +457,19 @@ Comenzile intră în coadă și se aplică în ordine la începutul următorului
 
 ### 11.1 Lista vertical slice-ului
 
-| Domeniu | Comenzi |
-|---|---|
-| Clock | `SET_PAUSED`, `SET_SPEED` |
-| Build | `ENTER_DESIGN_MODE`, `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN` |
-| Inventory | `BUY_MODULE`, `SELL_INVENTORY_ITEM` |
-| Task | `ACCEPT_TASK`, `ALLOCATE_TASK`, `SET_TASK_HOLD`, `ABANDON_TASK` |
-| Overclock | `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK` |
-| Research | `START_RESEARCH`, `CANCEL_RESEARCH` |
-| Blueprint | `SAVE_BLUEPRINT`, `INSTANTIATE_BLUEPRINT`, `RENAME_BLUEPRINT` |
-| Benchmark | `START_BENCHMARK`, `CANCEL_BENCHMARK` |
-| Tutorial | `ACKNOWLEDGE_TUTORIAL_STEP`, `SET_GUIDANCE_MODE` |
-| Diagnostics | `TRIGGER_DIAGNOSTIC_PULSE` |
-| Debug | comenzi incluse doar în build-urile de dezvoltare |
+| Domeniu     | Comenzi                                                                                                                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clock       | `SET_PAUSED`, `SET_SPEED`                                                                                                                                                                |
+| Build       | `ENTER_DESIGN_MODE`, `PLACE_MODULE`, `MOVE_MODULE`, `ROTATE_MODULE`, `REMOVE_MODULE`, `CONNECT_PORTS`, `DISCONNECT_ROUTE`, `UNDO_DESIGN`, `REDO_DESIGN`, `APPLY_DESIGN`, `CANCEL_DESIGN` |
+| Inventory   | `BUY_MODULE`, `SELL_INVENTORY_ITEM`                                                                                                                                                      |
+| Task        | `ACCEPT_TASK`, `ALLOCATE_TASK`, `SET_TASK_HOLD`, `ABANDON_TASK`                                                                                                                          |
+| Overclock   | `SET_OVERCLOCK_PROFILE`, `SET_MANUAL_OVERCLOCK`                                                                                                                                          |
+| Research    | `START_RESEARCH`, `CANCEL_RESEARCH`                                                                                                                                                      |
+| Blueprint   | `SAVE_BLUEPRINT`, `INSTANTIATE_BLUEPRINT`, `RENAME_BLUEPRINT`                                                                                                                            |
+| Benchmark   | `START_BENCHMARK`, `CANCEL_BENCHMARK`                                                                                                                                                    |
+| Tutorial    | `ACKNOWLEDGE_TUTORIAL_STEP`, `SET_GUIDANCE_MODE`                                                                                                                                         |
+| Diagnostics | `TRIGGER_DIAGNOSTIC_PULSE`                                                                                                                                                               |
+| Debug       | comenzi incluse doar în build-urile de dezvoltare                                                                                                                                        |
 
 ### 11.2 Atomicitate
 
@@ -728,12 +733,12 @@ boost, not a bottleneck. Bottlenecks sort by descending loss with fixed factor o
 
 Preset-urile inițiale sunt data-driven:
 
-| Profil | Frequency ratio | Voltage ratio | Rol |
-|---|---:|---:|---|
-| Eco | 0.80 | 0.90 | eficiență și temperatură |
-| Balanced | 1.00 | 1.00 | operare nominală |
-| Boost | 1.25 | 1.10 | performanță temporară |
-| Manual | 0.65 până la 1.40 | 0.85 până la 1.20 | reglaj avansat |
+| Profil   |   Frequency ratio |     Voltage ratio | Rol                      |
+| -------- | ----------------: | ----------------: | ------------------------ |
+| Eco      |              0.80 |              0.90 | eficiență și temperatură |
+| Balanced |              1.00 |              1.00 | operare nominală         |
+| Boost    |              1.25 |              1.10 | performanță temporară    |
+| Manual   | 0.65 până la 1.40 | 0.85 până la 1.20 | reglaj avansat           |
 
 Puterea dinamică folosește:
 
@@ -1584,12 +1589,12 @@ Snapshot-ul este immutable la graniță. În development poate fi deep-frozen.
 React selectează date prin funcții mici:
 
 ```ts
-selectHeader(snapshot)
-selectActiveTasks(snapshot)
-selectTelemetry(snapshot, preset)
-selectInspector(snapshot, selectedEntityId)
-selectAvailableBuildItems(snapshot, filters)
-selectResearchTree(snapshot)
+selectHeader(snapshot);
+selectActiveTasks(snapshot);
+selectTelemetry(snapshot, preset);
+selectInspector(snapshot, selectedEntityId);
+selectAvailableBuildItems(snapshot, filters);
+selectResearchTree(snapshot);
 ```
 
 Componentele nu primesc `GameState`. Ele primesc view models dedicate.
@@ -1639,12 +1644,12 @@ Valorile sunt design tokens și pot fi ajustate în testarea vizuală. Nu se har
 
 ### 31.2 Breakpoints funcționale
 
-| Viewport | Comportament |
-|---|---|
-| 1920 × 1080 și mai mare | layout complet, Telemetry Standard sau Diagnostics |
-| 1600 × 900 | right panel redus, build tray mai compact |
-| 1366 × 768 | Left Rail icon-only, Telemetry Compact implicit, graphs în tab |
-| 1280 × 720 | minimum funcțional, un singur panou secundar extins, drawer pentru event log |
+| Viewport                | Comportament                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| 1920 × 1080 și mai mare | layout complet, Telemetry Standard sau Diagnostics                           |
+| 1600 × 900              | right panel redus, build tray mai compact                                    |
+| 1366 × 768              | Left Rail icon-only, Telemetry Compact implicit, graphs în tab               |
+| 1280 × 720              | minimum funcțional, un singur panou secundar extins, drawer pentru event log |
 
 La toate rezoluțiile, jucătorul trebuie să poată construi, selecta, vedea alertele și controla timpul. Nu ascundem Temperature, Power sau task-ul activ.
 
@@ -1658,21 +1663,21 @@ Input principal: mouse și tastatură.
 
 Shortcut-uri minime:
 
-| Acțiune | Shortcut |
-|---|---|
-| Build Mode | `B` |
-| Operations | `O` |
-| Research | `R` |
-| Info Lens | `I` |
-| Pause | `Space` |
-| Speed 1x/2x/4x | `1`, `2`, `3` |
-| Rotate | `Q` și `E` |
+| Acțiune                  | Shortcut                 |
+| ------------------------ | ------------------------ |
+| Build Mode               | `B`                      |
+| Operations               | `O`                      |
+| Research                 | `R`                      |
+| Info Lens                | `I`                      |
+| Pause                    | `Space`                  |
+| Speed 1x/2x/4x           | `1`, `2`, `3`            |
+| Rotate                   | `Q` și `E`               |
 | Undo/redo în Design Mode | `Ctrl+Z`, `Ctrl+Shift+Z` |
-| Copy/paste selection | `Ctrl+C`, `Ctrl+V` |
-| Delete selection | `Delete` |
-| Cancel tool/dialog | `Escape` |
-| Heatmap | `H` |
-| Diagnostic Pulse | `D` |
+| Copy/paste selection     | `Ctrl+C`, `Ctrl+V`       |
+| Delete selection         | `Delete`                 |
+| Cancel tool/dialog       | `Escape`                 |
+| Heatmap                  | `H`                      |
+| Diagnostic Pulse         | `D`                      |
 
 Shortcut-urile nu se execută când utilizatorul scrie într-un input. Toate acțiunile au alternativă vizibilă în UI.
 
@@ -1954,20 +1959,20 @@ Vertical slice-ul este singleplayer și local-first.
 
 Hardware țintă: Intel i7-2600, GTX 1050, 8 GB RAM, Windows 10, browser Chromium modern.
 
-| Metrică | Buget |
-|---|---:|
-| FPS la 1920 × 1080 | 60 normal, minimum stabil 45 în scene dense |
-| Reduced Effects | 30 sau 45 FPS blocat, fără pierdere de informație |
-| Tick simulator p95 | sub 4 ms |
-| Tick simulator max normal | sub 8 ms |
-| Render CPU p95 | sub 12 ms |
-| Snapshot UI | maximum 10 Hz |
-| Charts | 1 până la 2 Hz |
-| Startup până la meniu | sub 5 secunde pe hardware țintă |
-| Save normal | sub 250 ms |
-| Import vertical slice | sub 1 secundă |
-| Obiecte detaliate vizibile | maximum 2.000 înainte de agregare |
-| Memorie tab după 60 minute | țintă sub 500 MB |
+| Metrică                    |                                             Buget |
+| -------------------------- | ------------------------------------------------: |
+| FPS la 1920 × 1080         |       60 normal, minimum stabil 45 în scene dense |
+| Reduced Effects            | 30 sau 45 FPS blocat, fără pierdere de informație |
+| Tick simulator p95         |                                          sub 4 ms |
+| Tick simulator max normal  |                                          sub 8 ms |
+| Render CPU p95             |                                         sub 12 ms |
+| Snapshot UI                |                                     maximum 10 Hz |
+| Charts                     |                                    1 până la 2 Hz |
+| Startup până la meniu      |                   sub 5 secunde pe hardware țintă |
+| Save normal                |                                        sub 250 ms |
+| Import vertical slice      |                                     sub 1 secundă |
+| Obiecte detaliate vizibile |                 maximum 2.000 înainte de agregare |
+| Memorie tab după 60 minute |                                  țintă sub 500 MB |
 
 Performance fixtures trebuie să includă grila ocupată în proporție de 75%, heatmap activ, două task-uri, Boost și Telemetry Diagnostics.
 

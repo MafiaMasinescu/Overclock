@@ -112,6 +112,7 @@ export interface GameClient {
 
 export type GridInteractionMode =
   | { kind: "select" }
+  | { kind: "pan" }
   | { kind: "place"; definitionId: ModuleDefinitionId; rotation: Rotation }
   | { kind: "route"; routeKind: "power" | "data" }
   | { kind: "blueprint"; blueprintId: string; rotation: Rotation };
@@ -137,12 +138,45 @@ export type GridIntent =
     }
   | { kind: "CAMERA_CHANGED"; centerWorld: { x: number; y: number }; zoom: number };
 
+export type PixiGridAdapterStatus = "initializing" | "ready" | "error" | "context-lost";
+
+export interface PixiGridDiagnostics {
+  readonly frameCap: 30 | 45 | 60;
+  readonly initialized: boolean;
+  readonly liveCanvasCount: number;
+  readonly listenerCount: number;
+  readonly cachedTextureCount: number;
+  readonly moduleCreated: number;
+  readonly moduleUpdated: number;
+  readonly moduleRemoved: number;
+  readonly routeCreated: number;
+  readonly routeUpdated: number;
+  readonly routeRemoved: number;
+  readonly gridUpdated: number;
+  readonly portsUpdated: number;
+  readonly selectionUpdated: number;
+  readonly heatCellsUpdated: number;
+  readonly renderCount: number;
+}
+
 export interface PixiGridAdapter {
   mount(container: HTMLElement): void;
   update(viewModel: GridViewModel): void;
   setInteractionMode(mode: GridInteractionMode): void;
+  setInputEnabled(enabled: boolean): void;
+  setSelectedEntities(entityIds: readonly string[]): void;
+  setInspectedEntity(entityId: string | null): void;
   setReducedEffects(enabled: boolean): void;
+  setFrameCap(cap: 30 | 45 | 60): void;
+  setModuleLabels(labels: Readonly<Record<string, string>>): void;
   subscribeIntents(listener: (intent: GridIntent) => void): () => void;
+  subscribeStatus(listener: (status: PixiGridAdapterStatus) => void): () => void;
+  getStatus(): PixiGridAdapterStatus;
+  getDiagnostics(): PixiGridDiagnostics;
+  zoomIn(): void;
+  zoomOut(): void;
+  fit(): void;
+  retry(): void;
   resize(width: number, height: number, devicePixelRatio: number): void;
   destroy(): void;
 }
