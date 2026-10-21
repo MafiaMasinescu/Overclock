@@ -15,7 +15,59 @@ import type {
   BuildGuardedWriteOutcome,
   BuildQuery,
   BuildQueryResult,
+  BuildReadReason,
 } from "../../sim/build/contracts.ts";
+
+export type {
+  BuildCatalogEntry,
+  BuildContextRead,
+  BuildPositionInput,
+  BuildQuery,
+  BuildQueryResult,
+  BuildReadReason,
+  BuildSourceStamp,
+} from "../../sim/build/contracts.ts";
+
+export type { GridPoint, ModuleDefinitionId, Rotation } from "../../sim/core/types.ts";
+
+export interface BuildPlacementTool {
+  readonly definitionId: ModuleDefinitionId;
+  readonly source: "inventory" | "catalog";
+  readonly generation: number;
+  readonly rotation: Rotation;
+  readonly footprint: { readonly width: number; readonly height: number };
+}
+
+export interface BuildPlacementGhost {
+  readonly definitionId: ModuleDefinitionId;
+  readonly position: GridPoint;
+  readonly rotation: Rotation;
+  readonly footprint: { readonly width: number; readonly height: number };
+  readonly occupiedTiles: readonly GridPoint[];
+  readonly attachedRouteIds: readonly string[];
+  readonly valid: boolean | null;
+  readonly reason: BuildReadReason | null;
+  readonly pending: boolean;
+}
+
+export interface BuildMoveTarget {
+  readonly moduleInstanceId: ModuleInstanceId;
+  readonly definitionId: ModuleDefinitionId;
+  readonly position: GridPoint;
+  readonly footprint: { readonly width: number; readonly height: number };
+  readonly rotation: Rotation;
+}
+
+export type BuildPlacementStatus =
+  | "idle"
+  | "previewing"
+  | "ready"
+  | "invalid"
+  | "buying"
+  | "placing"
+  | "awaiting-publication"
+  | "rejected"
+  | "unknown";
 
 export type SaveReason = "manual" | "autosave" | "checkpoint" | "exit";
 
@@ -114,11 +166,15 @@ export type GridInteractionMode =
   | { kind: "select" }
   | { kind: "pan" }
   | { kind: "place"; definitionId: ModuleDefinitionId; rotation: Rotation }
+  | { kind: "move"; moduleInstanceId: ModuleInstanceId; rotation: Rotation }
   | { kind: "route"; routeKind: "power" | "data" }
   | { kind: "blueprint"; blueprintId: string; rotation: Rotation };
 
 export type GridIntent =
   | { kind: "HOVER_TILE"; position: GridPoint | null }
+  | { kind: "CANCEL_BUILD_PLACEMENT" }
+  | { kind: "HOVER_MOVE_MODULE"; moduleInstanceId: ModuleInstanceId; position: GridPoint }
+  | { kind: "CANCEL_BUILD_EDIT" }
   | { kind: "SELECT_ENTITY"; entityId: string | null; additive: boolean }
   | { kind: "SELECT_RECT"; from: GridPoint; to: GridPoint; additive: boolean }
   | {
@@ -126,9 +182,11 @@ export type GridIntent =
       definitionId: ModuleDefinitionId;
       position: GridPoint;
       rotation: Rotation;
+      retainTool: boolean;
     }
-  | { kind: "REQUEST_MOVE_MODULE"; moduleInstanceId: ModuleInstanceId; position: GridPoint }
+  | { kind: "ROTATE_PLACE_TOOL"; direction: "clockwise" | "counterclockwise" }
   | { kind: "REQUEST_ROTATE_MODULE"; moduleInstanceId: ModuleInstanceId; rotation: Rotation }
+  | { kind: "REQUEST_MOVE_MODULE"; moduleInstanceId: ModuleInstanceId; position: GridPoint }
   | { kind: "REQUEST_REMOVE_SELECTION" }
   | {
       kind: "REQUEST_CONNECT_PORTS";
@@ -163,6 +221,7 @@ export interface PixiGridAdapter {
   mount(container: HTMLElement): void;
   update(viewModel: GridViewModel): void;
   setInteractionMode(mode: GridInteractionMode): void;
+  setPlacementGhost(ghost: BuildPlacementGhost | null): void;
   setInputEnabled(enabled: boolean): void;
   setSelectedEntities(entityIds: readonly string[]): void;
   setInspectedEntity(entityId: string | null): void;

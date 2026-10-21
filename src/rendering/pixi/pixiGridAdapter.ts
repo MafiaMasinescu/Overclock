@@ -1,6 +1,7 @@
 import { Application, Container, Graphics } from "pixi.js";
 
 import type {
+  BuildPlacementGhost,
   GridIntent,
   GridInteractionMode,
   PixiGridAdapter,
@@ -44,6 +45,7 @@ interface PointerGesture {
   last: CameraPoint;
   dragged: boolean;
   pan: boolean;
+  moveOffset: CameraPoint;
 }
 
 interface PixiGridAdapterInternals {
@@ -120,7 +122,7 @@ function sceneFromGrid(grid: GridViewModel): KeyedScene {
 
 function localPointer(
   canvas: HTMLCanvasElement,
-  event: PointerEvent | WheelEvent,
+  event: PointerEvent | WheelEvent | DragEvent,
   viewport: CameraViewport,
 ): CameraPoint {
   const bounds = canvas.getBoundingClientRect();
@@ -176,6 +178,7 @@ export function createPixiGridAdapter(): PixiGridAdapter {
   let camera: CameraState = { centerWorld: { x: 384, y: 256 }, zoom: 1 };
   let reportedCamera: CameraState | null = null;
   let interactionMode: GridInteractionMode = { kind: "select" };
+  let placementGhost: BuildPlacementGhost | null = null;
   let reducedEffects = false;
   let inputEnabled = true;
   let pointerGesture: PointerGesture | null = null;
@@ -198,6 +201,7 @@ export function createPixiGridAdapter(): PixiGridAdapter {
   let gridSignature: string | null = null;
   let portSignature: string | null = null;
   let selectionSignature: string | null = null;
+  let placementGhostSignature: string | null = null;
   let cameraSignature: string | null = null;
   const heatCells = new Map<string, { graphic: Graphics; temperatureC: number }>();
   const diagnostics = {
@@ -285,6 +289,7 @@ export function createPixiGridAdapter(): PixiGridAdapter {
     gridSignature = null;
     portSignature = null;
     selectionSignature = null;
+    placementGhostSignature = null;
     cameraSignature = null;
     heatCells.clear();
   };
@@ -450,6 +455,68 @@ export function createPixiGridAdapter(): PixiGridAdapter {
     scheduleRender();
   };
 
+  const drawPlacementGhost = (): void => {
+    if (internals === null) return;
+    const layer = internals.layers.ghost;
+    const ghost = placementGhost;
+    const signature =
+      ghost === null
+        ? null
+        : JSON.stringify({
+            definitionId: ghost.definitionId,
+            position: ghost.position,
+            rotation: ghost.rotation,
+            footprint: ghost.footprint,
+            occupiedTiles: ghost.occupiedTiles,
+            valid: ghost.valid,
+            pending: ghost.pending,
+          });
+    if (placementGhostSignature === signature) return;
+    placementGhostSignature = signature;
+    destroyChildren(layer);
+    if (ghost === null) {
+      scheduleRender();
+      return;
+    }
+    const tiles =
+      ghost.occupiedTiles.length > 0
+        ? ghost.occupiedTiles
+        : Array.from(
+            {
+              length:
+                (ghost.rotation === 90 || ghost.rotation === 270
+                  ? ghost.footprint.height
+                  : ghost.footprint.width) *
+                (ghost.rotation === 90 || ghost.rotation === 270
+                  ? ghost.footprint.width
+                  : ghost.footprint.height),
+            },
+            (_, index) => {
+              const width =
+                ghost.rotation === 90 || ghost.rotation === 270
+                  ? ghost.footprint.height
+                  : ghost.footprint.width;
+              return {
+                x: ghost.position.x + (index % width),
+                y: ghost.position.y + Math.floor(index / width),
+              };
+            },
+          );
+    const color = ghost.pending ? 0x63cbd1 : ghost.valid ? 0x69d38a : 0xe2584d;
+    const alpha = ghost.pending ? 0.2 : ghost.valid ? 0.26 : 0.3;
+    const outlineAlpha = ghost.pending ? 0.8 : 0.95;
+    const graphics = new Graphics();
+    for (const tile of tiles) {
+      graphics
+        .rect(tile.x * 32 + 2, tile.y * 32 + 2, 28, 28)
+        .fill({ color, alpha })
+        .rect(tile.x * 32 + 2, tile.y * 32 + 2, 28, 28)
+        .stroke({ color, width: 2, alpha: outlineAlpha, pixelLine: true });
+    }
+    layer.addChild(graphics);
+    scheduleRender();
+  };
+
   const drawHeat = (): void => {
     if (internals === null || currentModel === null) return;
     const layer = internals.layers.heat;
@@ -541,10 +608,11 @@ export function createPixiGridAdapter(): PixiGridAdapter {
     drawPorts();
     drawSelection();
     drawHeat();
+    drawPlacementGhost();
     applyCamera();
   };
 
-  const pointerPosition = (event: PointerEvent | WheelEvent): CameraPoint => {
+  const pointerPosition = (event: PointerEvent | WheelEvent | DragEvent): CameraPoint => {
     if (internals === null) return { x: 0, y: 0 };
     return localPointer(internals.canvas, event, viewport);
   };
@@ -599,15 +667,27 @@ export function createPixiGridAdapter(): PixiGridAdapter {
       drawSelection();
       scheduleRender();
     }
+    const start = pointerPosition(event);
+    const startTile = screenToGrid(start, viewport, camera, currentModel.gridSize);
+    const moveMode = interactionMode.kind === "move" ? interactionMode : null;
+    const movingModule =
+      moveMode === null
+        ? undefined
+        : currentModel.modules.find((module) => module.id === moveMode.moduleInstanceId);
+    const moveOffset =
+      movingModule !== undefined && startTile !== null
+        ? { x: startTile.x - movingModule.position.x, y: startTile.y - movingModule.position.y }
+        : { x: 0, y: 0 };
     const pan = event.button === 1 || interactionMode.kind === "pan";
     pointerGesture = {
       pointerId: event.pointerId,
       button: event.button,
-      start: pointerPosition(event),
-      startTile: screenToGrid(pointerPosition(event), viewport, camera, currentModel.gridSize),
-      last: pointerPosition(event),
+      start,
+      startTile,
+      last: start,
       dragged: false,
       pan,
+      moveOffset,
     };
     internals?.canvas.setPointerCapture(event.pointerId);
   };
@@ -630,6 +710,22 @@ export function createPixiGridAdapter(): PixiGridAdapter {
       !pointerGesture.pan &&
       pointerGesture.button === 0 &&
       pointerGesture.dragged &&
+      interactionMode.kind === "move"
+    ) {
+      const endpoint = dragEndpoint(point);
+      emit({
+        kind: "HOVER_MOVE_MODULE",
+        moduleInstanceId: interactionMode.moduleInstanceId,
+        position: {
+          x: endpoint.x - pointerGesture.moveOffset.x,
+          y: endpoint.y - pointerGesture.moveOffset.y,
+        },
+      });
+    } else if (
+      !pointerGesture.pan &&
+      pointerGesture.button === 0 &&
+      pointerGesture.dragged &&
+      interactionMode.kind !== "place" &&
       pointerGesture.startTile !== null
     ) {
       internals?.rectanglePreview.update(
@@ -652,6 +748,27 @@ export function createPixiGridAdapter(): PixiGridAdapter {
       if (from !== null) {
         emit({ kind: "SELECT_RECT", from, to, additive: false });
       }
+    } else if (gesture.button === 0 && interactionMode.kind === "move" && gesture.dragged) {
+      const endpoint = dragEndpoint(point);
+      emit({
+        kind: "REQUEST_MOVE_MODULE",
+        moduleInstanceId: interactionMode.moduleInstanceId,
+        position: {
+          x: endpoint.x - gesture.moveOffset.x,
+          y: endpoint.y - gesture.moveOffset.y,
+        },
+      });
+    } else if (!gesture.dragged && gesture.button === 0 && interactionMode.kind === "place") {
+      const position = screenToGrid(point, viewport, camera, currentModel.gridSize);
+      if (position !== null) {
+        emit({
+          kind: "REQUEST_PLACE_MODULE",
+          definitionId: interactionMode.definitionId,
+          position,
+          rotation: interactionMode.rotation,
+          retainTool: event.shiftKey,
+        });
+      }
     } else if (!gesture.dragged && gesture.button === 0 && interactionMode.kind === "select") {
       const target = hitTestGrid(currentModel, point, viewport, camera);
       selectEntity(target, target !== null && target.kind !== "tile");
@@ -666,6 +783,26 @@ export function createPixiGridAdapter(): PixiGridAdapter {
     const point = pointerPosition(event);
     const factor = Math.exp(-event.deltaY * 0.0015);
     updateCamera(zoomAt(camera, point, factor, viewport, currentModel.gridSize));
+  };
+
+  const handleDragOver = (event: DragEvent): void => {
+    if (!inputEnabled || currentModel === null || interactionMode.kind !== "place") return;
+    event.preventDefault();
+    if (event.dataTransfer !== null) event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDrop = (event: DragEvent): void => {
+    if (!inputEnabled || currentModel === null || interactionMode.kind !== "place") return;
+    event.preventDefault();
+    const position = screenToGrid(pointerPosition(event), viewport, camera, currentModel.gridSize);
+    if (position === null) return;
+    emit({
+      kind: "REQUEST_PLACE_MODULE",
+      definitionId: interactionMode.definitionId,
+      position,
+      rotation: interactionMode.rotation,
+      retainTool: event.shiftKey,
+    });
   };
 
   const handleKeyDown = (event: KeyboardEvent): void => {
@@ -710,15 +847,57 @@ export function createPixiGridAdapter(): PixiGridAdapter {
         cancelGesture();
         return;
       }
-      emit({ kind: "SELECT_ENTITY", entityId: null, additive: false });
+      if (interactionMode.kind === "place") emit({ kind: "CANCEL_BUILD_PLACEMENT" });
+      else if (interactionMode.kind === "move") emit({ kind: "CANCEL_BUILD_EDIT" });
+      else emit({ kind: "SELECT_ENTITY", entityId: null, additive: false });
       return;
     }
     if (event.key === "Enter") {
       event.preventDefault();
+      if (interactionMode.kind === "place") {
+        emit({
+          kind: "REQUEST_PLACE_MODULE",
+          definitionId: interactionMode.definitionId,
+          position: { x: keyboardCursor.x, y: keyboardCursor.y },
+          rotation: interactionMode.rotation,
+          retainTool: event.shiftKey,
+        });
+      } else if (interactionMode.kind === "move") {
+        emit({
+          kind: "REQUEST_MOVE_MODULE",
+          moduleInstanceId: interactionMode.moduleInstanceId,
+          position: { x: keyboardCursor.x, y: keyboardCursor.y },
+        });
+      } else {
+        emit({
+          kind: "SELECT_ENTITY",
+          entityId: `tile:${keyboardCursor.x}:${keyboardCursor.y}`,
+          additive: false,
+        });
+      }
+      return;
+    }
+    if ((event.key === "r" || event.key === "R") && interactionMode.kind === "place") {
+      event.preventDefault();
       emit({
-        kind: "SELECT_ENTITY",
-        entityId: `tile:${keyboardCursor.x}:${keyboardCursor.y}`,
-        additive: false,
+        kind: "ROTATE_PLACE_TOOL",
+        direction: event.shiftKey ? "counterclockwise" : "clockwise",
+      });
+      return;
+    }
+    if (
+      (event.key === "q" || event.key === "Q" || event.key === "e" || event.key === "E") &&
+      interactionMode.kind === "move"
+    ) {
+      event.preventDefault();
+      const values: readonly (0 | 90 | 180 | 270)[] = [0, 90, 180, 270];
+      const current = values.indexOf(interactionMode.rotation);
+      const direction = event.key === "q" || event.key === "Q" ? -1 : 1;
+      const rotation = values[(current + direction + values.length) % values.length] ?? 0;
+      emit({
+        kind: "REQUEST_ROTATE_MODULE",
+        moduleInstanceId: interactionMode.moduleInstanceId,
+        rotation,
       });
       return;
     }
@@ -737,7 +916,15 @@ export function createPixiGridAdapter(): PixiGridAdapter {
         y: Math.min(currentModel.gridSize.height - 1, Math.max(0, keyboardCursor.y + delta.y)),
       };
       hoveredTile = keyboardCursor;
-      emit({ kind: "HOVER_TILE", position: keyboardCursor });
+      if (interactionMode.kind === "move") {
+        emit({
+          kind: "HOVER_MOVE_MODULE",
+          moduleInstanceId: interactionMode.moduleInstanceId,
+          position: keyboardCursor,
+        });
+      } else {
+        emit({ kind: "HOVER_TILE", position: keyboardCursor });
+      }
       drawSelection();
       scheduleRender();
     }
@@ -761,6 +948,8 @@ export function createPixiGridAdapter(): PixiGridAdapter {
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerup", handlePointerUp);
     canvas.addEventListener("pointercancel", cancelGesture);
+    canvas.addEventListener("dragover", handleDragOver);
+    canvas.addEventListener("drop", handleDrop);
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     canvas.addEventListener("keydown", handleKeyDown);
     canvas.addEventListener("webglcontextlost", handleContextLost);
@@ -776,6 +965,8 @@ export function createPixiGridAdapter(): PixiGridAdapter {
     canvas.removeEventListener("pointermove", handlePointerMove);
     canvas.removeEventListener("pointerup", handlePointerUp);
     canvas.removeEventListener("pointercancel", cancelGesture);
+    canvas.removeEventListener("dragover", handleDragOver);
+    canvas.removeEventListener("drop", handleDrop);
     canvas.removeEventListener("wheel", handleWheel);
     canvas.removeEventListener("keydown", handleKeyDown);
     canvas.removeEventListener("webglcontextlost", handleContextLost);
@@ -842,6 +1033,7 @@ export function createPixiGridAdapter(): PixiGridAdapter {
       if (currentModel !== null) {
         drawGrid();
         reconcile();
+        drawPlacementGhost();
       }
       scheduleRender();
     } catch {
@@ -898,6 +1090,25 @@ export function createPixiGridAdapter(): PixiGridAdapter {
     setInteractionMode(mode) {
       cancelGesture();
       interactionMode = mode;
+      if (mode.kind === "move" && currentModel !== null) {
+        const module = currentModel.modules.find((item) => item.id === mode.moduleInstanceId);
+        if (module !== undefined) {
+          keyboardCursor = { ...module.position };
+          keyboardCursorVisible = true;
+          drawSelection();
+          emit({
+            kind: "HOVER_MOVE_MODULE",
+            moduleInstanceId: mode.moduleInstanceId,
+            position: { ...module.position },
+          });
+        }
+      } else if (mode.kind === "place" && currentModel !== null) {
+        emit({ kind: "HOVER_TILE", position: { ...keyboardCursor } });
+      }
+    },
+    setPlacementGhost(ghost) {
+      placementGhost = ghost;
+      drawPlacementGhost();
     },
     setInputEnabled(enabled) {
       if (inputEnabled === enabled) return;
@@ -959,7 +1170,7 @@ export function createPixiGridAdapter(): PixiGridAdapter {
       return {
         initialized: internals !== null,
         liveCanvasCount: internals === null ? 0 : 1,
-        listenerCount: internals === null ? 0 : 11,
+        listenerCount: internals === null ? 0 : 13,
         cachedTextureCount: 0,
         frameCap,
         ...diagnostics,
@@ -1022,6 +1233,7 @@ export function createPixiGridAdapter(): PixiGridAdapter {
       if (container !== null) container.replaceChildren();
       container = null;
       currentModel = null;
+      placementGhost = null;
       selectedEntityIds = [];
       inspectedEntityId = null;
       keyboardCursorVisible = false;

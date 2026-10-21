@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  BuildMoveTarget,
+  BuildPlacementGhost,
+  BuildPlacementStatus,
+  BuildPlacementTool,
   GameClient,
+  GridPoint,
   GridIntent,
   PixiGridAdapter,
   PixiGridAdapterStatus,
@@ -20,6 +25,18 @@ interface CenterWorkspaceProps {
   inspectedEntityId: string | null;
   settingsImportRevision: number;
   interactive: boolean;
+  placementTool: BuildPlacementTool | null;
+  placementGhost: BuildPlacementGhost | null;
+  buildStatus: BuildPlacementStatus;
+  moveTarget: BuildMoveTarget | null;
+  onBuildHover: (position: GridPoint | null) => void;
+  onBuildConfirm: (position: GridPoint, retainTool: boolean) => void;
+  onBuildCancel: () => void;
+  onRotateBuildTool: (direction: "clockwise" | "counterclockwise") => void;
+  onMoveHover: (moduleInstanceId: string, position: GridPoint) => void;
+  onMoveConfirm: (moduleInstanceId: string, position: GridPoint) => void;
+  onRotateModule: (moduleInstanceId: string, rotation: BuildMoveTarget["rotation"]) => void;
+  onEditCancel: () => void;
 }
 
 function statusLabel(status: PixiGridAdapterStatus): string {
@@ -34,6 +51,18 @@ export function CenterWorkspace({
   inspectedEntityId,
   settingsImportRevision,
   interactive,
+  placementTool,
+  placementGhost,
+  buildStatus,
+  moveTarget,
+  onBuildHover,
+  onBuildConfirm,
+  onBuildCancel,
+  onRotateBuildTool,
+  onMoveHover,
+  onMoveConfirm,
+  onRotateModule,
+  onEditCancel,
 }: CenterWorkspaceProps): ReactElement {
   const { t } = useTranslation();
   const adapterRef = useRef<PixiGridAdapter | null>(null);
@@ -58,6 +87,22 @@ export function CenterWorkspace({
         selectionController.selectEntity(intent.entityId, intent.additive);
       } else if (intent.kind === "SELECT_RECT") {
         selectionController.selectRectangle(intent.from, intent.to, intent.additive);
+      } else if (intent.kind === "HOVER_TILE") {
+        onBuildHover(intent.position);
+      } else if (intent.kind === "REQUEST_PLACE_MODULE") {
+        onBuildConfirm(intent.position, intent.retainTool);
+      } else if (intent.kind === "ROTATE_PLACE_TOOL") {
+        onRotateBuildTool(intent.direction);
+      } else if (intent.kind === "CANCEL_BUILD_PLACEMENT") {
+        onBuildCancel();
+      } else if (intent.kind === "HOVER_MOVE_MODULE") {
+        onMoveHover(intent.moduleInstanceId, intent.position);
+      } else if (intent.kind === "REQUEST_MOVE_MODULE") {
+        onMoveConfirm(intent.moduleInstanceId, intent.position);
+      } else if (intent.kind === "REQUEST_ROTATE_MODULE") {
+        onRotateModule(intent.moduleInstanceId, intent.rotation);
+      } else if (intent.kind === "CANCEL_BUILD_EDIT") {
+        onEditCancel();
       }
     });
 
@@ -77,11 +122,40 @@ export function CenterWorkspace({
       adapter.destroy();
       adapterRef.current = null;
     };
-  }, [client, selectionController]);
+  }, [
+    client,
+    onBuildCancel,
+    onBuildConfirm,
+    onBuildHover,
+    onEditCancel,
+    onMoveConfirm,
+    onMoveHover,
+    onRotateModule,
+    onRotateBuildTool,
+    selectionController,
+  ]);
 
   useEffect(() => {
-    adapterRef.current?.setInteractionMode({ kind: interactionMode });
-  }, [client, selectionController, interactionMode]);
+    adapterRef.current?.setInteractionMode(
+      placementTool !== null
+        ? {
+            kind: "place",
+            definitionId: placementTool.definitionId,
+            rotation: placementTool.rotation,
+          }
+        : moveTarget !== null
+          ? {
+              kind: "move",
+              moduleInstanceId: moveTarget.moduleInstanceId,
+              rotation: moveTarget.rotation,
+            }
+          : { kind: interactionMode },
+    );
+  }, [client, interactionMode, moveTarget, placementTool, selectionController]);
+
+  useEffect(() => {
+    adapterRef.current?.setPlacementGhost(placementGhost);
+  }, [placementGhost]);
 
   useEffect(() => {
     latestGrid.current = grid;
@@ -138,6 +212,7 @@ export function CenterWorkspace({
           className={interactionMode === "select" ? "toolbar-button is-active" : "toolbar-button"}
           aria-pressed={interactionMode === "select"}
           onClick={() => {
+            onBuildCancel();
             setInteractionMode("select");
           }}
         >
@@ -148,6 +223,7 @@ export function CenterWorkspace({
           className={interactionMode === "pan" ? "toolbar-button is-active" : "toolbar-button"}
           aria-pressed={interactionMode === "pan"}
           onClick={() => {
+            onBuildCancel();
             setInteractionMode("pan");
           }}
         >
@@ -172,6 +248,9 @@ export function CenterWorkspace({
         </button>
         <output className="canvas-zoom" aria-label={t("ui.zoom-level")}>
           {Math.round(zoom * 100)}%
+        </output>
+        <output data-testid="build-placement-status" className="canvas-zoom">
+          {buildStatus}
         </output>
         {(status === "error" || status === "context-lost") && (
           <button

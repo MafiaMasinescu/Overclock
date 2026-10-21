@@ -1,11 +1,17 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { GameClient } from "../../app/game-client/contracts.ts";
+import type {
+  BuildMoveTarget,
+  BuildPlacementTool,
+  GameClient,
+} from "../../app/game-client/contracts.ts";
 import type { GridViewModel, UiSnapshot } from "../../app/game-client/snapshots.ts";
 import { createSelectionController } from "../workspaces/selectionController.ts";
 import { CenterWorkspace } from "../workspaces/CenterWorkspace.tsx";
+import { useBuildPlacementController } from "../workspaces/useBuildPlacementController.ts";
+import { useBuildEditController } from "../workspaces/useBuildEditController.ts";
 import { BuildTray } from "./BuildTray.tsx";
 import { Header } from "./Header.tsx";
 import { LeftRail } from "./LeftRail.tsx";
@@ -75,6 +81,26 @@ export function AppShell({ client, onNewRun, onRecover }: AppShellProps): ReactE
     () => client.getConnectionStatus(),
     () => client.getConnectionStatus(),
   );
+  const placement = useBuildPlacementController(client, connectionStatus === "live");
+  const edit = useBuildEditController(client, connectionStatus === "live");
+  const setPlacementTool = placement.setTool;
+  const cancelPlacement = placement.cancel;
+  const cancelEdit = edit.cancel;
+  const setMoveTarget = edit.setMoveTarget;
+  const onPlacementTool = useCallback(
+    (tool: BuildPlacementTool | null) => {
+      cancelEdit();
+      setPlacementTool(tool);
+    },
+    [cancelEdit, setPlacementTool],
+  );
+  const onMoveModule = useCallback(
+    (target: BuildMoveTarget) => {
+      cancelPlacement();
+      setMoveTarget(target);
+    },
+    [cancelPlacement, setMoveTarget],
+  );
   const { i18n, t } = useTranslation();
   const [settingsImportRevision, setSettingsImportRevision] = useState(0);
 
@@ -94,6 +120,16 @@ export function AppShell({ client, onNewRun, onRecover }: AppShellProps): ReactE
       </div>
     );
   }
+
+  const buildRefreshKey = [
+    grid.mode,
+    grid.layoutRevision,
+    snapshot.build.designMode,
+    snapshot.build.draftRevision,
+    snapshot.build.inventoryUnitCount,
+    snapshot.header.cashUsd,
+    snapshot.research.completedNodeIds.join(","),
+  ].join("|");
 
   return (
     <div className="app-shell">
@@ -116,14 +152,37 @@ export function AppShell({ client, onNewRun, onRecover }: AppShellProps): ReactE
         inspectedEntityId={snapshot.inspector.selectedEntityId}
         settingsImportRevision={settingsImportRevision}
         interactive={connectionStatus === "live"}
+        placementTool={placement.tool}
+        placementGhost={placement.ghost ?? edit.ghost}
+        buildStatus={placement.tool === null ? edit.status : placement.status}
+        moveTarget={edit.moveTarget}
+        onBuildHover={placement.hover}
+        onBuildConfirm={placement.confirm}
+        onBuildCancel={placement.cancel}
+        onRotateBuildTool={placement.rotate}
+        onMoveHover={edit.hoverMove}
+        onMoveConfirm={edit.confirmMove}
+        onRotateModule={edit.rotateModule}
+        onEditCancel={edit.cancel}
       />
-      <BuildTray />
+      <BuildTray
+        client={client}
+        mode={grid.mode}
+        refreshKey={buildRefreshKey}
+        interactive={connectionStatus === "live"}
+        onPlacementTool={onPlacementTool}
+      />
       <OperationsStack
         selection={selection}
         selectionController={selectionController}
         grid={grid}
         snapshot={snapshot}
         interactive={connectionStatus === "live"}
+        onMoveModule={onMoveModule}
+        onRotateModule={edit.rotateModule}
+        onRemoveModules={edit.removeModules}
+        onDisconnectRoutes={edit.disconnectRoutes}
+        onHistory={edit.history}
       />
       <PersistenceControls
         client={client}

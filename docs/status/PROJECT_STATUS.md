@@ -18,7 +18,9 @@ Updated: 2026-10-04
   Implemented behavior and visual evidence are in `docs/diagnostics/PHASE_3_RENDERING.md`
   and `PHASE_3_VISUAL_REVIEW.md`; the historical and corrective CP23 review is preserved
   in `PHASE_3_TASK_23_CP23_REVIEW.md`, with exact gates/hashes in `TASK_23_VERIFICATION.md`.
-  Task 24 is not started; Phase 3 closure and Task 28 target certification are not claimed.
+  Task 24.1–24.4 are implemented as the explicitly unverified, pending-investigation publication
+  described by `docs/status/TASK_24_WORKING_STATUS.md`; CP24 remains unstarted. Phase 3 closure
+  and Task 28 target certification are not claimed.
 - Phase 1: Headless Simulator, closed through Task 15 and the ADR-0022 Campaign coherence repair.
 - Parent checkpoint: Task 4, deterministic inventory transactions and basic economy, committed at
   `8e80b00` and explicitly approved on 18 August 2026.

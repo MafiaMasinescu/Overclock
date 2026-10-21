@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { SelectionController } from "../workspaces/selectionController.ts";
+import type { BuildMoveTarget, Rotation } from "../../app/game-client/contracts.ts";
 import type {
   GridViewModel,
   InspectorViewModel,
@@ -14,6 +15,11 @@ interface OperationsStackProps {
   grid: GridViewModel;
   snapshot: UiSnapshot;
   interactive: boolean;
+  onMoveModule: (target: BuildMoveTarget) => void;
+  onRotateModule: (moduleInstanceId: string, rotation: Rotation) => void;
+  onRemoveModules: (moduleInstanceIds: readonly string[]) => void;
+  onDisconnectRoutes: (routeIds: readonly string[]) => void;
+  onHistory: (kind: "undo" | "redo") => void;
 }
 
 function formatNumber(value: number, language: string): string {
@@ -35,12 +41,25 @@ function inspectorKindLabel(
   return translate(`ui.inspector-${inspector.entityKind}`);
 }
 
+function quarterTurn(rotation: Rotation, direction: "clockwise" | "counterclockwise"): Rotation {
+  const values: readonly Rotation[] = [0, 90, 180, 270];
+  const index = values.indexOf(rotation);
+  return (
+    values[(index + (direction === "clockwise" ? 1 : -1) + values.length) % values.length] ?? 0
+  );
+}
+
 export function OperationsStack({
   selection,
   selectionController,
   grid,
   snapshot,
   interactive,
+  onMoveModule,
+  onRotateModule,
+  onRemoveModules,
+  onDisconnectRoutes,
+  onHistory,
 }: OperationsStackProps): ReactElement {
   const { i18n, t } = useTranslation();
   const language = i18n.resolvedLanguage ?? "ro";
@@ -60,6 +79,9 @@ export function OperationsStack({
     inspector.entityKind === "route"
       ? grid.routes.find((route) => route.id === inspector.selectedEntityId)
       : undefined;
+  const selectedModules = grid.modules.filter((module) => selection.includes(module.id));
+  const selectedRoutes = grid.routes.filter((route) => selection.includes(route.id));
+  const singleSelectedModule = selectedModules.length === 1 ? selectedModules[0] : undefined;
   const physicalStats = [...inspector.stats];
   const expectedPhysicalKeys =
     inspector.entityKind === "module"
@@ -237,6 +259,90 @@ export function OperationsStack({
             </dl>
           </div>
         )}
+        <div className="build-edit-actions" aria-label={t("ui.build-edit-actions")}>
+          <button
+            type="button"
+            disabled={!interactive || grid.mode !== "draft" || singleSelectedModule === undefined}
+            onClick={() => {
+              if (singleSelectedModule === undefined) return;
+              onMoveModule({
+                moduleInstanceId: singleSelectedModule.id,
+                definitionId: singleSelectedModule.definitionId,
+                position: singleSelectedModule.position,
+                footprint: singleSelectedModule.footprint,
+                rotation: singleSelectedModule.rotation,
+              });
+            }}
+          >
+            {t("ui.build-move")}
+          </button>
+          <button
+            type="button"
+            disabled={!interactive || grid.mode !== "draft" || singleSelectedModule === undefined}
+            onClick={() => {
+              if (singleSelectedModule !== undefined)
+                onRotateModule(
+                  singleSelectedModule.id,
+                  quarterTurn(singleSelectedModule.rotation, "counterclockwise"),
+                );
+            }}
+          >
+            {t("ui.build-rotate-left")}
+          </button>
+          <button
+            type="button"
+            disabled={!interactive || grid.mode !== "draft" || singleSelectedModule === undefined}
+            onClick={() => {
+              if (singleSelectedModule !== undefined)
+                onRotateModule(
+                  singleSelectedModule.id,
+                  quarterTurn(singleSelectedModule.rotation, "clockwise"),
+                );
+            }}
+          >
+            {t("ui.build-rotate-right")}
+          </button>
+          <button
+            type="button"
+            disabled={!interactive || grid.mode !== "draft" || selectedModules.length === 0}
+            onClick={() => {
+              onRemoveModules(selectedModules.map((module) => module.id));
+            }}
+          >
+            {t("ui.build-remove")}
+          </button>
+          <button
+            type="button"
+            disabled={!interactive || grid.mode !== "draft" || selectedRoutes.length === 0}
+            onClick={() => {
+              onDisconnectRoutes(selectedRoutes.map((route) => route.id));
+            }}
+          >
+            {t("ui.build-disconnect")}
+          </button>
+          <button
+            type="button"
+            disabled={
+              !interactive || grid.mode !== "draft" || !snapshot.commandAvailability["UNDO_DESIGN"]
+            }
+            onClick={() => {
+              onHistory("undo");
+            }}
+          >
+            {t("ui.build-undo")}
+          </button>
+          <button
+            type="button"
+            disabled={
+              !interactive || grid.mode !== "draft" || !snapshot.commandAvailability["REDO_DESIGN"]
+            }
+            onClick={() => {
+              onHistory("redo");
+            }}
+          >
+            {t("ui.build-redo")}
+          </button>
+        </div>
       </section>
       <footer className="ops-footer">{t("ui.shell-status")}</footer>
     </aside>
